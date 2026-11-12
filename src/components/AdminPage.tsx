@@ -35,6 +35,11 @@ import {
   CheckSquare,
   Square,
   ChevronRight,
+  ChevronLeft,
+  Search,
+  UserPlus,
+  ArrowUp,
+  ArrowDown,
   RefreshCw,
   Key,
   FileDown,
@@ -177,6 +182,87 @@ export const AdminPage: React.FC = () => {
   const [pegawaiFormEmel, setPegawaiFormEmel] = useState('');
   const [pegawaiFormNoHp, setPegawaiFormNoHp] = useState('');
 
+  // Table states for Master Data: Pegawai (autosort, limit 10/15/20/30/50/Semua, search, pagination)
+  const [pegawaiDisplayLimit, setPegawaiDisplayLimit] = useState<string>('10');
+  const [pegawaiCurrentPage, setPegawaiCurrentPage] = useState<number>(1);
+  const [pegawaiSortKey, setPegawaiSortKey] = useState<'id' | 'nama' | 'pusat' | 'jabatan' | 'jawatan' | 'emel' | 'noHp'>('id');
+  const [pegawaiSortDir, setPegawaiSortDir] = useState<'asc' | 'desc'>('asc');
+  const [pegawaiSearch, setPegawaiSearch] = useState<string>('');
+
+  // Helper to generate the next unique sequential IAB Pegawai ID (e.g. IAB001, IAB002, ..., IAB012)
+  const getNextPegawaiId = (list: Pegawai[]): string => {
+    let maxNum = 0;
+    list.forEach((p) => {
+      const match = (p.id || '').match(/(\d+)/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (!isNaN(n) && n > maxNum) {
+          maxNum = n;
+        }
+      }
+    });
+    return `IAB${String(maxNum + 1).padStart(3, '0')}`;
+  };
+
+  // Filter, Auto-Sort & Pagination for Pegawai List
+  const filteredPegawaiList = useMemo(() => {
+    let list = [...pegawaiList];
+    if (pegawaiSearch.trim()) {
+      const q = pegawaiSearch.toLowerCase();
+      list = list.filter(
+        (p) =>
+          (p.id && p.id.toLowerCase().includes(q)) ||
+          (p.nama && p.nama.toLowerCase().includes(q)) ||
+          (p.jawatan && p.jawatan.toLowerCase().includes(q)) ||
+          (p.jabatan && p.jabatan.toLowerCase().includes(q)) ||
+          (p.pusat && p.pusat.toLowerCase().includes(q)) ||
+          (p.emel && p.emel.toLowerCase().includes(q)) ||
+          (p.noHp && p.noHp.includes(q))
+      );
+    }
+
+    list.sort((a, b) => {
+      const valA = (a[pegawaiSortKey] || '').toString();
+      const valB = (b[pegawaiSortKey] || '').toString();
+
+      if (pegawaiSortKey === 'id') {
+        const numA = parseInt(valA.replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(valB.replace(/\D/g, ''), 10) || 0;
+        return pegawaiSortDir === 'asc' ? numA - numB : numB - numA;
+      }
+
+      const cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+      return pegawaiSortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return list;
+  }, [pegawaiList, pegawaiSearch, pegawaiSortKey, pegawaiSortDir]);
+
+  const totalPegawaiCount = filteredPegawaiList.length;
+  const pegawaiPageSize =
+    pegawaiDisplayLimit === 'Semua' ? totalPegawaiCount : parseInt(pegawaiDisplayLimit, 10) || 10;
+  const totalPegawaiPages =
+    pegawaiPageSize > 0 ? Math.ceil(totalPegawaiCount / pegawaiPageSize) : 1;
+  const safePegawaiCurrentPage = Math.min(
+    Math.max(1, pegawaiCurrentPage),
+    totalPegawaiPages || 1
+  );
+
+  const paginatedPegawaiList = useMemo(() => {
+    if (pegawaiDisplayLimit === 'Semua') return filteredPegawaiList;
+    const start = (safePegawaiCurrentPage - 1) * pegawaiPageSize;
+    return filteredPegawaiList.slice(start, start + pegawaiPageSize);
+  }, [filteredPegawaiList, safePegawaiCurrentPage, pegawaiPageSize, pegawaiDisplayLimit]);
+
+  const handleSortPegawai = (key: 'id' | 'nama' | 'pusat' | 'jabatan' | 'jawatan' | 'emel' | 'noHp') => {
+    if (pegawaiSortKey === key) {
+      setPegawaiSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setPegawaiSortKey(key);
+      setPegawaiSortDir('asc');
+    }
+  };
+
   // Form states for Pusat, Jabatan, Sumber, Status, Jawatan
   const [pusatInput, setPusatInput] = useState('');
   const [editingPusat, setEditingPusat] = useState<string | null>(null);
@@ -198,6 +284,7 @@ export const AdminPage: React.FC = () => {
 
   // REQUIREMENT: Pages available for permission assignment
   const AVAILABLE_PAGES = [
+    { key: 'DASHBOARD BERSEPADU', label: 'DASHBOARD BERSEPADU' },
     { key: 'PERINCIAN PROGRAM', label: 'PERINCIAN PROGRAM' },
     { key: 'PERUNTUKAN', label: 'PERUNTUKAN' },
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
@@ -963,7 +1050,7 @@ export const AdminPage: React.FC = () => {
     if (editingPegawaiId) {
       updatePegawai(editingPegawaiId, payload);
     } else {
-      const id = `Pegawai ${pegawaiList.length + 1}`;
+      const id = getNextPegawaiId(pegawaiList);
       addPegawai({
         id,
         ...payload,
@@ -2081,289 +2168,573 @@ export const AdminPage: React.FC = () => {
           </div>
 
           <div className="p-6">
-            {/* SUB-CATEGORY 1: PEGAWAI (6 FIELDS COMPLETE FORM & TABLE) */}
+            {/* SUB-CATEGORY 1: PEGAWAI (POP-UP MODAL, AUTOSORT & PAGINATION) */}
             {masterCategory === 'pegawai' && (
-              <div className="space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-4">
+                {/* Header Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      Pengurusan Profil Pegawai
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-slate-900">
+                        Pengurusan Profil Pegawai
+                      </h4>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-mono">
+                        {filteredPegawaiList.length} Orang
+                      </span>
+                    </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Mengandungi maklumat lengkap 6 perkara: Nama, Pusat, Jabatan, Jawatan, Emel, dan No. HP.
+                      Daftar dan kemaskini maklumat pegawai: ID (Format IAB), Nama, Pusat, Jabatan, Jawatan, Emel, dan No. HP.
                     </p>
                   </div>
 
                   <button
+                    type="button"
                     onClick={handleOpenAddPegawai}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors shadow-xs cursor-pointer self-start sm:self-auto"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer self-start sm:self-auto shrink-0"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <UserPlus className="w-4 h-4" />
                     <span>+ Tambah Pegawai Baru</span>
                   </button>
                 </div>
 
-                {/* REQUIREMENT 3: Form Add / Edit Pegawai with 6 fields and Jawatan Dropdown */}
-                {isPegawaiFormOpen && (
-                  <div className="p-5 bg-slate-50 rounded-xl border border-slate-300 shadow-sm animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-slate-800" />
-                        <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                          {editingPegawaiId ? `Kemaskini Pegawai: ${editingPegawaiId}` : 'Borang Tambah Pegawai Baru'}
-                        </h5>
-                      </div>
+                {/* Table Control Bar: Search & Page Limit Selection */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  {/* Search Bar */}
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama, ID (cth: IAB001), jawatan, pusat, emel..."
+                      value={pegawaiSearch}
+                      onChange={(e) => {
+                        setPegawaiSearch(e.target.value);
+                        setPegawaiCurrentPage(1);
+                      }}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    />
+                    {pegawaiSearch && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsPegawaiFormOpen(false);
-                          setEditingPegawaiId(null);
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-600 rounded"
+                        onClick={() => setPegawaiSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
+                    )}
+                  </div>
+
+                  {/* Display Limit Dropdown: 10 (default), 15, 20, 30, 50, Semua */}
+                  <div className="flex items-center gap-2 text-xs text-slate-600 self-end sm:self-auto">
+                    <span className="font-semibold text-[11px] uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                      Paparan:
+                    </span>
+                    <select
+                      value={pegawaiDisplayLimit}
+                      onChange={(e) => {
+                        setPegawaiDisplayLimit(e.target.value);
+                        setPegawaiCurrentPage(1);
+                      }}
+                      className="py-1 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                    >
+                      <option value="10">10 orang (Lalai)</option>
+                      <option value="15">15 orang</option>
+                      <option value="20">20 orang</option>
+                      <option value="30">30 orang</option>
+                      <option value="50">50 orang</option>
+                      <option value="Semua">Semua ({filteredPegawaiList.length})</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Table of Pegawai with Full Autosort Headers */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-100/80 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200 select-none">
+                          <th className="py-2.5 px-3 w-12 text-center text-slate-500 font-semibold">
+                            BIL
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('id')}
+                            className="py-2.5 px-3 w-28 cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut ID Pegawai"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>ID PEGAWAI</span>
+                              {pegawaiSortKey === 'id' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('nama')}
+                            className="py-2.5 px-3 min-w-[200px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut Nama Pegawai"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>NAMA PEGAWAI</span>
+                              {pegawaiSortKey === 'nama' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('jawatan')}
+                            className="py-2.5 px-3 min-w-[150px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut Jawatan"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>JAWATAN</span>
+                              {pegawaiSortKey === 'jawatan' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('pusat')}
+                            className="py-2.5 px-3 min-w-[180px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut Pusat"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>PUSAT</span>
+                              {pegawaiSortKey === 'pusat' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('jabatan')}
+                            className="py-2.5 px-3 min-w-[180px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut Jabatan"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>JABATAN</span>
+                              {pegawaiSortKey === 'jabatan' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th
+                            onClick={() => handleSortPegawai('emel')}
+                            className="py-2.5 px-3 min-w-[180px] cursor-pointer hover:bg-slate-200/70 transition-colors"
+                            title="Klik untuk susun mengikut Maklumat Hubungi"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>HUBUNGI (EMEL & HP)</span>
+                              {pegawaiSortKey === 'emel' ? (
+                                pegawaiSortDir === 'asc' ? (
+                                  <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+                                ) : (
+                                  <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                                )
+                              ) : (
+                                <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                              )}
+                            </div>
+                          </th>
+                          <th className="py-2.5 px-3 w-32 text-center text-slate-700">
+                            TINDAKAN
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paginatedPegawaiList.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="py-8 text-center text-slate-400">
+                              {pegawaiSearch ? 'Tiada pegawai sepadan dengan carian.' : 'Tiada rekod pegawai didaftarkan.'}
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedPegawaiList.map((peg, index) => {
+                            const bilNumber =
+                              (pegawaiDisplayLimit === 'Semua' ? 0 : (safePegawaiCurrentPage - 1) * pegawaiPageSize) +
+                              index +
+                              1;
+                            const isLinkedToAdmin = adminUsers.some(
+                              (u) =>
+                                u.role !== 'SUPER_ADMIN' &&
+                                (u.id.toUpperCase() === peg.id.toUpperCase() ||
+                                  u.name.trim().toLowerCase() === peg.nama.trim().toLowerCase())
+                            );
+
+                            return (
+                              <tr key={peg.id} className="hover:bg-blue-50/40 transition-colors">
+                                <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                                  {bilNumber}
+                                </td>
+                                <td className="py-3 px-3 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-100 text-slate-800 border border-slate-200">
+                                    {peg.id}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 font-bold text-slate-900 uppercase">
+                                  <div>
+                                    <span>{peg.nama}</span>
+                                    {isLinkedToAdmin && (
+                                      <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-semibold uppercase">
+                                        <Key className="w-2.5 h-2.5" /> ID Admin Aktif
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 text-slate-800 font-medium">
+                                  <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-semibold text-[11px] inline-block">
+                                    {peg.jawatan || '-'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-[11px] text-slate-600">
+                                  <span className="line-clamp-2" title={peg.pusat}>
+                                    {peg.pusat || 'TIDAK BERKENAAN'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-[11px] text-slate-700 font-semibold">
+                                  <span className="line-clamp-2" title={peg.jabatan}>
+                                    {peg.jabatan || 'TIDAK BERKENAAN'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-[11px] text-slate-600">
+                                  <div className="flex items-center gap-1 text-slate-700">
+                                    <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span className="truncate max-w-[160px]" title={peg.emel}>{peg.emel || '-'}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-slate-600 mt-0.5 font-mono text-[10px]">
+                                    <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span>{peg.noHp || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditPegawai(peg)}
+                                      className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors cursor-pointer"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const linkedAdmin = adminUsers.find(
+                                          (u) =>
+                                            u.role !== 'SUPER_ADMIN' &&
+                                            (u.id.toUpperCase() === peg.id.toUpperCase() ||
+                                              u.name.trim().toLowerCase() === peg.nama.trim().toLowerCase())
+                                        );
+
+                                        const confirmMsg = linkedAdmin
+                                          ? `Adakah anda pasti ingin memadamkan profil pegawai "${peg.nama}" (${peg.id})?\n\n⚠️ PERHATIAN: Pegawai ini mempunyai akaun ID Admin "${linkedAdmin.id}". Memadamkan pegawai ini juga akan MEMADAMKAN akaun ID Admin berkaitan secara automatik!`
+                                          : `Adakah anda pasti ingin memadamkan profil pegawai "${peg.nama}" (${peg.id})?`;
+
+                                        requestDeleteConfirm(
+                                          'Padam Profil Pegawai',
+                                          confirmMsg,
+                                          () => {
+                                            deletePegawai(peg.id);
+                                          }
+                                        );
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded transition-colors cursor-pointer"
+                                    >
+                                      Padam
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Footer */}
+                  {pegawaiDisplayLimit !== 'Semua' && totalPegawaiPages > 1 && (
+                    <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-600">
+                      <div>
+                        Menunjukkan{' '}
+                        <span className="font-bold text-slate-900">
+                          {Math.min((safePegawaiCurrentPage - 1) * pegawaiPageSize + 1, totalPegawaiCount)}
+                        </span>{' '}
+                        hingga{' '}
+                        <span className="font-bold text-slate-900">
+                          {Math.min(safePegawaiCurrentPage * pegawaiPageSize, totalPegawaiCount)}
+                        </span>{' '}
+                        daripada <span className="font-bold text-slate-900">{totalPegawaiCount}</span> pegawai
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          disabled={safePegawaiCurrentPage === 1}
+                          onClick={() => setPegawaiCurrentPage((p) => Math.max(1, p - 1))}
+                          className="px-2.5 py-1 rounded border border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                          <span>Sebelumnya</span>
+                        </button>
+
+                        <span className="px-2 text-[11px] font-bold text-slate-700">
+                          Halaman {safePegawaiCurrentPage} / {totalPegawaiPages}
+                        </span>
+
+                        <button
+                          type="button"
+                          disabled={safePegawaiCurrentPage >= totalPegawaiPages}
+                          onClick={() => setPegawaiCurrentPage((p) => Math.min(totalPegawaiPages, p + 1))}
+                          className="px-2.5 py-1 rounded border border-slate-200 bg-white font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                        >
+                          <span>Seterusnya</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+                  )}
+                </div>
 
-                    <form onSubmit={handleSavePegawai} className="space-y-4 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {/* 1. NAMA PEGAWAI */}
-                        <div className="sm:col-span-2">
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            1. Nama Penuh Pegawai (HURUF BESAR) *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="CTH: DR. AHMAD BIN ISMAIL"
-                            value={pegawaiFormNama}
-                            onChange={(e) => setPegawaiFormNama(e.target.value.toUpperCase())}
-                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold uppercase"
-                          />
-                        </div>
-
-                        {/* 4. JAWATAN (DROPDOWN MENU SEPERTI PILIHAN PENGGUNA) */}
-                        <div>
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            4. Jawatan *
-                          </label>
-                          <select
-                            required
-                            value={pegawaiFormJawatan}
-                            onChange={(e) => handleJawatanChangeInPegawaiForm(e.target.value)}
-                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-slate-900"
-                          >
-                            {jawatanList.map((jwt) => (
-                              <option key={jwt} value={jwt}>
-                                {jwt}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {/* 2. PUSAT */}
-                        <div>
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            2. Pusat *
-                          </label>
-                          <select
-                            required={!isSpecialDirector(pegawaiFormJawatan)}
-                            disabled={isSpecialDirector(pegawaiFormJawatan)}
-                            value={isSpecialDirector(pegawaiFormJawatan) ? 'TIDAK BERKENAAN' : pegawaiFormPusat}
-                            onChange={(e) => handlePusatChangeInPegawaiForm(e.target.value)}
-                            className={`w-full py-2 px-3 border rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
-                              isSpecialDirector(pegawaiFormJawatan)
-                                ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed opacity-80'
-                                : 'bg-white border-slate-300 text-slate-900'
-                            }`}
-                          >
-                            {isSpecialDirector(pegawaiFormJawatan) ? (
-                              <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
-                            ) : (
-                              pusatList.map((p) => (
-                                <option key={p} value={p}>
-                                  {p}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        </div>
-
-                        {/* 3. JABATAN */}
-                        <div>
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            3. Jabatan *
-                          </label>
-                          <select
-                            required={!isSpecialDirector(pegawaiFormJawatan) && !isKetuaPusat(pegawaiFormJawatan)}
-                            disabled={isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)}
-                            value={
-                              isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)
-                                ? 'TIDAK BERKENAAN'
-                                : pegawaiFormJabatan
-                            }
-                            onChange={(e) => setPegawaiFormJabatan(e.target.value)}
-                            className={`w-full py-2 px-3 border rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
-                              isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)
-                                ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed opacity-80'
-                                : 'bg-white border-slate-300 text-slate-900'
-                            }`}
-                          >
-                            {isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan) ? (
-                              <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
-                            ) : (
-                              (jabatanMap[pegawaiFormPusat] || []).map((j) => (
-                                <option key={j} value={j}>
-                                  {j}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        </div>
-
-                        {isSpecialDirector(pegawaiFormJawatan) && (
-                          <div className="col-span-full text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded font-medium">
-                            * Bagi jawatan <strong>{pegawaiFormJawatan}</strong>, Pusat dan Jabatan ditetapkan sebagai <strong>TIDAK BERKENAAN</strong> secara automatik.
+                {/* REQUIREMENT: POP-UP BORANG TAMBAH / KEMASKINI PEGAWAI BARU */}
+                {isPegawaiFormOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 my-auto">
+                      {/* Modal Header */}
+                      <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-blue-600/30 text-blue-300 border border-blue-400/40 flex items-center justify-center">
+                            <UserPlus className="w-5 h-5" />
                           </div>
-                        )}
-
-                        {isKetuaPusat(pegawaiFormJawatan) && (
-                          <div className="col-span-full text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded font-medium">
-                            * Bagi jawatan <strong>KETUA PUSAT</strong>, Pusat boleh dipilih dan Jabatan ditetapkan sebagai <strong>TIDAK BERKENAAN</strong> (dim) secara automatik.
+                          <div>
+                            <h4 className="text-sm font-bold tracking-wide">
+                              {editingPegawaiId ? `Kemaskini Profil Pegawai` : 'Tambah Pegawai Baru'}
+                            </h4>
+                            <p className="text-[11px] text-slate-300">
+                              ID Pegawai: <span className="font-mono font-bold text-amber-300">{editingPegawaiId || getNextPegawaiId(pegawaiList)}</span>
+                            </p>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {/* 5. EMEL */}
-                        <div>
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            5. Emel Rasmi *
-                          </label>
-                          <input
-                            type="email"
-                            required
-                            placeholder="CTH: ahmad.ismail@iab.moe.edu.my"
-                            value={pegawaiFormEmel}
-                            onChange={(e) => setPegawaiFormEmel(e.target.value)}
-                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium lowercase"
-                          />
                         </div>
-
-                        {/* 6. NO. HP: */}
-                        <div>
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                            6. No. HP: *
-                          </label>
-                          <input
-                            type="tel"
-                            required
-                            placeholder="CTH: 012-3456789"
-                            value={pegawaiFormNoHp}
-                            onChange={(e) => setPegawaiFormNoHp(e.target.value)}
-                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                         <button
                           type="button"
                           onClick={() => {
                             setIsPegawaiFormOpen(false);
                             setEditingPegawaiId(null);
                           }}
-                          className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                          title="Tutup Borang"
                         >
-                          Batal
-                        </button>
-                        <button
-                          type="submit"
-                          className="px-5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
-                        >
-                          {editingPegawaiId ? 'Simpan Kemaskini Pegawai' : 'Daftar Pegawai Baru'}
+                          <X className="w-5 h-5" />
                         </button>
                       </div>
-                    </form>
+
+                      {/* Modal Form */}
+                      <form onSubmit={handleSavePegawai} className="p-6 overflow-y-auto space-y-4 text-xs">
+                        <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] text-blue-700 font-bold uppercase tracking-wider block">
+                              ID Pegawai (Auto-Generated IAB Format):
+                            </span>
+                            <span className="text-sm font-mono font-black text-blue-950">
+                              {editingPegawaiId || getNextPegawaiId(pegawaiList)}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-blue-700 bg-white px-2.5 py-1 rounded-md border border-blue-200">
+                            Format Rasmi IAB
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {/* 1. NAMA PEGAWAI */}
+                          <div className="sm:col-span-2">
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              1. Nama Penuh Pegawai (HURUF BESAR) *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="CTH: DR. AHMAD BIN ISMAIL"
+                              value={pegawaiFormNama}
+                              onChange={(e) => setPegawaiFormNama(e.target.value.toUpperCase())}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold uppercase text-slate-900"
+                            />
+                          </div>
+
+                          {/* 4. JAWATAN */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              2. Jawatan *
+                            </label>
+                            <select
+                              required
+                              value={pegawaiFormJawatan}
+                              onChange={(e) => handleJawatanChangeInPegawaiForm(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-slate-900"
+                            >
+                              {jawatanList.map((jwt) => (
+                                <option key={jwt} value={jwt}>
+                                  {jwt}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* 2. PUSAT */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              3. Pusat *
+                            </label>
+                            <select
+                              required={!isSpecialDirector(pegawaiFormJawatan)}
+                              disabled={isSpecialDirector(pegawaiFormJawatan)}
+                              value={isSpecialDirector(pegawaiFormJawatan) ? 'TIDAK BERKENAAN' : pegawaiFormPusat}
+                              onChange={(e) => handlePusatChangeInPegawaiForm(e.target.value)}
+                              className={`w-full py-2 px-3 border rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
+                                isSpecialDirector(pegawaiFormJawatan)
+                                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed opacity-80'
+                                  : 'bg-white border-slate-300 text-slate-900'
+                              }`}
+                            >
+                              {isSpecialDirector(pegawaiFormJawatan) ? (
+                                <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
+                              ) : (
+                                pusatList.map((p) => (
+                                  <option key={p} value={p}>
+                                    {p}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+
+                          {/* 3. JABATAN */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              4. Jabatan *
+                            </label>
+                            <select
+                              required={!isSpecialDirector(pegawaiFormJawatan) && !isKetuaPusat(pegawaiFormJawatan)}
+                              disabled={isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)}
+                              value={
+                                isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)
+                                  ? 'TIDAK BERKENAAN'
+                                  : pegawaiFormJabatan
+                              }
+                              onChange={(e) => setPegawaiFormJabatan(e.target.value)}
+                              className={`w-full py-2 px-3 border rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
+                                isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan)
+                                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed opacity-80'
+                                  : 'bg-white border-slate-300 text-slate-900'
+                              }`}
+                            >
+                              {isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan) ? (
+                                <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
+                              ) : (
+                                (jabatanMap[pegawaiFormPusat] || []).map((j) => (
+                                  <option key={j} value={j}>
+                                    {j}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </div>
+
+                          {isSpecialDirector(pegawaiFormJawatan) && (
+                            <div className="col-span-full text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg font-medium">
+                              * Bagi jawatan <strong>{pegawaiFormJawatan}</strong>, Pusat dan Jabatan ditetapkan sebagai <strong>TIDAK BERKENAAN</strong> secara automatik.
+                            </div>
+                          )}
+
+                          {isKetuaPusat(pegawaiFormJawatan) && (
+                            <div className="col-span-full text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg font-medium">
+                              * Bagi jawatan <strong>KETUA PUSAT</strong>, Pusat boleh dipilih dan Jabatan ditetapkan sebagai <strong>TIDAK BERKENAAN</strong> secara automatik.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* 5. EMEL */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              5. Emel Rasmi *
+                            </label>
+                            <input
+                              type="email"
+                              required
+                              placeholder="CTH: ahmad.ismail@iab.moe.edu.my"
+                              value={pegawaiFormEmel}
+                              onChange={(e) => setPegawaiFormEmel(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium lowercase text-slate-900"
+                            />
+                          </div>
+
+                          {/* 6. NO. HP: */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              6. No. HP *
+                            </label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="CTH: 012-3456789"
+                              value={pegawaiFormNoHp}
+                              onChange={(e) => setPegawaiFormNoHp(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium text-slate-900"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Modal Action Buttons */}
+                        <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsPegawaiFormOpen(false);
+                              setEditingPegawaiId(null);
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-xs cursor-pointer"
+                          >
+                            {editingPegawaiId ? 'Simpan Kemaskini Pegawai' : 'Daftar Pegawai Baru'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
                   </div>
                 )}
-
-                {/* Table of Pegawai showing all 6 fields */}
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                        <th className="py-2.5 px-4 w-28">ID</th>
-                        <th className="py-2.5 px-4">NAMA PEGAWAI</th>
-                        <th className="py-2.5 px-4">PUSAT & JABATAN</th>
-                        <th className="py-2.5 px-4">JAWATAN</th>
-                        <th className="py-2.5 px-4">HUBUNGI (EMEL & HP)</th>
-                        <th className="py-2.5 px-4 w-32 text-center">TINDAKAN</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {pegawaiList.map((peg) => (
-                        <tr key={peg.id} className="hover:bg-slate-50">
-                          <td className="py-3 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
-                            {peg.id}
-                          </td>
-                          <td className="py-3 px-4 font-bold text-slate-900 uppercase">
-                            {peg.nama}
-                          </td>
-                          <td className="py-3 px-4 text-[11px] text-slate-600">
-                            <span className="font-semibold text-slate-800 block">
-                              {peg.jabatan || 'Belum Ditetapkan'}
-                            </span>
-                            <span className="text-[10px] text-slate-500 block truncate max-w-[200px]" title={peg.pusat}>
-                              {peg.pusat}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-slate-800 font-medium">
-                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-semibold text-[11px]">
-                              {peg.jawatan || '-'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-[11px] text-slate-600">
-                            <div className="flex items-center gap-1 text-slate-700">
-                              <Mail className="w-3 h-3 text-slate-400" />
-                              <span>{peg.emel || '-'}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-slate-600 mt-0.5 font-mono">
-                              <Phone className="w-3 h-3 text-slate-400" />
-                              <span>{peg.noHp || '-'}</span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleEditPegawai(peg)}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors cursor-pointer"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => {
-                                  requestDeleteConfirm(
-                                    'Padam Profil Pegawai',
-                                    `Adakah anda pasti ingin memadamkan pegawai "${peg.nama}"?`,
-                                    () => {
-                                      deletePegawai(peg.id);
-                                    }
-                                  );
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded transition-colors cursor-pointer"
-                              >
-                                Padam
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
 

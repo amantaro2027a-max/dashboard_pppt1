@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   ListFilter,
   ShieldCheck,
-  RotateCcw,
   LogOut,
   Wallet,
   CreditCard,
@@ -15,12 +14,12 @@ import {
   Check,
   BarChart2,
 } from 'lucide-react';
+import jataNegaraLogo from '../assets/jata_negara.png';
 
 export const Header: React.FC = () => {
   const {
     activeTab,
     setActiveTab,
-    resetToDefaultData,
     filteredPrograms,
     currentUser,
     logout,
@@ -125,8 +124,8 @@ export const Header: React.FC = () => {
   // "From Page UTAMA, once klik MASUK, viewer sahaja can only see Page Dashboard Program and Dashboard Bersepadu sahaja.
   // Other page hide from guest/view user/public. Only certain user can view page based on selected page from KEBENARAN VIEW/PAPAR PAGE."
   const visibleMenuItems = allMenuItems.filter((item) => {
-    // 1. Dashboard Program & Dashboard Bersepadu: sentiasa dibenarkan untuk semua (termasuk viewer/guest)
-    if (item.id === 'dashboard' || item.id === 'bersepadu') {
+    // 1. Dashboard Program sentiasa dibenarkan untuk semua
+    if (item.id === 'dashboard') {
       return true;
     }
 
@@ -135,14 +134,15 @@ export const Header: React.FC = () => {
       return true;
     }
 
-    // 3. Untuk pelawat / mod viewer (tiada log masuk), sembunyikan semua halaman lain
+    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program dan Dashboard Bersepadu
     if (!currentUser) {
-      return false;
+      return item.id === 'dashboard' || item.id === 'bersepadu';
     }
 
     // 4. Untuk Admin biasa, tapis mengikut halaman yang dipilih dalam KEBENARAN VIEW/PAPAR PAGE
     if (isAdmin) {
       if (item.id === 'admin') return true;
+      if (item.id === 'bersepadu') return allowedPages.includes('DASHBOARD BERSEPADU');
       if (item.id === 'perincian') return allowedPages.includes('PERINCIAN PROGRAM');
       if (item.id === 'peruntukan') return allowedPages.includes('PERUNTUKAN');
       if (item.id === 'perbelanjaan') return allowedPages.includes('PERBELANJAAN');
@@ -162,32 +162,11 @@ export const Header: React.FC = () => {
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs select-none">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         {/* ============================================================== */}
-        {/* BARIS 1: PORTAL APLIKASI PROGRAM IAB                          */}
+        {/* BARIS 1: JATA NEGARA & PORTAL MAKLUMAT PROGRAM IAB            */}
         {/* ============================================================== */}
-        <div className="flex items-center justify-between py-2 sm:py-2.5 border-b border-slate-100 gap-2">
-          {/* Logo / Badge IAB */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('welcome')}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs sm:text-sm tracking-wider shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
-              title="Kembali ke Laman Utama"
-            >
-              IAB
-            </button>
-            <span className="hidden md:inline-block text-[11px] text-slate-500 font-medium">
-              Institut Aminuddin Baki
-            </span>
-          </div>
-
-          {/* TAJUK BARIS 1 */}
-          <h1 className="text-sm sm:text-base md:text-lg font-black tracking-wider text-slate-900 uppercase text-center flex-1 truncate px-1">
-            PORTAL APLIKASI PROGRAM IAB
-          </h1>
-
-          {/* Status Awan & Tindakan Semula */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Firebase Live Cloud Database indicator */}
+        <div className="py-3 border-b border-slate-100 relative">
+          {/* Status Awan (Unobtrusive di penjuru kanan) */}
+          <div className="absolute right-0 top-3 hidden md:flex items-center gap-1.5">
             <div
               title={
                 firebaseStatus === 'connected'
@@ -196,7 +175,7 @@ export const Header: React.FC = () => {
                   ? 'Menyambung ke pangkalan data awan Firebase...'
                   : 'Pangkalan data mod simpanan tempatan aktif'
               }
-              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-700 select-none"
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 border border-slate-200 text-slate-700 select-none"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -207,7 +186,7 @@ export const Header: React.FC = () => {
                     : 'bg-slate-400'
                 }`}
               />
-              <span className="hidden sm:inline">
+              <span>
                 {firebaseStatus === 'connected'
                   ? 'Cloud: Aktif'
                   : firebaseStatus === 'connecting'
@@ -215,14 +194,26 @@ export const Header: React.FC = () => {
                   : 'Tempatan'}
               </span>
             </div>
+          </div>
 
-            <button
-              onClick={() => resetToDefaultData()}
-              title="Set Semula Data Contoh Asal"
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+          {/* Centered Jata Negara + KEMENTERIAN PENDIDIKAN / INSTITUT AMINUDDIN BAKI + PORTAL MAKLUMAT PROGRAM IAB */}
+          <div className="flex flex-col items-center justify-center text-center">
+            <img
+              src={jataNegaraLogo}
+              alt="Jata Negara Malaysia"
+              className="h-14 sm:h-16 w-auto object-contain mx-auto"
+            />
+            <div className="mt-1 leading-snug">
+              <span className="block text-[11px] sm:text-xs font-bold tracking-wider text-slate-800 uppercase">
+                KEMENTERIAN PENDIDIKAN
+              </span>
+              <span className="block text-[11px] sm:text-xs font-bold tracking-wider text-slate-800 uppercase">
+                INSTITUT AMINUDDIN BAKI
+              </span>
+            </div>
+            <h1 className="text-base sm:text-lg md:text-xl font-black tracking-wider text-slate-900 uppercase mt-1.5">
+              PORTAL MAKLUMAT PROGRAM IAB
+            </h1>
           </div>
         </div>
 

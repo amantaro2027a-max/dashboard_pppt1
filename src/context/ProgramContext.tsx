@@ -278,6 +278,31 @@ function sanitizeData<T extends Record<string, any>>(obj: T): T {
 
 function sanitizeProgramExpenditure(p: ProgramItem): ProgramItem {
   const status = (p.statusProgram || '').trim().toUpperCase();
+
+  // REQUIREMENT: Bila status program dikemaskini sebagai BATAL, jadikan semua nilai (RM) setiap OS ialah 0.00.
+  // Pecahan OS (seperti BK65) = 0.00, Bahagian BELANJA SEBENAR = 0.00, Bahagian PENJIMATAN = 0.00
+  if (status === 'BATAL') {
+    return {
+      ...p,
+      namaProgram: (p.namaProgram || '').toUpperCase(),
+      os21000: 0,
+      os24000: 0,
+      os27000: 0,
+      os29000: 0,
+      jumlahRm: 0,
+      os21000Belanja: 0,
+      os24000Belanja: 0,
+      os27000Belanja: 0,
+      os29000Belanja: 0,
+      jumlahBelanjaRm: 0,
+      os21000Penjimatan: 0,
+      os24000Penjimatan: 0,
+      os27000Penjimatan: 0,
+      os29000Penjimatan: 0,
+      jumlahPenjimatanRm: 0,
+    };
+  }
+
   const isSelesaiOrTanggung = status === 'SELESAI' || status === 'TANGGUNG';
   if (!isSelesaiOrTanggung) {
     return {
@@ -308,16 +333,18 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [firebaseStatus, setFirebaseStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const isInitialSyncDone = useRef(false);
 
-  // 1. Programs state (with localStorage cache fallback)
+  // 1. Programs state (with localStorage cache fallback - no sample programs)
   const [programs, setPrograms] = useState<ProgramItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_PROGRAMS);
       if (saved) {
         const parsed: ProgramItem[] = JSON.parse(saved);
-        return parsed.map(sanitizeProgramExpenditure);
+        // Exclude any old sample data (e.g. prog-001 to prog-024)
+        const clean = parsed.filter((p) => !p.id.match(/^prog-0\d\d$/));
+        return clean.map(sanitizeProgramExpenditure);
       }
     } catch {}
-    return INITIAL_PROGRAMS.map(sanitizeProgramExpenditure);
+    return [];
   });
 
   // 2. Admin Users state
@@ -393,9 +420,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (saved) {
         const parsed: Pegawai[] = JSON.parse(saved);
         return parsed.map((p) => {
-          const matchDefault = PEGAWAI_LIST.find((def) => def.id === p.id);
+          let id = p.id;
+          const match = (id || '').match(/Pegawai\s*(\d+)/i);
+          if (match) {
+            id = `IAB${String(match[1]).padStart(3, '0')}`;
+          }
+          const matchDefault = PEGAWAI_LIST.find((def) => def.id === id);
           return {
             ...p,
+            id,
+            label: `${id} (${p.nama})`,
             pusat: p.pusat || matchDefault?.pusat || PUSAT_LIST[0],
             jabatan:
               p.jabatan ||
@@ -406,7 +440,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             emel:
               p.emel ||
               matchDefault?.emel ||
-              `${p.id.toLowerCase().replace(/\s+/g, '')}@iab.moe.edu.my`,
+              `${id.toLowerCase()}@iab.moe.edu.my`,
             noHp: p.noHp || matchDefault?.noHp || '012-3456789',
           };
         });
@@ -530,27 +564,26 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         setFirebaseStatus('connected');
 
-        // 1. Live Programs Listener & Seeding
+        // 1. Live Programs Listener (Tiada data contoh asal)
         const programsCol = collection(db, 'programs');
         unsubscribePrograms = onSnapshot(
           programsCol,
           async (snapshot) => {
-            if (snapshot.empty && !isInitialSyncDone.current) {
-              // Seed initial programs to cloud Firestore
+            if (snapshot.empty) {
+              setPrograms([]);
               try {
-                const batch = writeBatch(db);
-                INITIAL_PROGRAMS.forEach((prog) => {
-                  const docRef = doc(db, 'programs', prog.id);
-                  batch.set(docRef, sanitizeData(prog));
-                });
-                await batch.commit();
-              } catch (e) {
-                handleFirestoreError(e, { operation: OperationType.CREATE, path: 'programs' });
-              }
-            } else if (!snapshot.empty) {
+                localStorage.setItem(STORAGE_PROGRAMS, JSON.stringify([]));
+              } catch {}
+            } else {
               const loaded: ProgramItem[] = [];
+              const staleSampleDocs: string[] = [];
               snapshot.forEach((docSnap) => {
                 const data = docSnap.data() as ProgramItem;
+                // Double protection: ignore any residual sample prog IDs
+                if (docSnap.id.match(/^prog-0\d\d$/)) {
+                  staleSampleDocs.push(docSnap.id);
+                  return;
+                }
                 loaded.push(
                   sanitizeProgramExpenditure({
                     ...data,
@@ -558,6 +591,18 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   })
                 );
               });
+
+              // Clean up any stale sample documents if found
+              if (staleSampleDocs.length > 0) {
+                try {
+                  const cleanupBatch = writeBatch(db);
+                  staleSampleDocs.forEach((docId) => {
+                    cleanupBatch.delete(doc(db, 'programs', docId));
+                  });
+                  await cleanupBatch.commit();
+                } catch {}
+              }
+
               setPrograms(loaded);
             }
           },
@@ -585,7 +630,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             } else if (!snapshot.empty) {
               const loaded: Pegawai[] = [];
               snapshot.forEach((docSnap) => {
-                loaded.push(docSnap.data() as Pegawai);
+                const data = docSnap.data() as Pegawai;
+                let id = data.id || docSnap.id;
+                const match = (id || '').match(/Pegawai\s*(\d+)/i);
+                if (match) {
+                  id = `IAB${String(match[1]).padStart(3, '0')}`;
+                }
+                loaded.push({
+                  ...data,
+                  id,
+                  label: `${id} (${data.nama})`,
+                });
               });
               setPegawaiList(loaded);
             }
@@ -1332,7 +1387,24 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             namaProgram: data.namaProgram !== undefined ? data.namaProgram.toUpperCase() : p.namaProgram,
             kodProgram: data.kodProgram !== undefined ? data.kodProgram.toUpperCase() : p.kodProgram,
           });
-          if (
+
+          if ((updated.statusProgram || '').trim().toUpperCase() === 'BATAL') {
+            updated.os21000 = 0;
+            updated.os24000 = 0;
+            updated.os27000 = 0;
+            updated.os29000 = 0;
+            updated.jumlahRm = 0;
+            updated.os21000Belanja = 0;
+            updated.os24000Belanja = 0;
+            updated.os27000Belanja = 0;
+            updated.os29000Belanja = 0;
+            updated.jumlahBelanjaRm = 0;
+            updated.os21000Penjimatan = 0;
+            updated.os24000Penjimatan = 0;
+            updated.os27000Penjimatan = 0;
+            updated.os29000Penjimatan = 0;
+            updated.jumlahPenjimatanRm = 0;
+          } else if (
             data.os21000 !== undefined ||
             data.os24000 !== undefined ||
             data.os27000 !== undefined ||
@@ -1502,18 +1574,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     localStorage.removeItem(STORAGE_MASTER + '_jawatan');
     localStorage.removeItem(STORAGE_PERUNTUKAN_FASA);
     localStorage.removeItem(STORAGE_SUBWARAN);
+    // Bersihkan senarai program sepenuhnya tanpa sebarang data contoh
+    setPrograms([]);
+    try {
+      localStorage.setItem(STORAGE_PROGRAMS, JSON.stringify([]));
+    } catch {}
     resetFilters();
 
-    // Re-seed to Firestore
+    // Pastikan master data kekal selaras
     try {
-      const batch = writeBatch(db);
-      INITIAL_PROGRAMS.forEach((p) => {
-        batch.set(doc(db, 'programs', p.id), sanitizeData(p));
-      });
-      PEGAWAI_LIST.forEach((peg) => {
-        batch.set(doc(db, 'pegawai', peg.id), sanitizeData(peg));
-      });
-      batch.commit();
       syncMasterDataToFirestore({
         pusatList: PUSAT_LIST,
         jabatanMap: JABATAN_MAP,
@@ -1546,10 +1615,25 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deletePegawai = (id: string) => {
+    const pegToDelete = pegawaiList.find((p) => p.id === id);
     setPegawaiList((prev) => prev.filter((p) => p.id !== id));
     deleteDoc(doc(db, 'pegawai', id)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.DELETE, path: `pegawai/${id}` });
     });
+
+    // REQUIREMENT: Bila delete data pegawai, data dalam Pengurusan ID Admin akan dihapuskan juga sekiranya sama/berkaitan.
+    if (pegToDelete) {
+      const relatedAdmins = adminUsers.filter((u) => {
+        if (u.role === 'SUPER_ADMIN' || u.id.toUpperCase() === 'AMAN') return false;
+        const idMatch = u.id.toUpperCase() === id.toUpperCase();
+        const nameMatch = u.name.trim().toLowerCase() === pegToDelete.nama.trim().toLowerCase();
+        return idMatch || nameMatch;
+      });
+
+      relatedAdmins.forEach((adm) => {
+        deleteAdminUser(adm.id);
+      });
+    }
   };
 
   const addPusat = (namaPusat: string) => {

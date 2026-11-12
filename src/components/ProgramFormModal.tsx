@@ -156,51 +156,63 @@ export const ProgramFormModal: React.FC = () => {
     return `${formatDateToMY(tarikhMula)} - ${formatDateToMY(tarikhTamat)}`;
   }, [tarikhMula, tarikhTamat]);
 
+  // Requirement: Bila status BATAL, semua nilai OS, Belanja Sebenar dan Penjimatan = 0.00
+  const isBatal = statusProgram.trim().toUpperCase() === 'BATAL';
+
   // Real-time sum of OS (Pecahan OS seperti BK65)
   const calculatedTotalRm = useMemo(() => {
+    if (isBatal) return 0;
     return (
       (Number(os21000) || 0) +
       (Number(os24000) || 0) +
       (Number(os27000) || 0) +
       (Number(os29000) || 0)
     );
-  }, [os21000, os24000, os27000, os29000]);
+  }, [os21000, os24000, os27000, os29000, isBatal]);
 
   // Is program status SELESAI or TANGGUNG?
   const isSelesaiOrTanggung =
-    statusProgram.trim().toUpperCase() === 'SELESAI' ||
-    statusProgram.trim().toUpperCase() === 'TANGGUNG';
+    !isBatal && (
+      statusProgram.trim().toUpperCase() === 'SELESAI' ||
+      statusProgram.trim().toUpperCase() === 'TANGGUNG'
+    );
 
   // Real-time sum of Belanja Sebenar
   const calculatedTotalBelanjaRm = useMemo(() => {
+    if (isBatal || !isSelesaiOrTanggung) return 0;
     return (
       (Number(os21000Belanja) || 0) +
       (Number(os24000Belanja) || 0) +
       (Number(os27000Belanja) || 0) +
       (Number(os29000Belanja) || 0)
     );
-  }, [os21000Belanja, os24000Belanja, os27000Belanja, os29000Belanja]);
+  }, [os21000Belanja, os24000Belanja, os27000Belanja, os29000Belanja, isBatal, isSelesaiOrTanggung]);
 
   // Real-time calculations of Penjimatan = Peruntukan - Belanja Sebenar
   const penjimatan21 = useMemo(() => {
+    if (isBatal) return 0;
     return Math.max(0, (Number(os21000) || 0) - (Number(os21000Belanja) || 0));
-  }, [os21000, os21000Belanja]);
+  }, [os21000, os21000Belanja, isBatal]);
 
   const penjimatan24 = useMemo(() => {
+    if (isBatal) return 0;
     return Math.max(0, (Number(os24000) || 0) - (Number(os24000Belanja) || 0));
-  }, [os24000, os24000Belanja]);
+  }, [os24000, os24000Belanja, isBatal]);
 
   const penjimatan27 = useMemo(() => {
+    if (isBatal) return 0;
     return Math.max(0, (Number(os27000) || 0) - (Number(os27000Belanja) || 0));
-  }, [os27000, os27000Belanja]);
+  }, [os27000, os27000Belanja, isBatal]);
 
   const penjimatan29 = useMemo(() => {
+    if (isBatal) return 0;
     return Math.max(0, (Number(os29000) || 0) - (Number(os29000Belanja) || 0));
-  }, [os29000, os29000Belanja]);
+  }, [os29000, os29000Belanja, isBatal]);
 
   const calculatedTotalPenjimatanRm = useMemo(() => {
+    if (isBatal) return 0;
     return penjimatan21 + penjimatan24 + penjimatan27 + penjimatan29;
-  }, [penjimatan21, penjimatan24, penjimatan27, penjimatan29]);
+  }, [penjimatan21, penjimatan24, penjimatan27, penjimatan29, isBatal]);
 
   if (!isFormOpen) return null;
 
@@ -310,23 +322,23 @@ export const ProgramFormModal: React.FC = () => {
       pusat,
       jabatan,
       sumberKewangan,
-      os21000: Number(os21000) || 0,
-      os24000: Number(os24000) || 0,
-      os27000: Number(os27000) || 0,
-      os29000: Number(os29000) || 0,
-      jumlahRm: calculatedTotalRm,
-      // BELANJA SEBENAR (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00)
-      os21000Belanja: isSelesaiOrTanggung ? Number(os21000Belanja) : 0,
-      os24000Belanja: isSelesaiOrTanggung ? Number(os24000Belanja) : 0,
-      os27000Belanja: isSelesaiOrTanggung ? Number(os27000Belanja) : 0,
-      os29000Belanja: isSelesaiOrTanggung ? Number(os29000Belanja) : 0,
-      jumlahBelanjaRm: isSelesaiOrTanggung ? calculatedTotalBelanjaRm : 0,
-      // PENJIMATAN (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00)
-      os21000Penjimatan: isSelesaiOrTanggung ? penjimatan21 : 0,
-      os24000Penjimatan: isSelesaiOrTanggung ? penjimatan24 : 0,
-      os27000Penjimatan: isSelesaiOrTanggung ? penjimatan27 : 0,
-      os29000Penjimatan: isSelesaiOrTanggung ? penjimatan29 : 0,
-      jumlahPenjimatanRm: isSelesaiOrTanggung ? calculatedTotalPenjimatanRm : 0,
+      os21000: isBatal ? 0 : (Number(os21000) || 0),
+      os24000: isBatal ? 0 : (Number(os24000) || 0),
+      os27000: isBatal ? 0 : (Number(os27000) || 0),
+      os29000: isBatal ? 0 : (Number(os29000) || 0),
+      jumlahRm: isBatal ? 0 : calculatedTotalRm,
+      // BELANJA SEBENAR (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00, BATAL ialah 0.00)
+      os21000Belanja: isBatal ? 0 : (isSelesaiOrTanggung ? Number(os21000Belanja) : 0),
+      os24000Belanja: isBatal ? 0 : (isSelesaiOrTanggung ? Number(os24000Belanja) : 0),
+      os27000Belanja: isBatal ? 0 : (isSelesaiOrTanggung ? Number(os27000Belanja) : 0),
+      os29000Belanja: isBatal ? 0 : (isSelesaiOrTanggung ? Number(os29000Belanja) : 0),
+      jumlahBelanjaRm: isBatal ? 0 : (isSelesaiOrTanggung ? calculatedTotalBelanjaRm : 0),
+      // PENJIMATAN (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00, BATAL ialah 0.00)
+      os21000Penjimatan: isBatal ? 0 : (isSelesaiOrTanggung ? penjimatan21 : 0),
+      os24000Penjimatan: isBatal ? 0 : (isSelesaiOrTanggung ? penjimatan24 : 0),
+      os27000Penjimatan: isBatal ? 0 : (isSelesaiOrTanggung ? penjimatan27 : 0),
+      os29000Penjimatan: isBatal ? 0 : (isSelesaiOrTanggung ? penjimatan29 : 0),
+      jumlahPenjimatanRm: isBatal ? 0 : (isSelesaiOrTanggung ? calculatedTotalPenjimatanRm : 0),
       statusProgram,
       tahun,
       bulan,
@@ -652,7 +664,20 @@ export const ProgramFormModal: React.FC = () => {
                 </label>
                 <select
                   value={statusProgram}
-                  onChange={(e) => setStatusProgram(e.target.value)}
+                  onChange={(e) => {
+                    const newStatus = e.target.value;
+                    setStatusProgram(newStatus);
+                    if (newStatus.trim().toUpperCase() === 'BATAL') {
+                      setOs21000(0);
+                      setOs24000(0);
+                      setOs27000(0);
+                      setOs29000(0);
+                      setOs21000Belanja(0);
+                      setOs24000Belanja(0);
+                      setOs27000Belanja(0);
+                      setOs29000Belanja(0);
+                    }
+                  }}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 font-semibold"
                 >
                   <option value="">-- Sila Pilih Status Program --</option>
@@ -675,6 +700,12 @@ export const ProgramFormModal: React.FC = () => {
                 <span className="text-slate-500 text-[11px]">Format: RM</span>
               </div>
 
+              {isBatal && (
+                <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                  Status Program BATAL: Semua pecahan OS, Belanja Sebenar dan Penjimatan ditetapkan kepada RM 0.00 secara automatik.
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-600 text-[11px] mb-1">
@@ -685,9 +716,12 @@ export const ProgramFormModal: React.FC = () => {
                     min="0"
                     step="100"
                     placeholder="0.00"
-                    value={os21000 === 0 ? '' : os21000}
+                    disabled={isBatal}
+                    value={isBatal ? 0 : (os21000 === 0 ? '' : os21000)}
                     onChange={(e) => setOs21000(e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
+                    className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 tabular-nums ${
+                      isBatal ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-900'
+                    }`}
                   />
                 </div>
 
@@ -700,9 +734,12 @@ export const ProgramFormModal: React.FC = () => {
                     min="0"
                     step="100"
                     placeholder="0.00"
-                    value={os24000 === 0 ? '' : os24000}
+                    disabled={isBatal}
+                    value={isBatal ? 0 : (os24000 === 0 ? '' : os24000)}
                     onChange={(e) => setOs24000(e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
+                    className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 tabular-nums ${
+                      isBatal ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-900'
+                    }`}
                   />
                 </div>
 
@@ -715,9 +752,12 @@ export const ProgramFormModal: React.FC = () => {
                     min="0"
                     step="100"
                     placeholder="0.00"
-                    value={os27000 === 0 ? '' : os27000}
+                    disabled={isBatal}
+                    value={isBatal ? 0 : (os27000 === 0 ? '' : os27000)}
                     onChange={(e) => setOs27000(e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
+                    className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 tabular-nums ${
+                      isBatal ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-900'
+                    }`}
                   />
                 </div>
 
@@ -730,9 +770,12 @@ export const ProgramFormModal: React.FC = () => {
                     min="0"
                     step="100"
                     placeholder="0.00"
-                    value={os29000 === 0 ? '' : os29000}
+                    disabled={isBatal}
+                    value={isBatal ? 0 : (os29000 === 0 ? '' : os29000)}
                     onChange={(e) => setOs29000(e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
+                    className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 tabular-nums ${
+                      isBatal ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-white text-slate-900'
+                    }`}
                   />
                 </div>
               </div>

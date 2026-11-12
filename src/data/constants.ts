@@ -51,9 +51,9 @@ export const JENIS_PROGRAM_LIST: string[] = [
 
 export const PEGAWAI_LIST: Pegawai[] = [
   {
-    id: 'Pegawai 1',
+    id: 'IAB001',
     nama: 'WAN AZROI BIN WAN JAMAL',
-    label: 'Pegawai 1 (WAN AZROI BIN WAN JAMAL)',
+    label: 'IAB001 (WAN AZROI BIN WAN JAMAL)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN PENGURUSAN SISTEM MAKLUMAT',
     jawatan: 'KETUA JABATAN',
@@ -61,9 +61,9 @@ export const PEGAWAI_LIST: Pegawai[] = [
     noHp: '019-3456781',
   },
   {
-    id: 'Pegawai 2',
+    id: 'IAB002',
     nama: 'SITI BINTI SAMAD',
-    label: 'Pegawai 2 (SITI BINTI SAMAD)',
+    label: 'IAB002 (SITI BINTI SAMAD)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN KECERDASAN BUATAN DAN INOVASI DIGITAL',
     jawatan: 'PENSYARAH CEMERLANG',
@@ -71,9 +71,9 @@ export const PEGAWAI_LIST: Pegawai[] = [
     noHp: '012-9876543',
   },
   {
-    id: 'Pegawai 3',
+    id: 'IAB003',
     nama: 'DR. AHMAD FAIZAL BIN MOHD',
-    label: 'Pegawai 3 (DR. AHMAD FAIZAL BIN MOHD)',
+    label: 'IAB003 (DR. AHMAD FAIZAL BIN MOHD)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN PERANCANGAN DAN SENGGARAAN ICT',
     jawatan: 'PENSYARAH KANAN',
@@ -81,9 +81,9 @@ export const PEGAWAI_LIST: Pegawai[] = [
     noHp: '013-4567890',
   },
   {
-    id: 'Pegawai 4',
+    id: 'IAB004',
     nama: 'NORLIZA BINTI HASSAN',
-    label: 'Pegawai 4 (NORLIZA BINTI HASSAN)',
+    label: 'IAB004 (NORLIZA BINTI HASSAN)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN PEMBANGUNAN DAN KELESTARIAN INSTITUSI CEMERLANG',
     jawatan: 'PENSYARAH KANAN',
@@ -91,9 +91,9 @@ export const PEGAWAI_LIST: Pegawai[] = [
     noHp: '017-2345678',
   },
   {
-    id: 'Pegawai 5',
+    id: 'IAB005',
     nama: 'MOHD RADZI BIN ISMAIL',
-    label: 'Pegawai 5 (MOHD RADZI BIN ISMAIL)',
+    label: 'IAB005 (MOHD RADZI BIN ISMAIL)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN MEMPERKASA INSTITUSI PENDIDIKAN',
     jawatan: 'PENSYARAH',
@@ -101,9 +101,9 @@ export const PEGAWAI_LIST: Pegawai[] = [
     noHp: '018-7654321',
   },
   {
-    id: 'Pegawai 6',
+    id: 'IAB006',
     nama: 'ZURAINI BINTI ABDULLAH',
-    label: 'Pegawai 6 (ZURAINI BINTI ABDULLAH)',
+    label: 'IAB006 (ZURAINI BINTI ABDULLAH)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN KONSULTANSI DAN RUNDING CARA',
     jawatan: 'KETUA PUSAT',

@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Download,
+  ShieldAlert,
 } from 'lucide-react';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
 
@@ -37,7 +38,18 @@ export const DashboardBersepaduPage: React.FC = () => {
     statusProgramList,
     fasaPeruntukanList,
     viewProgramDetail,
+    currentUser,
   } = useProgramContext();
+
+  // Super Admin Check & Page Permission Check
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const canAccess =
+    !currentUser || // Guest / public viewer can access
+    isSuperAdmin ||
+    (currentUser?.role === 'ADMIN' &&
+      (currentUser.allowedPages?.includes('DASHBOARD BERSEPADU') ||
+        !currentUser.allowedPages ||
+        currentUser.allowedPages.length === 0));
 
   // Kawalan Paparan / Collapse Modul:
   // By default:
@@ -253,6 +265,20 @@ export const DashboardBersepaduPage: React.FC = () => {
       handleOpenDrillDown('Program Komitmen LO Tertunggak (Status Tanggung)', list);
     }
   };
+
+  if (!canAccess) {
+    return (
+      <div className="bg-white border border-rose-200 rounded-2xl p-8 sm:p-12 text-center max-w-xl mx-auto my-12 shadow-xs">
+        <div className="w-14 h-14 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-rose-100">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 mb-2">Akses Terhad: Dashboard Bersepadu</h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Akaun anda tidak mempunyai kebenaran untuk melihat halaman ini. Sila hubungi Super Admin untuk mengaktifkan pilihan <strong>DASHBOARD BERSEPADU</strong> dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong> di Portal Admin.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-16">

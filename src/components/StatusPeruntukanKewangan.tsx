@@ -332,16 +332,19 @@ export const StatusPeruntukanKewangan: React.FC = () => {
 
           {/* Highlight Card: Jumlah Dibelanja Keseluruhan */}
           <div className="mt-4 pt-3 border-t border-amber-100">
-            <div className="p-3 rounded-lg bg-amber-900 text-white flex items-center justify-between shadow-xs">
+            <div className="p-3 rounded-lg bg-amber-900 text-white flex items-center justify-between shadow-xs gap-2">
               <div>
                 <span className="text-[11px] font-semibold text-amber-200 uppercase tracking-wider block">
                   Jumlah Dibelanja Keseluruhan
                 </span>
-                <span className="text-[10px] text-amber-300">
+                <span className="text-[10px] text-amber-300 block">
                   Kadar: {peratusBelanja}% pelaksanaan
                 </span>
+                <span className="text-[10px] text-amber-200/90 font-medium block mt-0.5">
+                  [Tidak termasuk Subwaran = RM {formatRM(financialStats.subwaranKeseluruhan)}]
+                </span>
               </div>
-              <div className="text-sm font-bold tabular-nums">
+              <div className="text-sm font-bold tabular-nums shrink-0 text-right">
                 RM {formatRM(financialStats.dibelanjaKeseluruhan)}
               </div>
             </div>
@@ -425,16 +428,19 @@ export const StatusPeruntukanKewangan: React.FC = () => {
 
           {/* Highlight Card: Jumlah Baki Keseluruhan */}
           <div className="mt-4 pt-3 border-t border-emerald-100">
-            <div className="p-3 rounded-lg bg-emerald-800 text-white flex items-center justify-between shadow-xs">
+            <div className="p-3 rounded-lg bg-emerald-800 text-white flex items-center justify-between shadow-xs gap-2">
               <div>
                 <span className="text-[11px] font-semibold text-emerald-200 uppercase tracking-wider block">
                   Jumlah Baki Keseluruhan
                 </span>
-                <span className="text-[10px] text-emerald-300">
+                <span className="text-[10px] text-emerald-300 block">
                   Diterima tolak Dibelanjakan
                 </span>
+                <span className="text-[10px] text-emerald-200/90 font-medium block mt-0.5">
+                  [Tidak termasuk Subwaran = RM {formatRM(financialStats.subwaranKeseluruhan)}]
+                </span>
               </div>
-              <div className="text-sm font-bold tabular-nums">
+              <div className="text-sm font-bold tabular-nums shrink-0 text-right">
                 RM {formatRM(financialStats.bakiKeseluruhan)}
               </div>
             </div>
