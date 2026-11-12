@@ -1,24 +1,35 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ChevronRight } from 'lucide-react';
+import posterImage from '../assets/poster.png';
 
 export const WelcomePage: React.FC = () => {
   const { setActiveTab } = useProgramContext();
+  const [imageError, setImageError] = useState(false);
 
   const handleEnter = () => {
     setActiveTab('dashboard');
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-0 sm:p-4 select-none overflow-x-hidden">
-      {/* Container matching poster ratio */}
-      <div className="relative w-full max-w-xl sm:max-w-md md:max-w-lg min-h-screen sm:min-h-0 sm:my-6 sm:rounded-3xl shadow-2xl overflow-hidden bg-[#07306b] flex flex-col justify-between">
-        {/* Background Image exactly as attached */}
-        <img
-          src="/assets/aistudio/IAB_PPPT_Technology_Management_Poster_61aa37fc.png"
-          alt="Selamat Datang ke Aplikasi Pengurusan Program PPPT Institut Aminuddin Baki"
-          className="w-full h-auto object-cover pointer-events-none"
-        />
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-2 sm:p-6 select-none overflow-x-hidden">
+      {/* Container matching poster ratio (full poster height and width) */}
+      <div className="relative w-full max-w-[500px] min-h-[640px] aspect-[9/13.8] rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden bg-[#07306b] flex flex-col justify-between border border-blue-900/40">
+        {/* Background Image - imported directly so Vite bundles it into assets with automatic base path */}
+        {!imageError ? (
+          <img
+            src={posterImage}
+            alt="Selamat Datang ke Aplikasi Pengurusan Program PPPT Institut Aminuddin Baki"
+            className="w-full h-full object-cover pointer-events-none absolute inset-0"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <img
+            src={`${import.meta.env.BASE_URL}assets/aistudio/IAB_PPPT_Technology_Management_Poster_61aa37fc.png`}
+            alt="Selamat Datang ke Aplikasi Pengurusan Program PPPT Institut Aminuddin Baki"
+            className="w-full h-full object-cover pointer-events-none absolute inset-0"
+          />
+        )}
 
         {/* Interactive Clickable Overlay Button positioned right over the MASUK button */}
         <div
