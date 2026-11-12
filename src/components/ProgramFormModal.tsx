@@ -11,7 +11,7 @@ import {
 } from '../data/constants';
 import { PusatType, StatusProgram, SumberKewangan } from '../types/program';
 import { calculateDaysBetween, formatDateToMY, formatRM } from '../utils/formatters';
-import { X, Save, AlertCircle, Calculator } from 'lucide-react';
+import { X, Save, AlertCircle, Calculator, Wallet } from 'lucide-react';
 
 export const ProgramFormModal: React.FC = () => {
   const {
@@ -46,6 +46,13 @@ export const ProgramFormModal: React.FC = () => {
   const [os24000, setOs24000] = useState<number>(10000);
   const [os27000, setOs27000] = useState<number>(10000);
   const [os29000, setOs29000] = useState<number>(10000);
+
+  // Bahagian Belanja Sebenar (muncul & wajib bila status = SELESAI)
+  const [os21000Belanja, setOs21000Belanja] = useState<number | ''>('');
+  const [os24000Belanja, setOs24000Belanja] = useState<number | ''>('');
+  const [os27000Belanja, setOs27000Belanja] = useState<number | ''>('');
+  const [os29000Belanja, setOs29000Belanja] = useState<number | ''>('');
+
   const [statusProgram, setStatusProgram] = useState<string>('SELESAI');
   const [catatan, setCatatan] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -75,34 +82,36 @@ export const ProgramFormModal: React.FC = () => {
       setOs24000(programToEdit.os24000);
       setOs27000(programToEdit.os27000);
       setOs29000(programToEdit.os29000);
+      setOs21000Belanja(programToEdit.os21000Belanja !== undefined ? programToEdit.os21000Belanja : '');
+      setOs24000Belanja(programToEdit.os24000Belanja !== undefined ? programToEdit.os24000Belanja : '');
+      setOs27000Belanja(programToEdit.os27000Belanja !== undefined ? programToEdit.os27000Belanja : '');
+      setOs29000Belanja(programToEdit.os29000Belanja !== undefined ? programToEdit.os29000Belanja : '');
       setStatusProgram(programToEdit.statusProgram);
       setCatatan(programToEdit.catatan || '');
     } else {
-      // Default new program values
-      const initialPusat = (isSubAdminLocked && currentUser?.pusat) ? currentUser.pusat : (pusatList[0] || PUSAT_LIST[0]);
-      const initialJabatanList = jabatanMap[initialPusat] || [];
-      const initialJabatan = isSubAdminLocked ? currentUser.jabatan! : (initialJabatanList[0] || '');
-      const firstPeg = pegawaiList[0]?.id || 'Pegawai 1';
-      const secondPeg = pegawaiList[1]?.id || 'Pegawai 2';
-
+      // REQUIREMENT: Kosongkan semua pilihan dan maklumat dalam Borang Pendaftaran Baru
       setNamaProgram('');
-      setKodProgram(`PROG-${Math.floor(100 + Math.random() * 900)}`);
-      setJenisProgram('Bengkel Kerja');
-      setTarikhMula('2026-06-02');
-      setTarikhTamat('2026-06-05');
-      setTempat('Hotel Tenera Bangi');
-      setNegeri('SELANGOR');
-      setBilanganPeserta(30);
-      setPengurusId(firstPeg);
-      setPengurusBersamaId(secondPeg);
-      setPusat(initialPusat);
-      setJabatan(initialJabatan);
-      setSumberKewangan(sumberKewanganList[0] || 'IAB – LATIHAN');
-      setOs21000(10000);
-      setOs24000(10000);
-      setOs27000(10000);
-      setOs29000(10000);
-      setStatusProgram(statusProgramList[0] || 'SELESAI');
+      setKodProgram('');
+      setJenisProgram('');
+      setTarikhMula('');
+      setTarikhTamat('');
+      setTempat('');
+      setNegeri('');
+      setBilanganPeserta(0);
+      setPengurusId('');
+      setPengurusBersamaId('');
+      setPusat(isSubAdminLocked && currentUser?.pusat ? currentUser.pusat : '');
+      setJabatan(isSubAdminLocked && currentUser?.jabatan ? currentUser.jabatan : '');
+      setSumberKewangan('');
+      setOs21000(0);
+      setOs24000(0);
+      setOs27000(0);
+      setOs29000(0);
+      setOs21000Belanja('');
+      setOs24000Belanja('');
+      setOs27000Belanja('');
+      setOs29000Belanja('');
+      setStatusProgram('');
       setCatatan('');
     }
     setErrorMsg('');
@@ -136,16 +145,18 @@ export const ProgramFormModal: React.FC = () => {
     }
   };
 
-  // Calculate days & tempoh
+  // Calculate days & tempoh safely
   const calculatedDays = useMemo(() => {
+    if (!tarikhMula || !tarikhTamat) return 0;
     return calculateDaysBetween(tarikhMula, tarikhTamat);
   }, [tarikhMula, tarikhTamat]);
 
   const calculatedTempoh = useMemo(() => {
+    if (!tarikhMula || !tarikhTamat) return '-';
     return `${formatDateToMY(tarikhMula)} - ${formatDateToMY(tarikhTamat)}`;
   }, [tarikhMula, tarikhTamat]);
 
-  // Real-time sum of OS
+  // Real-time sum of OS (Pecahan OS seperti BK65)
   const calculatedTotalRm = useMemo(() => {
     return (
       (Number(os21000) || 0) +
@@ -155,10 +166,61 @@ export const ProgramFormModal: React.FC = () => {
     );
   }, [os21000, os24000, os27000, os29000]);
 
+  // Is program status SELESAI or TANGGUNG?
+  const isSelesaiOrTanggung =
+    statusProgram.trim().toUpperCase() === 'SELESAI' ||
+    statusProgram.trim().toUpperCase() === 'TANGGUNG';
+
+  // Real-time sum of Belanja Sebenar
+  const calculatedTotalBelanjaRm = useMemo(() => {
+    return (
+      (Number(os21000Belanja) || 0) +
+      (Number(os24000Belanja) || 0) +
+      (Number(os27000Belanja) || 0) +
+      (Number(os29000Belanja) || 0)
+    );
+  }, [os21000Belanja, os24000Belanja, os27000Belanja, os29000Belanja]);
+
+  // Real-time calculations of Penjimatan = Peruntukan - Belanja Sebenar
+  const penjimatan21 = useMemo(() => {
+    return Math.max(0, (Number(os21000) || 0) - (Number(os21000Belanja) || 0));
+  }, [os21000, os21000Belanja]);
+
+  const penjimatan24 = useMemo(() => {
+    return Math.max(0, (Number(os24000) || 0) - (Number(os24000Belanja) || 0));
+  }, [os24000, os24000Belanja]);
+
+  const penjimatan27 = useMemo(() => {
+    return Math.max(0, (Number(os27000) || 0) - (Number(os27000Belanja) || 0));
+  }, [os27000, os27000Belanja]);
+
+  const penjimatan29 = useMemo(() => {
+    return Math.max(0, (Number(os29000) || 0) - (Number(os29000Belanja) || 0));
+  }, [os29000, os29000Belanja]);
+
+  const calculatedTotalPenjimatanRm = useMemo(() => {
+    return penjimatan21 + penjimatan24 + penjimatan27 + penjimatan29;
+  }, [penjimatan21, penjimatan24, penjimatan27, penjimatan29]);
+
   if (!isFormOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Guard: Hanya Super Admin boleh edit program berstatus SELESAI dan TANGGUNG
+    if (programToEdit) {
+      const editStatus = programToEdit.statusProgram.toUpperCase();
+      if (
+        (editStatus === 'SELESAI' || editStatus === 'TANGGUNG') &&
+        currentUser?.role !== 'SUPER_ADMIN'
+      ) {
+        setErrorMsg(
+          'Program berstatus SELESAI dan TANGGUNG telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.'
+        );
+        return;
+      }
+    }
+
     if (!namaProgram.trim()) {
       setErrorMsg('Sila masukkan Nama Program.');
       return;
@@ -167,13 +229,60 @@ export const ProgramFormModal: React.FC = () => {
       setErrorMsg('Sila masukkan Kod Program.');
       return;
     }
+    if (!pusat) {
+      setErrorMsg('Sila pilih Pusat.');
+      return;
+    }
+    if (!jabatan) {
+      setErrorMsg('Sila pilih Jabatan.');
+      return;
+    }
+    if (!jenisProgram) {
+      setErrorMsg('Sila pilih Jenis Program.');
+      return;
+    }
+    if (!pengurusId) {
+      setErrorMsg('Sila pilih Pengurus.');
+      return;
+    }
+    if (!tarikhMula || !tarikhTamat) {
+      setErrorMsg('Sila pilih Tarikh Mula dan Tarikh Tamat.');
+      return;
+    }
     if (!tempat.trim()) {
       setErrorMsg('Sila masukkan Tempat / Lokasi Program.');
       return;
     }
-    if (pengurusId === pengurusBersamaId) {
+    if (!negeri) {
+      setErrorMsg('Sila pilih Negeri.');
+      return;
+    }
+    if (!sumberKewangan) {
+      setErrorMsg('Sila pilih Sumber Kewangan.');
+      return;
+    }
+    if (!statusProgram) {
+      setErrorMsg('Sila pilih Status Program.');
+      return;
+    }
+    if (pengurusBersamaId && pengurusId === pengurusBersamaId) {
       setErrorMsg('Pengurus dan Pengurus Bersama tidak boleh merupakan pegawai yang sama.');
       return;
+    }
+
+    // REQUIREMENT: Apabila STATUS PROGRAM = SELESAI atau TANGGUNG dipilih, Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi
+    if (isSelesaiOrTanggung) {
+      if (
+        os21000Belanja === '' ||
+        os24000Belanja === '' ||
+        os27000Belanja === '' ||
+        os29000Belanja === ''
+      ) {
+        setErrorMsg(
+          `Status Program adalah ${statusProgram.toUpperCase()}. Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi.`
+        );
+        return;
+      }
     }
 
     const pengurusObj = pegawaiList.find((p) => p.id === pengurusId);
@@ -206,6 +315,18 @@ export const ProgramFormModal: React.FC = () => {
       os27000: Number(os27000) || 0,
       os29000: Number(os29000) || 0,
       jumlahRm: calculatedTotalRm,
+      // BELANJA SEBENAR (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00)
+      os21000Belanja: isSelesaiOrTanggung ? Number(os21000Belanja) : 0,
+      os24000Belanja: isSelesaiOrTanggung ? Number(os24000Belanja) : 0,
+      os27000Belanja: isSelesaiOrTanggung ? Number(os27000Belanja) : 0,
+      os29000Belanja: isSelesaiOrTanggung ? Number(os29000Belanja) : 0,
+      jumlahBelanjaRm: isSelesaiOrTanggung ? calculatedTotalBelanjaRm : 0,
+      // PENJIMATAN (Untuk status selain SELESAI dan TANGGUNG by default ialah 0.00)
+      os21000Penjimatan: isSelesaiOrTanggung ? penjimatan21 : 0,
+      os24000Penjimatan: isSelesaiOrTanggung ? penjimatan24 : 0,
+      os27000Penjimatan: isSelesaiOrTanggung ? penjimatan27 : 0,
+      os29000Penjimatan: isSelesaiOrTanggung ? penjimatan29 : 0,
+      jumlahPenjimatanRm: isSelesaiOrTanggung ? calculatedTotalPenjimatanRm : 0,
       statusProgram,
       tahun,
       bulan,
@@ -238,7 +359,7 @@ export const ProgramFormModal: React.FC = () => {
               {programToEdit ? 'Kemaskini Rekod' : 'Borang Pendaftaran Baru'}
             </span>
             <h3 className="text-base font-bold text-white tracking-tight">
-              {programToEdit ? 'Kemaskini Maklumat Program' : 'Daftar Program Pusat PPPT / PKPOP'}
+              {programToEdit ? 'Kemaskini Maklumat Program' : 'Daftar Program Pusat'}
             </h3>
           </div>
           <button
@@ -312,6 +433,7 @@ export const ProgramFormModal: React.FC = () => {
                     isSubAdminLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
                   }`}
                 >
+                  <option value="">-- Sila Pilih Pusat --</option>
                   {pusatList.map((p) => (
                     <option key={p} value={p}>
                       {p}
@@ -337,6 +459,7 @@ export const ProgramFormModal: React.FC = () => {
                     isSubAdminLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
                   }`}
                 >
+                  <option value="">-- Sila Pilih Jabatan --</option>
                   {(jabatanMap[pusat] || []).map((j) => (
                     <option key={j} value={j}>
                       {j}
@@ -357,6 +480,7 @@ export const ProgramFormModal: React.FC = () => {
                   onChange={(e) => setJenisProgram(e.target.value)}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
                 >
+                  <option value="">-- Sila Pilih Jenis Program --</option>
                   {JENIS_PROGRAM_LIST.map((jp) => (
                     <option key={jp} value={jp}>
                       {jp}
@@ -373,7 +497,8 @@ export const ProgramFormModal: React.FC = () => {
                   type="number"
                   min="1"
                   required
-                  value={bilanganPeserta}
+                  value={bilanganPeserta || ''}
+                  placeholder="0"
                   onChange={(e) => setBilanganPeserta(Number(e.target.value))}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
                 />
@@ -391,6 +516,7 @@ export const ProgramFormModal: React.FC = () => {
                   onChange={(e) => handlePengurusChange(e.target.value)}
                   className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
                 >
+                  <option value="">-- Sila Pilih Pengurus --</option>
                   {pegawaiList.map((peg) => (
                     <option key={peg.id} value={peg.id}>
                       {peg.id} - {peg.nama}
@@ -401,13 +527,14 @@ export const ProgramFormModal: React.FC = () => {
 
               <div>
                 <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Pengurus Bersama (Kecuali {pengurusId}) *
+                  Pengurus Bersama (Kecuali {pengurusId || 'Pengurus'})
                 </label>
                 <select
                   value={pengurusBersamaId}
                   onChange={(e) => setPengurusBersamaId(e.target.value)}
                   className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
                 >
+                  <option value="">-- Sila Pilih Pengurus Bersama --</option>
                   {availablePengurusBersama.map((peg) => (
                     <option key={peg.id} value={peg.id}>
                       {peg.id} - {peg.nama}
@@ -489,6 +616,7 @@ export const ProgramFormModal: React.FC = () => {
                   onChange={(e) => setNegeri(e.target.value)}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
                 >
+                  <option value="">-- Sila Pilih Negeri --</option>
                   {NEGERI_LIST.map((neg) => (
                     <option key={neg} value={neg}>
                       {neg}
@@ -509,6 +637,7 @@ export const ProgramFormModal: React.FC = () => {
                   onChange={(e) => setSumberKewangan(e.target.value)}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
                 >
+                  <option value="">-- Sila Pilih Sumber Kewangan --</option>
                   {sumberKewanganList.map((sk) => (
                     <option key={sk} value={sk}>
                       {sk}
@@ -526,6 +655,7 @@ export const ProgramFormModal: React.FC = () => {
                   onChange={(e) => setStatusProgram(e.target.value)}
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 font-semibold"
                 >
+                  <option value="">-- Sila Pilih Status Program --</option>
                   {statusProgramList.map((sp) => (
                     <option key={sp} value={sp}>
                       {sp}
@@ -535,12 +665,12 @@ export const ProgramFormModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 8: Pecahan OS Financial Codes */}
+            {/* Row 8: Pecahan OS (seperti BK65) */}
             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                 <span className="font-bold text-slate-900 uppercase tracking-wider text-xs flex items-center gap-1.5">
                   <Calculator className="w-4 h-4 text-slate-700" />
-                  <span>Pecahan Objek Sebagai (OS) & Pengiraan Automatik</span>
+                  <span>Pecahan OS (seperti BK65)</span>
                 </span>
                 <span className="text-slate-500 text-[11px]">Format: RM</span>
               </div>
@@ -554,8 +684,9 @@ export const ProgramFormModal: React.FC = () => {
                     type="number"
                     min="0"
                     step="100"
-                    value={os21000}
-                    onChange={(e) => setOs21000(Number(e.target.value))}
+                    placeholder="0.00"
+                    value={os21000 === 0 ? '' : os21000}
+                    onChange={(e) => setOs21000(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
                   />
                 </div>
@@ -568,8 +699,9 @@ export const ProgramFormModal: React.FC = () => {
                     type="number"
                     min="0"
                     step="100"
-                    value={os24000}
-                    onChange={(e) => setOs24000(Number(e.target.value))}
+                    placeholder="0.00"
+                    value={os24000 === 0 ? '' : os24000}
+                    onChange={(e) => setOs24000(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
                   />
                 </div>
@@ -582,8 +714,9 @@ export const ProgramFormModal: React.FC = () => {
                     type="number"
                     min="0"
                     step="100"
-                    value={os27000}
-                    onChange={(e) => setOs27000(Number(e.target.value))}
+                    placeholder="0.00"
+                    value={os27000 === 0 ? '' : os27000}
+                    onChange={(e) => setOs27000(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
                   />
                 </div>
@@ -596,8 +729,9 @@ export const ProgramFormModal: React.FC = () => {
                     type="number"
                     min="0"
                     step="100"
-                    value={os29000}
-                    onChange={(e) => setOs29000(Number(e.target.value))}
+                    placeholder="0.00"
+                    value={os29000 === 0 ? '' : os29000}
+                    onChange={(e) => setOs29000(e.target.value === '' ? 0 : Number(e.target.value))}
                     className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900 tabular-nums"
                   />
                 </div>
@@ -613,6 +747,194 @@ export const ProgramFormModal: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* REQUIREMENT: 2 BAHAGIAN BAHARU (BELANJA SEBENAR & PENJIMATAN) */}
+            {/* By default: HIDE. Apabila STATUS PROGRAM = SELESAI atau TANGGUNG dipilih, muncul & wajib diisi */}
+            {isSelesaiOrTanggung && (
+              <>
+                {/* Bahagian 1: BELANJA SEBENAR */}
+                <div className="p-4 bg-emerald-50/60 rounded-lg border-2 border-emerald-300 space-y-3 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-emerald-200">
+                    <div className="flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4 text-emerald-700" />
+                      <span className="font-bold text-emerald-950 uppercase tracking-wider text-xs">
+                        Bahagian BELANJA SEBENAR *
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-200/80 text-emerald-900 w-fit">
+                      Wajib Diisi (Status: {statusProgram.toUpperCase()})
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-emerald-800">
+                    Sila masukkan amaun perbelanjaan sebenar bagi setiap Objek Sebagai (OS).
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 text-[11px] mb-1">
+                        OS21000 Belanja Sebenar (RM) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        required
+                        placeholder="0.00"
+                        value={os21000Belanja}
+                        onChange={(e) =>
+                          setOs21000Belanja(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-full py-2 px-3 bg-white border border-emerald-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-900 font-semibold tabular-nums"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 text-[11px] mb-1">
+                        OS24000 Belanja Sebenar (RM) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        required
+                        placeholder="0.00"
+                        value={os24000Belanja}
+                        onChange={(e) =>
+                          setOs24000Belanja(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-full py-2 px-3 bg-white border border-emerald-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-900 font-semibold tabular-nums"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 text-[11px] mb-1">
+                        OS27000 Belanja Sebenar (RM) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        required
+                        placeholder="0.00"
+                        value={os27000Belanja}
+                        onChange={(e) =>
+                          setOs27000Belanja(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-full py-2 px-3 bg-white border border-emerald-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-900 font-semibold tabular-nums"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 text-[11px] mb-1">
+                        OS29000 Belanja Sebenar (RM) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        required
+                        placeholder="0.00"
+                        value={os29000Belanja}
+                        onChange={(e) =>
+                          setOs29000Belanja(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-full py-2 px-3 bg-white border border-emerald-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-700 text-slate-900 font-semibold tabular-nums"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Jumlah Belanja Sebenar */}
+                  <div className="flex items-center justify-between p-3 bg-emerald-900 text-white rounded-md mt-2">
+                    <span className="font-semibold text-xs tracking-wide">
+                      JUMLAH BELANJA SEBENAR (RM)
+                    </span>
+                    <span className="text-base font-bold tabular-nums">
+                      RM {formatRM(calculatedTotalBelanjaRm)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bahagian 2: PENJIMATAN */}
+                <div className="p-4 bg-amber-50/70 rounded-lg border-2 border-amber-300 space-y-3 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-amber-200">
+                    <div className="flex items-center gap-1.5">
+                      <Calculator className="w-4 h-4 text-amber-700" />
+                      <span className="font-bold text-amber-950 uppercase tracking-wider text-xs">
+                        Bahagian PENJIMATAN *
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-200 text-amber-900 w-fit">
+                      Pengiraan Automatik (Peruntukan - Belanja Sebenar)
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-amber-800">
+                    Jumlah penjimatan dikira secara automatik berdasarkan perbezaan antara Peruntukan Diterima dan Belanja Sebenar.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-2.5 bg-white rounded-md border border-amber-200">
+                      <span className="block text-slate-500 text-[10px] uppercase font-semibold">
+                        OS21000 Penjimatan (RM)
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 block mt-1 tabular-nums">
+                        RM {formatRM(penjimatan21)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Peruntukan: RM {formatRM(Number(os21000) || 0)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-white rounded-md border border-amber-200">
+                      <span className="block text-slate-500 text-[10px] uppercase font-semibold">
+                        OS24000 Penjimatan (RM)
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 block mt-1 tabular-nums">
+                        RM {formatRM(penjimatan24)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Peruntukan: RM {formatRM(Number(os24000) || 0)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-white rounded-md border border-amber-200">
+                      <span className="block text-slate-500 text-[10px] uppercase font-semibold">
+                        OS27000 Penjimatan (RM)
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 block mt-1 tabular-nums">
+                        RM {formatRM(penjimatan27)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Peruntukan: RM {formatRM(Number(os27000) || 0)}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 bg-white rounded-md border border-amber-200">
+                      <span className="block text-slate-500 text-[10px] uppercase font-semibold">
+                        OS29000 Penjimatan (RM)
+                      </span>
+                      <span className="text-sm font-bold text-slate-900 block mt-1 tabular-nums">
+                        RM {formatRM(penjimatan29)}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Peruntukan: RM {formatRM(Number(os29000) || 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Jumlah Penjimatan */}
+                  <div className="flex items-center justify-between p-3 bg-amber-900 text-white rounded-md mt-2">
+                    <span className="font-semibold text-xs tracking-wide">
+                      JUMLAH PENJIMATAN (RM)
+                    </span>
+                    <span className="text-base font-bold tabular-nums">
+                      RM {formatRM(calculatedTotalPenjimatanRm)}
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Row 9: Catatan Tambahan */}
             <div>

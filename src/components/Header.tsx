@@ -1,17 +1,51 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
-import { LayoutDashboard, ListFilter, ShieldCheck, Download, RotateCcw, LogOut, LogIn, User } from 'lucide-react';
+import {
+  Home,
+  LayoutDashboard,
+  ListFilter,
+  ShieldCheck,
+  RotateCcw,
+  LogOut,
+  Wallet,
+  CreditCard,
+  Share2,
+  Scale,
+  Coins,
+  ChevronDown,
+  Check,
+  BarChart2,
+} from 'lucide-react';
 
 export const Header: React.FC = () => {
   const {
     activeTab,
     setActiveTab,
-    setIsExportOpen,
     resetToDefaultData,
     filteredPrograms,
     currentUser,
     logout,
+    firebaseStatus,
   } = useProgramContext();
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
@@ -30,12 +64,48 @@ export const Header: React.FC = () => {
               }}
               className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-slate-700"
             >
-              DASHBOARD PUSAT PPPT
+              DASHBOARD PUSAT
             </a>
+
+            {/* Firebase Live Cloud Database indicator */}
+            <div
+              title={
+                firebaseStatus === 'connected'
+                  ? 'Pangkalan data awan Firebase Firestore disambung & diselaraskan'
+                  : firebaseStatus === 'connecting'
+                  ? 'Menyambung ke pangkalan data awan Firebase...'
+                  : 'Pangkalan data mod simpanan tempatan aktif'
+              }
+              className="hidden lg:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-700 select-none"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  firebaseStatus === 'connected'
+                    ? 'bg-emerald-500 shadow-xs ring-2 ring-emerald-200'
+                    : firebaseStatus === 'connecting'
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-slate-400'
+                }`}
+              />
+              <span>{firebaseStatus === 'connected' ? 'Firebase Firestore: Aktif' : firebaseStatus === 'connecting' ? 'Firebase: Menyambung...' : 'Firebase: Tempatan'}</span>
+            </div>
           </div>
 
-          {/* Zone 2: Navigation Links (Page 1, Page 2, Page 3: Admin) */}
+          {/* Zone 2: Navigation Links (Dashboard, Perincian, Admin) */}
           <nav className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              onClick={() => setActiveTab('welcome')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                activeTab === 'welcome'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Laman Selamat Datang Utama"
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>Utama</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('dashboard')}
               className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
@@ -45,7 +115,20 @@ export const Header: React.FC = () => {
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard Program Pusat</span>
+              <span>Dashboard Program</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('bersepadu')}
+              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+                activeTab === 'bersepadu'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+              title="Dashboard Bersepadu & Analitik Eksekutif PPPT"
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-blue-500" />
+              <span>Dashboard Bersepadu</span>
             </button>
 
             <button
@@ -78,26 +161,199 @@ export const Header: React.FC = () => {
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-              <span>Page 3: Admin</span>
+              <span>Admin</span>
               {currentUser && (
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Sesi Aktif" />
               )}
             </button>
+
+            {/* Menu Drop Down List Page selepas Admin: Peruntukan, Perbelanjaan, Subwaran, Baki Peruntukan */}
+            {(() => {
+              const isSuper = currentUser?.role === 'SUPER_ADMIN';
+              const userAllowed = isSuper
+                ? ['PERUNTUKAN', 'PERBELANJAAN', 'SUBWARAN', 'BAKI PERUNTUKAN']
+                : (currentUser?.allowedPages || []);
+
+              const canPeruntukan = userAllowed.includes('PERUNTUKAN');
+              const canPerbelanjaan = userAllowed.includes('PERBELANJAAN');
+              const canSubwaran = userAllowed.includes('SUBWARAN');
+              const canBaki = userAllowed.includes('BAKI PERUNTUKAN');
+              const hasAnyFinancePage = userAllowed.length > 0;
+
+              if (!hasAnyFinancePage) return null;
+
+              return (
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                      ['peruntukan', 'perbelanjaan', 'subwaran', 'baki'].includes(activeTab)
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-300'
+                    }`}
+                  >
+                    <Coins className="w-3.5 h-3.5 text-amber-400" />
+                    <span>
+                      {activeTab === 'peruntukan'
+                        ? 'Peruntukan'
+                        : activeTab === 'perbelanjaan'
+                        ? 'Perbelanjaan'
+                        : activeTab === 'subwaran'
+                        ? 'Subwaran'
+                        : activeTab === 'baki'
+                        ? 'Baki Peruntukan'
+                        : 'Pengurusan Kewangan'}
+                    </span>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider text-white ${
+                        isSuper ? 'bg-purple-600' : 'bg-blue-600'
+                      }`}
+                    >
+                      {isSuper ? 'Super Admin' : 'Admin'}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                        isMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isMenuOpen && (
+                    <div className="absolute right-0 sm:left-0 sm:right-auto mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100">
+                      <div className="px-3.5 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>{isSuper ? 'Menu Super Admin' : 'Menu Kewangan Diberi Akses'}</span>
+                        <span className="text-purple-600 font-mono text-[9px]">
+                          {userAllowed.length} MODUL
+                        </span>
+                      </div>
+
+                      {/* 1. Peruntukan */}
+                      {canPeruntukan && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('peruntukan');
+                            setIsMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
+                            activeTab === 'peruntukan'
+                              ? 'bg-purple-50 text-purple-900 font-bold'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                              <Wallet className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900">Peruntukan</div>
+                              <div className="text-[10px] text-slate-400">Pengurusan agihan peruntukan fasa</div>
+                            </div>
+                          </div>
+                          {activeTab === 'peruntukan' && (
+                            <Check className="w-4 h-4 text-purple-600 shrink-0" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* 2. Perbelanjaan */}
+                      {canPerbelanjaan && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('perbelanjaan');
+                            setIsMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
+                            activeTab === 'perbelanjaan'
+                              ? 'bg-teal-50 text-teal-900 font-bold'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                              <CreditCard className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900">Perbelanjaan</div>
+                              <div className="text-[10px] text-slate-400">Pemantauan belanja sebenar program</div>
+                            </div>
+                          </div>
+                          {activeTab === 'perbelanjaan' && (
+                            <Check className="w-4 h-4 text-teal-600 shrink-0" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* 3. Subwaran */}
+                      {canSubwaran && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('subwaran');
+                            setIsMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
+                            activeTab === 'subwaran'
+                              ? 'bg-amber-50 text-amber-900 font-bold'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                              <Share2 className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900">Subwaran</div>
+                              <div className="text-[10px] text-slate-400">Agihan sub waran ke cawangan/PTJ luar</div>
+                            </div>
+                          </div>
+                          {activeTab === 'subwaran' && (
+                            <Check className="w-4 h-4 text-amber-600 shrink-0" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* 4. Baki Peruntukan */}
+                      {canBaki && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('baki');
+                            setIsMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
+                            activeTab === 'baki'
+                              ? 'bg-blue-50 text-blue-900 font-bold'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                              <Scale className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-900">Baki Peruntukan</div>
+                              <div className="text-[10px] text-slate-400">Peruntukan − Belanja − Subwaran</div>
+                            </div>
+                          </div>
+                          {activeTab === 'baki' && (
+                            <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </nav>
 
           {/* Zone 3: Primary Action Zone */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setIsExportOpen(true)}
-              title="Eksport data ke fail CSV atau cetak format rasmi"
-              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors whitespace-nowrap"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
-              <span>Eksport</span>
-            </button>
-
-            {/* Admin User Status / Shortcut */}
-            {currentUser ? (
+            {/* Admin User Status (Hanya dipaparkan jika log masuk) */}
+            {currentUser && (
               <div className="flex items-center gap-2">
                 <div className="hidden lg:flex flex-col items-end text-right">
                   <span className="text-[11px] font-bold text-slate-900 leading-tight">
@@ -108,29 +364,22 @@ export const Header: React.FC = () => {
                   </span>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    logout();
+                    setActiveTab('dashboard');
+                  }}
                   title="Log Keluar dari akaun Admin"
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Log Keluar</span>
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setActiveTab('admin')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap"
-              >
-                <LogIn className="w-3.5 h-3.5 text-slate-500" />
-                <span>Log Masuk Admin</span>
-              </button>
             )}
 
             <button
               onClick={() => {
-                if (window.confirm('Set semula semua rekod kepada data contoh rasmi asal?')) {
-                  resetToDefaultData();
-                }
+                resetToDefaultData();
               }}
               title="Set Semula Data Contoh Asal"
               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"

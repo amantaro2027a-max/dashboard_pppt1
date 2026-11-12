@@ -56,8 +56,8 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 1 (WAN AZROI BIN WAN JAMAL)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN PENGURUSAN SISTEM MAKLUMAT',
-    jawatan: 'Ketua Penolong Pengarah',
-    emel: 'wanazroi@iab.edu.my',
+    jawatan: 'KETUA JABATAN',
+    emel: 'wanazroi@iab.moe.edu.my',
     noHp: '019-3456781',
   },
   {
@@ -66,8 +66,8 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 2 (SITI BINTI SAMAD)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN KECERDASAN BUATAN DAN INOVASI DIGITAL',
-    jawatan: 'Pensyarah Cemerlang',
-    emel: 'siti.samad@iab.edu.my',
+    jawatan: 'PENSYARAH CEMERLANG',
+    emel: 'siti.samad@iab.moe.edu.my',
     noHp: '012-9876543',
   },
   {
@@ -76,8 +76,8 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 3 (DR. AHMAD FAIZAL BIN MOHD)',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN PERANCANGAN DAN SENGGARAAN ICT',
-    jawatan: 'Penolong Pengarah Kanan',
-    emel: 'ahmad.faizal@iab.edu.my',
+    jawatan: 'PENSYARAH KANAN',
+    emel: 'ahmad.faizal@iab.moe.edu.my',
     noHp: '013-4567890',
   },
   {
@@ -86,8 +86,8 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 4 (NORLIZA BINTI HASSAN)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN PEMBANGUNAN DAN KELESTARIAN INSTITUSI CEMERLANG',
-    jawatan: 'Pensyarah Kanan',
-    emel: 'norliza.hassan@iab.edu.my',
+    jawatan: 'PENSYARAH KANAN',
+    emel: 'norliza.hassan@iab.moe.edu.my',
     noHp: '017-2345678',
   },
   {
@@ -96,8 +96,8 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 5 (MOHD RADZI BIN ISMAIL)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN MEMPERKASA INSTITUSI PENDIDIKAN',
-    jawatan: 'Pegawai Latihan Kanan',
-    emel: 'radzi.ismail@iab.edu.my',
+    jawatan: 'PENSYARAH',
+    emel: 'radzi.ismail@iab.moe.edu.my',
     noHp: '018-7654321',
   },
   {
@@ -106,10 +106,21 @@ export const PEGAWAI_LIST: Pegawai[] = [
     label: 'Pegawai 6 (ZURAINI BINTI ABDULLAH)',
     pusat: 'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
     jabatan: 'JABATAN KONSULTANSI DAN RUNDING CARA',
-    jawatan: 'Konsultan Utama',
-    emel: 'zuraini@iab.edu.my',
+    jawatan: 'KETUA PUSAT',
+    emel: 'zuraini@iab.moe.edu.my',
     noHp: '019-8765432',
   },
+];
+
+export const DEFAULT_JAWATAN_LIST: string[] = [
+  'PENGARAH',
+  'TIMBALAN PENGARAH KANAN',
+  'KETUA PUSAT',
+  'KETUA JABATAN',
+  'PENSYARAH CEMERLANG',
+  'PENSYARAH KANAN',
+  'PENSYARAH',
+  'LAIN-LAIN',
 ];
 
 export const NEGERI_LIST: string[] = [

@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
 import { PUSAT_LIST, JABATAN_MAP, SUMBER_KEWANGAN_LIST, BULAN_LIST } from '../data/constants';
-import { BarChart3, PieChart, Landmark, ArrowRight, Eye } from 'lucide-react';
+import { BarChart3, PieChart, Landmark, ArrowRight, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 export const DashboardCharts: React.FC = () => {
   const { filteredPrograms, setActiveTab, viewProgramDetail, financialStats } = useProgramContext();
@@ -87,6 +87,88 @@ export const DashboardCharts: React.FC = () => {
   }, [filteredPrograms]);
 
   const maxMonthCount = Math.max(...monthlyData.map((d) => d.count), 1);
+
+  // Sorting & Display Limit state for Senarai Ringkas Program Terkini
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [displayCount, setDisplayCount] = useState<string>('5'); // Default 5 program
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortKey(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedPrograms = useMemo(() => {
+    let list = [...filteredPrograms];
+    if (sortKey) {
+      list.sort((a, b) => {
+        let valA: any = '';
+        let valB: any = '';
+
+        switch (sortKey) {
+          case 'kodNama':
+            valA = (a.namaProgram || '').toLowerCase();
+            valB = (b.namaProgram || '').toLowerCase();
+            break;
+          case 'jenis':
+            valA = (a.jenisProgram || '').toLowerCase();
+            valB = (b.jenisProgram || '').toLowerCase();
+            break;
+          case 'pusat':
+            valA = `${a.pusat || ''} ${a.jabatan || ''}`.toLowerCase();
+            valB = `${b.pusat || ''} ${b.jabatan || ''}`.toLowerCase();
+            break;
+          case 'pengurus':
+            valA = (a.pengurusNama || '').toLowerCase();
+            valB = (b.pengurusNama || '').toLowerCase();
+            break;
+          case 'tarikh':
+            valA = a.tarikhMula || '';
+            valB = b.tarikhMula || '';
+            break;
+          case 'jumlah':
+            valA = Number(a.jumlahRm) || 0;
+            valB = Number(b.jumlahRm) || 0;
+            break;
+          case 'status':
+            valA = (a.statusProgram || '').toLowerCase();
+            valB = (b.statusProgram || '').toLowerCase();
+            break;
+        }
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return list;
+  }, [filteredPrograms, sortKey, sortDirection]);
+
+  const displayedPrograms = useMemo(() => {
+    if (displayCount === 'Semua') return sortedPrograms;
+    const limit = parseInt(displayCount, 10) || 5;
+    return sortedPrograms.slice(0, limit);
+  }, [sortedPrograms, displayCount]);
+
+  const renderSortIcon = (key: string) => {
+    if (sortKey !== key) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 group-hover:opacity-100 transition-opacity" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-blue-600 font-bold" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-blue-600 font-bold" />
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -247,23 +329,42 @@ export const DashboardCharts: React.FC = () => {
 
       {/* Quick Recent Programs Table Preview with link to Page 2 */}
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-bold text-slate-900">
               Senarai Ringkas Program Terkini
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Klik pada mana-mana rekod untuk memaparkan lembaran perincian lengkap
+              Klik pada mana-mana tajuk header untuk menyusun (sort) senarai program
             </p>
           </div>
 
-          <button
-            onClick={() => setActiveTab('perincian')}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-900 hover:text-slate-700 transition-colors"
-          >
-            <span>Buka Halaman Perincian Penuh (Katalog)</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Bilangan paparan dibenarkan (5, 10, 15, 20, 50, Semua) */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+              <span className="font-semibold text-slate-700">Papar:</span>
+              <select
+                value={displayCount}
+                onChange={(e) => setDisplayCount(e.target.value)}
+                className="bg-transparent font-bold text-slate-900 focus:outline-hidden cursor-pointer"
+              >
+                <option value="5">5 Program (Default)</option>
+                <option value="10">10 Program</option>
+                <option value="15">15 Program</option>
+                <option value="20">20 Program</option>
+                <option value="50">50 Program</option>
+                <option value="Semua">Semua ({filteredPrograms.length})</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => setActiveTab('perincian')}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-900 hover:text-slate-700 transition-colors cursor-pointer"
+            >
+              <span>Buka Halaman Perincian Penuh (Katalog)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {filteredPrograms.length === 0 ? (
@@ -274,19 +375,94 @@ export const DashboardCharts: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider bg-slate-50/70">
-                  <th className="py-2.5 px-3">Kod & Nama Program</th>
-                  <th className="py-2.5 px-3">Jenis Program</th>
-                  <th className="py-2.5 px-3">Pusat & Jabatan</th>
-                  <th className="py-2.5 px-3">Pengurus</th>
-                  <th className="py-2.5 px-3">Tarikh & Tempat</th>
-                  <th className="py-2.5 px-3 text-right">Jumlah (RM)</th>
-                  <th className="py-2.5 px-3 text-center">Status</th>
+                <tr className="border-b border-slate-200 text-slate-600 text-[11px] font-bold uppercase tracking-wider bg-slate-50/70 select-none">
+                  {/* Column Bil. auto number 1, 2, 3... */}
+                  <th className="py-2.5 px-3 w-12 text-center font-bold text-slate-700">
+                    Bil.
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('kodNama')}
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Kod & Nama Program"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Kod &amp; Nama Program</span>
+                      {renderSortIcon('kodNama')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('jenis')}
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Jenis Program"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Jenis Program</span>
+                      {renderSortIcon('jenis')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('pusat')}
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Pusat & Jabatan"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Pusat &amp; Jabatan</span>
+                      {renderSortIcon('pusat')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('pengurus')}
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Pengurus Program"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Pengurus</span>
+                      {renderSortIcon('pengurus')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('tarikh')}
+                    className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Tarikh & Tempat"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Tarikh &amp; Tempat</span>
+                      {renderSortIcon('tarikh')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('jumlah')}
+                    className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Jumlah (RM)"
+                  >
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span>Jumlah (RM)</span>
+                      {renderSortIcon('jumlah')}
+                    </div>
+                  </th>
+
+                  <th
+                    onClick={() => handleSort('status')}
+                    className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-100 transition-colors group"
+                    title="Klik untuk susun Status"
+                  >
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>Status</span>
+                      {renderSortIcon('status')}
+                    </div>
+                  </th>
+
                   <th className="py-2.5 px-3 text-right">Tindakan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredPrograms.slice(0, 6).map((prog) => {
+                {displayedPrograms.map((prog, index) => {
                   const statusConfig = getStatusConfig(prog.statusProgram);
                   return (
                     <tr
@@ -294,6 +470,11 @@ export const DashboardCharts: React.FC = () => {
                       className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
                       onClick={() => viewProgramDetail(prog)}
                     >
+                      {/* Bil. auto number 1, 2, 3... */}
+                      <td className="py-3 px-3 text-center font-mono font-semibold text-slate-500">
+                        {index + 1}.
+                      </td>
+
                       <td className="py-3 px-3">
                         <div className="font-semibold text-slate-900 line-clamp-1 group-hover:text-slate-700 uppercase">
                           {prog.namaProgram.toUpperCase()}
@@ -336,7 +517,7 @@ export const DashboardCharts: React.FC = () => {
                         </div>
                       </td>
 
-                      <td className="py-3 px-3 text-right font-bold text-slate-900 tabular-nums whitespace-nowrap">
+                      <td className="py-3 px-3 text-right font-bold text-slate-900 tabular-nums whitespace-nowrap font-mono">
                         RM {formatRM(prog.jumlahRm)}
                       </td>
 
@@ -354,7 +535,7 @@ export const DashboardCharts: React.FC = () => {
                             e.stopPropagation();
                             viewProgramDetail(prog);
                           }}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-900 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded transition-colors whitespace-nowrap"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-900 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded transition-colors whitespace-nowrap cursor-pointer"
                         >
                           <Eye className="w-3 h-3" />
                           <span>Perincian</span>

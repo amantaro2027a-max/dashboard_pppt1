@@ -13,13 +13,36 @@ import { DashboardCharts } from './components/DashboardCharts';
 import { StatusPeruntukanKewangan } from './components/StatusPeruntukanKewangan';
 import { ProgramCatalog } from './components/ProgramCatalog';
 import { AdminPage } from './components/AdminPage';
+import { PeruntukanPage } from './components/PeruntukanPage';
+import { PerbelanjaanPage } from './components/PerbelanjaanPage';
+import { SubwaranPage } from './components/SubwaranPage';
+import { BakiPeruntukanPage } from './components/BakiPeruntukanPage';
 import { ProgramDetailModal } from './components/ProgramDetailModal';
 import { ProgramFormModal } from './components/ProgramFormModal';
 import { ExportModal } from './components/ExportModal';
+import { WelcomePage } from './components/WelcomePage';
+import { DashboardBersepaduPage } from './components/DashboardBersepaduPage';
 import { Landmark, ShieldCheck } from 'lucide-react';
+import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
-  const { activeTab, setActiveTab } = useProgramContext();
+  const { activeTab, setActiveTab, currentUser, pegawaiList } = useProgramContext();
+
+  const bannerInfo = React.useMemo(
+    () => getUserBannerInfo(currentUser, pegawaiList),
+    [currentUser, pegawaiList]
+  );
+
+  if (activeTab === 'welcome') {
+    return (
+      <>
+        <WelcomePage />
+        <ProgramDetailModal />
+        <ProgramFormModal />
+        <ExportModal />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
@@ -28,62 +51,65 @@ const DashboardContent: React.FC = () => {
 
         {/* Page Hero Banner */}
         <section className="bg-white border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                  <Landmark className="w-3.5 h-3.5 text-slate-700" />
-                  <span>Institut Aminuddin Baki · Kementerian Pendidikan Malaysia</span>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+              <div className="w-full">
+                {/* Baris 1: Institut Aminuddin Baki · Kementerian Pendidikan */}
+                <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-800 tracking-wide mb-1">
+                  <Landmark className="w-3.5 h-3.5 text-slate-800 shrink-0" />
+                  <span>{bannerInfo.instansi}</span>
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                  {activeTab === 'dashboard'
-                    ? 'Dashboard Program Pusat (PPPT & PKPOP)'
-                    : activeTab === 'perincian'
-                    ? 'Perincian & Katalog Program Pusat'
-                    : 'Portal Pengurusan Pentadbir (Admin)'}
-                </h1>
+
+                {/* Baris 2: Pengguna: NAMA PEGAWAI | Jawatan: JAWATAN PEGAWAI */}
+                <div className="text-xs sm:text-sm tracking-wide leading-relaxed">
+                  <span className="text-black font-black">Pengguna: </span>
+                  <span className="text-blue-600 font-black">{bannerInfo.nama}</span>
+                  <span className="text-black font-black"> | Jawatan: </span>
+                  <span className="text-blue-600 font-black">{bannerInfo.jawatan}</span>
+                </div>
+
+                {/* Baris 3: PUSAT & JABATAN: PUSAT dan JABATAN */}
+                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                  <span className="text-black font-black">PUSAT &amp; JABATAN: </span>
+                  <span className="text-blue-600 font-black">{bannerInfo.pusatDanJabatan}</span>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 mt-3">
+                  <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                    {activeTab === 'dashboard'
+                      ? 'Dashboard Interaktif Masa Kini IAB'
+                      : activeTab === 'bersepadu'
+                      ? 'Dashboard Bersepadu & Analitik Eksekutif PPPT'
+                      : activeTab === 'perincian'
+                      ? 'Perincian & Katalog Program Pusat'
+                      : activeTab === 'peruntukan'
+                      ? 'Pengurusan Peruntukan'
+                      : activeTab === 'perbelanjaan'
+                      ? 'Pemantauan Perbelanjaan Sebenar'
+                      : activeTab === 'subwaran'
+                      ? 'Pengurusan Sub Waran Peruntukan'
+                      : activeTab === 'baki'
+                      ? 'Pemantauan Baki Peruntukan Kewangan'
+                      : 'Portal Pengurusan Pentadbir (Admin)'}
+                  </h1>
                 <p className="text-xs text-slate-600 mt-1 max-w-3xl">
                   {activeTab === 'dashboard'
                     ? 'Sistem pemantauan dan analisis statistik perancangan aktiviti, sumber kewangan, dan status pelaksanaan program rasmi IAB (Mod Paparan Sahaja).'
+                    : activeTab === 'bersepadu'
+                    ? 'Portal eksekutif bersepadu: Prestasi Keseluruhan, Indikator Prestasi KPI, Risikan Kewangan (Financial Intelligence), Papan Pengumuman & Visualisasi Interaktif PPPT.'
                     : activeTab === 'perincian'
                     ? 'Katalog terperinci maklumat program, agihan peruntukan objek sebagai (OS21, OS24, OS27, OS29), dan profil pegawai pengurus (Mod Paparan Sahaja).'
+                    : activeTab === 'peruntukan'
+                    ? 'Penetapan peruntukan Fasa 1, Fasa 2 dan seterusnya mengikut Sumber Kewangan & pecahan Kod OS bagi kegunaan rasmi IAB.'
+                    : activeTab === 'perbelanjaan'
+                    ? 'Pemantauan rekod belanja sebenar (OS21, OS24, OS27, OS29) bagi program berstatus SELESAI & TANGGUNG mengikut Sumber Kewangan Induk.'
+                    : activeTab === 'subwaran'
+                    ? 'Pendaftaran dan pemantauan peruntukan yang diagihkan / disubwaran kepada PTJ Cawangan IAB, JPN, PPD, IPG, dan KV mengikut Sumber Kewangan & pecahan OS.'
+                    : activeTab === 'baki'
+                    ? 'Analisis baki peruntukan menyeluruh: Peruntukan (Page Peruntukan) − Belanja Sebenar (Page Perbelanjaan) = Penjimatan; Penjimatan − Subwaran = Baki Bersih Akhir.'
                     : 'Pusat kawalan pendaftaran & kemaskini program, pengurusan akaun ID Admin mengikut Jabatan, serta kemaskini data induk (Master Data).'}
                 </p>
-              </div>
-
-              {/* Page Segmented Switcher */}
-              <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0 self-start md:self-center gap-1">
-                <button
-                  onClick={() => setActiveTab('dashboard')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                    activeTab === 'dashboard'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Dashboard Program
-                </button>
-                <button
-                  onClick={() => setActiveTab('perincian')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                    activeTab === 'perincian'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Perincian Program
-                </button>
-                <button
-                  onClick={() => setActiveTab('admin')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                    activeTab === 'admin'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Admin</span>
-                </button>
+                </div>
               </div>
             </div>
           </div>
@@ -109,9 +135,24 @@ const DashboardContent: React.FC = () => {
               {/* Analytics & Distribution Visualisations */}
               <DashboardCharts />
             </div>
+          ) : activeTab === 'bersepadu' ? (
+            /* PAGE 2 – DASHBOARD BERSEPADU & ANALITIK EKSEKUTIF PPPT */
+            <DashboardBersepaduPage />
           ) : activeTab === 'perincian' ? (
-            /* PAGE 2 – PERINCIAN PROGRAM (VIEW ONLY) */
+            /* PAGE 3 – PERINCIAN PROGRAM (VIEW ONLY) */
             <ProgramCatalog />
+          ) : activeTab === 'peruntukan' ? (
+            /* PAGE 4 – PERUNTUKAN FASA (SUPER ADMIN) */
+            <PeruntukanPage />
+          ) : activeTab === 'perbelanjaan' ? (
+            /* PAGE 5 – PERBELANJAAN (SUPER ADMIN) */
+            <PerbelanjaanPage />
+          ) : activeTab === 'subwaran' ? (
+            /* PAGE 6 – SUBWARAN (SUPER ADMIN) */
+            <SubwaranPage />
+          ) : activeTab === 'baki' ? (
+            /* PAGE 7 – BAKI PERUNTUKAN (SUPER ADMIN) */
+            <BakiPeruntukanPage />
           ) : (
             /* PAGE 3 – ADMIN */
             <AdminPage />
@@ -128,12 +169,12 @@ const DashboardContent: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 mt-12 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800">DASHBOARD PUSAT PPPT</span>
+            <span className="font-bold text-slate-800">Dashboard Pusat IAB</span>
             <span>·</span>
             <span>Institut Aminuddin Baki (IAB)</span>
           </div>
           <div>
-            <span>Pusat Pembangunan dan Pengurusan Teknologi (PPPT) & Pusat Konsultasi (PKPOP)</span>
+            <span>Aplikasi ini dibangunkan oleh Pusat Pembangunan dan Pengurusan Teknologi (PPPT)</span>
           </div>
         </div>
       </footer>

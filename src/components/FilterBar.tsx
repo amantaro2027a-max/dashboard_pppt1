@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import {
   PUSAT_LIST,
@@ -13,7 +13,7 @@ import {
   SUMBER_KEWANGAN_LIST,
 } from '../data/constants';
 import { PusatType } from '../types/program';
-import { Search, X, Filter, SlidersHorizontal } from 'lucide-react';
+import { Search, X, Filter, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface FilterBarProps {
   showTahunBulan?: boolean;
@@ -39,13 +39,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     statusProgramList,
   } = useProgramContext();
 
-  // Dynamic Jabatan options based on selected Pusat
+  // Show/Hide state for filter controls (default: sembunyi penapis)
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Dynamic Jabatan options based on selected Pusat (Kecualikan "SEMUA JABATAN DI IAB" atau "SEMUA JABATAN")
   const availableJabatan = useMemo(() => {
+    let list: string[] = [];
     if (filters.pusat && filters.pusat in jabatanMap) {
-      return jabatanMap[filters.pusat] || [];
+      list = jabatanMap[filters.pusat] || [];
+    } else {
+      const all = Object.values(jabatanMap).flat();
+      list = Array.from(new Set(all));
     }
-    const all = Object.values(jabatanMap).flat();
-    return Array.from(new Set(all));
+    return list.filter((j) => {
+      if (!j) return false;
+      const upper = j.trim().toUpperCase();
+      return (
+        upper !== 'SEMUA JABATAN DI IAB' &&
+        upper !== 'SEMUA JABATAN' &&
+        !upper.includes('SEMUA JABATAN')
+      );
+    });
   }, [filters.pusat, jabatanMap]);
 
   // Dynamic Pengurus Bersama options excluding the currently selected Pengurus
@@ -117,6 +131,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
           {activeFilterCount > 0 && (
             <button
+              type="button"
               onClick={resetFilters}
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
             >
@@ -124,11 +139,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               <span>Set Semula</span>
             </button>
           )}
+
+          {/* Show / Hide Penapis Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors cursor-pointer select-none"
+            title={isExpanded ? 'Sembunyikan bahagian pilihan penapis' : 'Tunjukkan bahagian pilihan penapis'}
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                <span>Sembunyi Penapis</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                <span>Tunjuk Penapis</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Grid of Dropdowns */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-4">
+      {/* Grid of Dropdowns (Show / Hide) */}
+      {isExpanded && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-4 border-t border-slate-100">
         {/* 1. PUSAT (Main Tree Selection) */}
         {!hidePusatJabatan && (
           <div>
@@ -329,6 +365,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };

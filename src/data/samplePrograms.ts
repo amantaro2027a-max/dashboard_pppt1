@@ -35,6 +35,27 @@ export const INITIAL_PROGRAMS: ProgramItem[] = [
     tahun: 2026,
     bulan: 6,
     catatan: 'Program perintis integrasi kecerdasan buatan dalam pengurusan pendidikan',
+    rekodPindaan: [
+      {
+        noPindaan: 1,
+        tarikhPindaan: '04/06/2026',
+        dikemaskiniOleh: 'WAN AZROI BIN WAN JAMAL',
+        perubahan: [
+          { jenisPerubahan: 'Tarikh & Tempoh', maklumatAsal: '10/7/2026 - 13/7/2026', maklumatTerkini: '10/8/2026 - 13/8/2026' },
+          { jenisPerubahan: 'Tempat', maklumatAsal: 'KL', maklumatTerkini: 'Selangor' },
+          { jenisPerubahan: 'Bilangan Peserta', maklumatAsal: '30 orang', maklumatTerkini: '25 orang' },
+        ],
+      },
+      {
+        noPindaan: 2,
+        tarikhPindaan: '08/06/2026',
+        dikemaskiniOleh: 'SITI BINTI SAMAD',
+        perubahan: [
+          { jenisPerubahan: 'OS21000', maklumatAsal: 'RM 10,000.00', maklumatTerkini: 'RM 15,000.00' },
+          { jenisPerubahan: 'Sumber Kewangan', maklumatAsal: 'BPM', maklumatTerkini: 'BPK' },
+        ],
+      },
+    ],
   },
   {
     id: 'prog-002',
@@ -487,7 +508,7 @@ export const INITIAL_PROGRAMS: ProgramItem[] = [
     tarikhTamat: '2026-02-12',
     tempoh: '12/2/2026 - 12/2/2026',
     jumlahHari: 1,
-    tempat: 'Dewan Teater Utama, Kementerian Pendidikan Malaysia, Putrajaya',
+    tempat: 'Dewan Teater Utama, Kementerian Pendidikan, Putrajaya',
     negeri: 'W.P. PUTRAJAYA',
     bilanganPeserta: 90,
     pengurusId: 'Pegawai 5',

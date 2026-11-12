@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Programs collection - read for dashboard, write for admin operations
+    match /programs/{programId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Pegawai collection - read for dropdowns and directory, write for admin
+    match /pegawai/{pegawaiId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Admins collection - read and write for authentication & account management
+    match /admins/{adminId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Master data collection (Pusat, Jabatan, Sumber Kewangan, Status)
+    match /master_data/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

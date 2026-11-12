@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "programs": {
+      "title": "Program",
+      "description": "Program latihan dan aktiviti rasmi IAB",
+      "type": "object",
+      "properties": {
+        "namaProgram": { "type": "string" },
+        "kodProgram": { "type": "string" },
+        "jenisProgram": { "type": "string" },
+        "tarikhMula": { "type": "string" },
+        "tarikhTamat": { "type": "string" },
+        "jumlahHari": { "type": "number" },
+        "tempat": { "type": "string" },
+        "negeri": { "type": "string" },
+        "bilanganPeserta": { "type": "number" },
+        "pengurus": { "type": "string" },
+        "pengurusBersama": { "type": "string" },
+        "pusat": { "type": "string" },
+        "jabatan": { "type": "string" },
+        "sumberKewangan": { "type": "string" },
+        "status": { "type": "string" },
+        "peruntukanDiterima": { "type": "object" },
+        "peruntukanDibelanjakan": { "type": "object" },
+        "bakiPeruntukan": { "type": "object" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "pegawai": {
+      "title": "Pegawai",
+      "description": "Senarai pegawai pengurus dan pengurus bersama",
+      "type": "object",
+      "properties": {
+        "nama": { "type": "string" },
+        "pusat": { "type": "string" },
+        "jabatan": { "type": "string" },
+        "jawatan": { "type": "string" },
+        "emel": { "type": "string" },
+        "noHp": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "admins": {
+      "title": "Admin",
+      "description": "Akaun pentadbir sistem dan jabatan",
+      "type": "object",
+      "properties": {
+        "idAdmin": { "type": "string" },
+        "password": { "type": "string" },
+        "namaPegawai": { "type": "string" },
+        "pusat": { "type": "string" },
+        "jabatan": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "master_data": {
+      "title": "MasterData",
+      "description": "Konfigurasi pusat, jabatan, sumber kewangan, dan status program",
+      "type": "object",
+      "properties": {
+        "pusatList": { "type": "array" },
+        "jabatanMap": { "type": "object" },
+        "sumberKewanganList": { "type": "array" },
+        "statusList": { "type": "array" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    }
+  }
+}

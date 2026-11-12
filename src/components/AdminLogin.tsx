@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
-import { ShieldCheck, Lock, User, AlertCircle, KeyRound, Sparkles } from 'lucide-react';
+import { ShieldCheck, Lock, User, AlertCircle, KeyRound } from 'lucide-react';
 
 export const AdminLogin: React.FC = () => {
   const { login } = useProgramContext();
@@ -32,18 +32,6 @@ export const AdminLogin: React.FC = () => {
     }, 200);
   };
 
-  const handleQuickFillSuperAdmin = () => {
-    setUserId('AMAN');
-    setPassword('AMAN');
-    setErrorMessage('');
-  };
-
-  const handleQuickFillSubAdmin = () => {
-    setUserId('ADMIN_JPSM');
-    setPassword('AMAN');
-    setErrorMessage('');
-  };
-
   return (
     <div className="max-w-md mx-auto my-8">
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8">
@@ -56,7 +44,7 @@ export const AdminLogin: React.FC = () => {
             Log Masuk Portal Pengurusan Admin
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Dashboard Pusat PPPT & PKPOP · Institut Aminuddin Baki (IAB)
+            Dashboard Pusat · Institut Aminuddin Baki (IAB)
           </p>
         </div>
 
@@ -114,48 +102,6 @@ export const AdminLogin: React.FC = () => {
             <span>{isLoading ? 'Mengesahkan...' : 'Log Masuk'}</span>
           </button>
         </form>
-
-        {/* Quick Demo Credentials Assistant */}
-        <div className="mt-6 pt-5 border-t border-slate-100">
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>Akses Demonstrasi Pantas</span>
-          </div>
-
-          <div className="space-y-2">
-            <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-              <div>
-                <span className="font-bold text-slate-900 block">Super Admin (Kuasa Penuh)</span>
-                <span className="text-[11px] text-slate-500 font-mono">
-                  ID: <strong>AMAN</strong> | Kata Laluan: <strong>AMAN</strong>
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleQuickFillSuperAdmin}
-                className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                Isi Pantas
-              </button>
-            </div>
-
-            <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-              <div>
-                <span className="font-bold text-slate-900 block">Admin Jabatan (JPSM)</span>
-                <span className="text-[11px] text-slate-500 font-mono">
-                  ID: <strong>ADMIN_JPSM</strong> | Kata Laluan: <strong>AMAN</strong>
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleQuickFillSubAdmin}
-                className="px-2.5 py-1 text-[11px] font-semibold text-slate-800 bg-white border border-slate-300 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                Isi Pantas
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

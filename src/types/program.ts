@@ -55,16 +55,36 @@ export interface ProgramItem {
   os27000: number; // OS27 (RM)
   os29000: number; // OS29 (RM)
   jumlahRm: number; // Total Peruntukan Diterima RM
-  // Peruntukan Dibelanjakan
+  // Peruntukan Dibelanjakan (Belanja Sebenar)
   os21000Belanja?: number;
   os24000Belanja?: number;
   os27000Belanja?: number;
   os29000Belanja?: number;
   jumlahBelanjaRm?: number;
+  // Penjimatan (Peruntukan Diterima - Belanja Sebenar)
+  os21000Penjimatan?: number;
+  os24000Penjimatan?: number;
+  os27000Penjimatan?: number;
+  os29000Penjimatan?: number;
+  jumlahPenjimatanRm?: number;
   statusProgram: StatusProgram;
   tahun: number;
   bulan: number; // 1-12
   catatan?: string;
+  rekodPindaan?: RekodPindaanBK04[];
+}
+
+export interface ItemPerubahanBK04 {
+  jenisPerubahan: string;
+  maklumatAsal: string;
+  maklumatTerkini: string;
+}
+
+export interface RekodPindaanBK04 {
+  noPindaan: number;
+  tarikhPindaan: string;
+  dikemaskiniOleh: string;
+  perubahan: ItemPerubahanBK04[];
 }
 
 export interface ProgramFilterState {
@@ -112,6 +132,52 @@ export interface AdminUser {
   name: string; // Display name
   role: AdminRole;
   pusat?: string;
-  jabatan?: string; // Authorized department for regular admin
+  jabatan?: string; // Authorized primary department for regular admin
+  allowedJabatans?: string[]; // Multiple authorized departments
+  allowedPages?: string[]; // e.g. ['PERUNTUKAN', 'PERBELANJAAN', 'SUBWARAN', 'BAKI PERUNTUKAN']
   createdAt: string;
 }
+
+export interface OsAllocation {
+  os21000: number;
+  os24000: number;
+  os27000: number;
+  os29000: number;
+}
+
+export interface FasaPeruntukanRecord {
+  id: string; // e.g. 'fasa_1', 'fasa_2'
+  nama: string; // e.g. 'PERUNTUKAN FASA 1'
+  allocations: Record<string, OsAllocation>;
+  updatedAt?: string;
+}
+
+export type PtjOption =
+  | 'IABCGH'
+  | 'IABCU'
+  | 'IABCSWK'
+  | 'IABCSBH'
+  | 'JPN'
+  | 'PPD'
+  | 'IPG'
+  | 'KV'
+  | 'LAIN-LAIN'
+  | string;
+
+export interface SubwaranRecord {
+  id: string;
+  sumberKewangan: string;
+  namaPtj: PtjOption;
+  ptjLain?: string;
+  tarikhSubWaran: string; // YYYY-MM-DD
+  os21000: number;
+  os24000: number;
+  os27000: number;
+  os29000: number;
+  jumlah: number;
+  namaProgram: string;
+  objektif?: string;
+  pegawaiPic: string;
+  createdAt?: string;
+}
+

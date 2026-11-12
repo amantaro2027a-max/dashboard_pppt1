@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatRM } from '../utils/formatters';
 import {
@@ -14,13 +14,105 @@ import {
 } from 'lucide-react';
 
 export const StatusPeruntukanKewangan: React.FC = () => {
-  const { financialStats } = useProgramContext();
+  const {
+    fasaPeruntukanList,
+    subwaranList,
+    sumberKewanganList,
+    filteredPrograms,
+    filters,
+  } = useProgramContext();
 
-  const totalDiterima = financialStats.diterimaKeseluruhan || 1;
-  const peratusBelanja = Math.min(
-    100,
-    Math.round((financialStats.dibelanjaKeseluruhan / totalDiterima) * 100)
-  );
+  // Pengiraan tepat mengikut arahan:
+  // 1. Card PERUNTUKAN DITERIMA ambil data daripada Page PERUNTUKAN (semua fasa)
+  // 2. Card PERUNTUKAN DIBELANJAKAN ambil data daripada Page PERBELANJAAN (status: SELESAI & TANGGUNG)
+  // 3. Card BAKI PERUNTUKAN = (PERUNTUKAN DITERIMA) - (PERUNTUKAN DIBELANJAKAN) - (data daripada Page Subwaran)
+  const calc = useMemo(() => {
+    // 1. Peruntukan Diterima daripada Page Peruntukan
+    let d21 = 0, d24 = 0, d27 = 0, d29 = 0;
+    const targetSkList = filters.sumberKewangan ? [filters.sumberKewangan] : (sumberKewanganList || []);
+
+    (fasaPeruntukanList || []).forEach((fasa) => {
+      targetSkList.forEach((sk) => {
+        const alloc = fasa.allocations?.[sk];
+        if (alloc) {
+          d21 += Number(alloc.os21000) || 0;
+          d24 += Number(alloc.os24000) || 0;
+          d27 += Number(alloc.os27000) || 0;
+          d29 += Number(alloc.os29000) || 0;
+        }
+      });
+    });
+    const dKeseluruhan = d21 + d24 + d27 + d29;
+
+    // 2. Peruntukan Dibelanjakan daripada Page Perbelanjaan (Status SELESAI & TANGGUNG)
+    let b21 = 0, b24 = 0, b27 = 0, b29 = 0;
+    (filteredPrograms || []).forEach((p) => {
+      const status = (p.statusProgram || '').trim().toUpperCase();
+      if (status === 'SELESAI' || status === 'TANGGUNG') {
+        b21 += Number(p.os21000Belanja) || 0;
+        b24 += Number(p.os24000Belanja) || 0;
+        b27 += Number(p.os27000Belanja) || 0;
+        b29 += Number(p.os29000Belanja) || 0;
+      }
+    });
+    const bKeseluruhan = b21 + b24 + b27 + b29;
+
+    // 3. Data daripada Page Subwaran (rujukan)
+    let s21 = 0, s24 = 0, s27 = 0, s29 = 0;
+    (subwaranList || []).forEach((sub) => {
+      if (!filters.sumberKewangan || sub.sumberKewangan === filters.sumberKewangan) {
+        s21 += Number(sub.os21000) || 0;
+        s24 += Number(sub.os24000) || 0;
+        s27 += Number(sub.os27000) || 0;
+        s29 += Number(sub.os29000) || 0;
+      }
+    });
+    const sKeseluruhan = s21 + s24 + s27 + s29;
+
+    // 4. Baki Peruntukan = Peruntukan Diterima - Peruntukan Dibelanjakan
+    // (Jika Belanja adalah RM0.00, Baki Peruntukan tepat sama dengan Peruntukan Diterima)
+    const baki21 = d21 - b21;
+    const baki24 = d24 - b24;
+    const baki27 = d27 - b27;
+    const baki29 = d29 - b29;
+    const bakiKeseluruhan = dKeseluruhan - bKeseluruhan;
+
+    const peratusBelanja = Math.min(
+      100,
+      Math.round((bKeseluruhan / (dKeseluruhan || 1)) * 100)
+    );
+
+    return {
+      diterimaOs21: d21,
+      diterimaOs24: d24,
+      diterimaOs27: d27,
+      diterimaOs29: d29,
+      diterimaKeseluruhan: dKeseluruhan,
+
+      dibelanjaOs21: b21,
+      dibelanjaOs24: b24,
+      dibelanjaOs27: b27,
+      dibelanjaOs29: b29,
+      dibelanjaKeseluruhan: bKeseluruhan,
+
+      subwaranOs21: s21,
+      subwaranOs24: s24,
+      subwaranOs27: s27,
+      subwaranOs29: s29,
+      subwaranKeseluruhan: sKeseluruhan,
+
+      bakiOs21: baki21,
+      bakiOs24: baki24,
+      bakiOs27: baki27,
+      bakiOs29: baki29,
+      bakiKeseluruhan: bakiKeseluruhan,
+
+      peratusBelanja,
+    };
+  }, [fasaPeruntukanList, subwaranList, sumberKewanganList, filteredPrograms, filters]);
+
+  const financialStats = calc;
+  const peratusBelanja = calc.peratusBelanja;
 
   return (
     <div className="bg-emerald-50/70 border border-emerald-200/90 rounded-xl p-5 sm:p-6 mb-8 shadow-xs">
