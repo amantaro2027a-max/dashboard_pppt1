@@ -11,7 +11,6 @@ import {
   CreditCard,
   Share2,
   Scale,
-  Coins,
   ChevronDown,
   Check,
   BarChart2,
@@ -31,7 +30,7 @@ export const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click or ESC key
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -39,34 +38,155 @@ export const Header: React.FC = () => {
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMenuOpen(false);
+      }
+    };
+
     if (isMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isMenuOpen]);
 
-  return (
-    <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-4 h-16">
-          {/* Zone 1: Single text element Brand wordmark */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm tracking-wider shadow-sm">
-              IAB
-            </div>
-            <a
-              href="#dashboard"
-              onClick={(e) => {
-                e.preventDefault();
-                setActiveTab('dashboard');
-              }}
-              className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 hover:text-slate-700"
-            >
-              DASHBOARD PUSAT
-            </a>
+  // Dashboard pages list & Permissions Filter
+  const isDashboardActive = activeTab !== 'welcome';
+  const isSuper = currentUser?.role === 'SUPER_ADMIN';
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const allowedPages = currentUser?.allowedPages || [];
 
+  const allMenuItems = [
+    {
+      id: 'dashboard',
+      label: 'Dashboard Program',
+      desc: 'Pemantauan statistik perancangan & status program',
+      icon: LayoutDashboard,
+      iconBg: 'bg-blue-100 text-blue-700',
+    },
+    {
+      id: 'bersepadu',
+      label: 'Dashboard Bersepadu',
+      desc: 'Analitik eksekutif & risikan bersepadu PPPT',
+      icon: BarChart2,
+      iconBg: 'bg-indigo-100 text-indigo-700',
+    },
+    {
+      id: 'perincian',
+      label: 'Perincian Program',
+      desc: 'Katalog terperinci maklumat program & kod OS',
+      icon: ListFilter,
+      iconBg: 'bg-teal-100 text-teal-700',
+      badge: filteredPrograms.length,
+    },
+    {
+      id: 'peruntukan',
+      label: 'Peruntukan',
+      desc: 'Penetapan peruntukan fasa mengikut kod OS',
+      icon: Wallet,
+      iconBg: 'bg-purple-100 text-purple-700',
+    },
+    {
+      id: 'perbelanjaan',
+      label: 'Perbelanjaan',
+      desc: 'Pemantauan rekod belanja sebenar program',
+      icon: CreditCard,
+      iconBg: 'bg-emerald-100 text-emerald-700',
+    },
+    {
+      id: 'subwaran',
+      label: 'Subwaran',
+      desc: 'Agihan sub waran peruntukan ke cawangan/PTJ',
+      icon: Share2,
+      iconBg: 'bg-amber-100 text-amber-700',
+    },
+    {
+      id: 'baki',
+      label: 'Baki Peruntukan',
+      desc: 'Peruntukan − Belanja − Subwaran = Baki Bersih',
+      icon: Scale,
+      iconBg: 'bg-sky-100 text-sky-700',
+    },
+    {
+      id: 'admin',
+      label: 'Admin',
+      desc: 'Pusat kawalan pendaftaran & akaun pentadbir',
+      icon: ShieldCheck,
+      iconBg: 'bg-rose-100 text-rose-700',
+      hasActiveSession: !!currentUser,
+    },
+  ];
+
+  // User requirement:
+  // "From Page UTAMA, once klik MASUK, viewer sahaja can only see Page Dashboard Program and Dashboard Bersepadu sahaja.
+  // Other page hide from guest/view user/public. Only certain user can view page based on selected page from KEBENARAN VIEW/PAPAR PAGE."
+  const visibleMenuItems = allMenuItems.filter((item) => {
+    // 1. Dashboard Program & Dashboard Bersepadu: sentiasa dibenarkan untuk semua (termasuk viewer/guest)
+    if (item.id === 'dashboard' || item.id === 'bersepadu') {
+      return true;
+    }
+
+    // 2. Super Admin mempunyai kebenaran capaian semua modul
+    if (isSuper) {
+      return true;
+    }
+
+    // 3. Untuk pelawat / mod viewer (tiada log masuk), sembunyikan semua halaman lain
+    if (!currentUser) {
+      return false;
+    }
+
+    // 4. Untuk Admin biasa, tapis mengikut halaman yang dipilih dalam KEBENARAN VIEW/PAPAR PAGE
+    if (isAdmin) {
+      if (item.id === 'admin') return true;
+      if (item.id === 'perincian') return allowedPages.includes('PERINCIAN PROGRAM');
+      if (item.id === 'peruntukan') return allowedPages.includes('PERUNTUKAN');
+      if (item.id === 'perbelanjaan') return allowedPages.includes('PERBELANJAAN');
+      if (item.id === 'subwaran') return allowedPages.includes('SUBWARAN');
+      if (item.id === 'baki') return allowedPages.includes('BAKI PERUNTUKAN');
+    }
+
+    return false;
+  });
+
+  const handleLogout = () => {
+    logout();
+    setActiveTab('dashboard');
+  };
+
+  return (
+    <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs select-none">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        {/* ============================================================== */}
+        {/* BARIS 1: PORTAL APLIKASI PROGRAM IAB                          */}
+        {/* ============================================================== */}
+        <div className="flex items-center justify-between py-2 sm:py-2.5 border-b border-slate-100 gap-2">
+          {/* Logo / Badge IAB */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('welcome')}
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs sm:text-sm tracking-wider shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Kembali ke Laman Utama"
+            >
+              IAB
+            </button>
+            <span className="hidden md:inline-block text-[11px] text-slate-500 font-medium">
+              Institut Aminuddin Baki
+            </span>
+          </div>
+
+          {/* TAJUK BARIS 1 */}
+          <h1 className="text-sm sm:text-base md:text-lg font-black tracking-wider text-slate-900 uppercase text-center flex-1 truncate px-1">
+            PORTAL APLIKASI PROGRAM IAB
+          </h1>
+
+          {/* Status Awan & Tindakan Semula */}
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Firebase Live Cloud Database indicator */}
             <div
               title={
@@ -76,7 +196,7 @@ export const Header: React.FC = () => {
                   ? 'Menyambung ke pangkalan data awan Firebase...'
                   : 'Pangkalan data mod simpanan tempatan aktif'
               }
-              className="hidden lg:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-700 select-none"
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-medium bg-slate-100 border border-slate-200 text-slate-700 select-none"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -87,18 +207,41 @@ export const Header: React.FC = () => {
                     : 'bg-slate-400'
                 }`}
               />
-              <span>{firebaseStatus === 'connected' ? 'Firebase Firestore: Aktif' : firebaseStatus === 'connecting' ? 'Firebase: Menyambung...' : 'Firebase: Tempatan'}</span>
+              <span className="hidden sm:inline">
+                {firebaseStatus === 'connected'
+                  ? 'Cloud: Aktif'
+                  : firebaseStatus === 'connecting'
+                  ? 'Menyambung...'
+                  : 'Tempatan'}
+              </span>
             </div>
-          </div>
 
-          {/* Zone 2: Navigation Links (Dashboard, Perincian, Admin) */}
-          <nav className="flex items-center gap-1.5 sm:gap-2">
             <button
-              onClick={() => setActiveTab('welcome')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+              onClick={() => resetToDefaultData()}
+              title="Set Semula Data Contoh Asal"
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* ============================================================== */}
+        {/* BARIS 2: Utama | Dashboard | Log Keluar                       */}
+        {/* ============================================================== */}
+        <div className="flex items-center justify-center py-2 relative">
+          <nav className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm font-bold">
+            {/* 1. Utama */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('welcome');
+                setIsMenuOpen(false);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 activeTab === 'welcome'
                   ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
               }`}
               title="Laman Selamat Datang Utama"
             >
@@ -106,287 +249,136 @@ export const Header: React.FC = () => {
               <span>Utama</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                activeTab === 'dashboard'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard Program</span>
-            </button>
+            {/* Pemisah '|' */}
+            <span className="text-slate-300 font-light select-none text-sm">|</span>
 
-            <button
-              onClick={() => setActiveTab('bersepadu')}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                activeTab === 'bersepadu'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-              title="Dashboard Bersepadu & Analitik Eksekutif PPPT"
-            >
-              <BarChart2 className="w-3.5 h-3.5 text-blue-500" />
-              <span>Dashboard Bersepadu</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('perincian')}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                activeTab === 'perincian'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <ListFilter className="w-3.5 h-3.5" />
-              <span>Perincian Program</span>
-              <span
-                className={`ml-0.5 text-[11px] px-1.5 py-0.2 rounded-full tabular-nums ${
-                  activeTab === 'perincian'
-                    ? 'bg-slate-800 text-slate-200'
-                    : 'bg-slate-100 text-slate-600'
+            {/* 2. Dashboard (Dropdown) */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsMenuOpen((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  isDashboardActive
+                    ? 'bg-blue-600 text-white shadow-xs hover:bg-blue-700'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
                 }`}
+                title="Buka Menu Pilihan Dashboard"
               >
-                {filteredPrograms.length}
-              </span>
-            </button>
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                <span>Dashboard</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    isMenuOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
-            <button
-              onClick={() => setActiveTab('admin')}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-                activeTab === 'admin'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-              <span>Admin</span>
-              {currentUser && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Sesi Aktif" />
-              )}
-            </button>
-
-            {/* Menu Drop Down List Page selepas Admin: Peruntukan, Perbelanjaan, Subwaran, Baki Peruntukan */}
-            {(() => {
-              const isSuper = currentUser?.role === 'SUPER_ADMIN';
-              const userAllowed = isSuper
-                ? ['PERUNTUKAN', 'PERBELANJAAN', 'SUBWARAN', 'BAKI PERUNTUKAN']
-                : (currentUser?.allowedPages || []);
-
-              const canPeruntukan = userAllowed.includes('PERUNTUKAN');
-              const canPerbelanjaan = userAllowed.includes('PERBELANJAAN');
-              const canSubwaran = userAllowed.includes('SUBWARAN');
-              const canBaki = userAllowed.includes('BAKI PERUNTUKAN');
-              const hasAnyFinancePage = userAllowed.length > 0;
-
-              if (!hasAnyFinancePage) return null;
-
-              return (
-                <div className="relative" ref={dropdownRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsMenuOpen((prev) => !prev)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                      ['peruntukan', 'perbelanjaan', 'subwaran', 'baki'].includes(activeTab)
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-slate-300'
-                    }`}
-                  >
-                    <Coins className="w-3.5 h-3.5 text-amber-400" />
-                    <span>
-                      {activeTab === 'peruntukan'
-                        ? 'Peruntukan'
-                        : activeTab === 'perbelanjaan'
-                        ? 'Perbelanjaan'
-                        : activeTab === 'subwaran'
-                        ? 'Subwaran'
-                        : activeTab === 'baki'
-                        ? 'Baki Peruntukan'
-                        : 'Pengurusan Kewangan'}
+              {/* Dropdown Menu List: 8 Pages as Requested */}
+              {isMenuOpen && (
+                <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-[calc(100vw-32px)] max-w-sm sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 py-2 max-h-[75vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    <span>{currentUser ? 'Menu Pilihan Halaman' : 'Menu Paparan Pelawat'}</span>
+                    <span className="text-blue-600 font-mono text-[10px]">
+                      {visibleMenuItems.length} HALAMAN
                     </span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider text-white ${
-                        isSuper ? 'bg-purple-600' : 'bg-blue-600'
-                      }`}
-                    >
-                      {isSuper ? 'Super Admin' : 'Admin'}
-                    </span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                        isMenuOpen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
+                  </div>
 
-                  {isMenuOpen && (
-                    <div className="absolute right-0 sm:left-0 sm:right-auto mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 animate-in fade-in zoom-in-95 duration-100">
-                      <div className="px-3.5 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                        <span>{isSuper ? 'Menu Super Admin' : 'Menu Kewangan Diberi Akses'}</span>
-                        <span className="text-purple-600 font-mono text-[9px]">
-                          {userAllowed.length} MODUL
-                        </span>
-                      </div>
+                  <div className="py-1">
+                    {visibleMenuItems.map((item) => {
+                      const Icon = item.icon;
+                      const isCurrent = activeTab === item.id;
 
-                      {/* 1. Peruntukan */}
-                      {canPeruntukan && (
+                      return (
                         <button
+                          key={item.id}
                           type="button"
                           onClick={() => {
-                            setActiveTab('peruntukan');
+                            setActiveTab(item.id as any);
                             setIsMenuOpen(false);
                           }}
-                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
-                            activeTab === 'peruntukan'
-                              ? 'bg-purple-50 text-purple-900 font-bold'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
-                              <Wallet className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-slate-900">Peruntukan</div>
-                              <div className="text-[10px] text-slate-400">Pengurusan agihan peruntukan fasa</div>
-                            </div>
-                          </div>
-                          {activeTab === 'peruntukan' && (
-                            <Check className="w-4 h-4 text-purple-600 shrink-0" />
-                          )}
-                        </button>
-                      )}
-
-                      {/* 2. Perbelanjaan */}
-                      {canPerbelanjaan && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('perbelanjaan');
-                            setIsMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
-                            activeTab === 'perbelanjaan'
-                              ? 'bg-teal-50 text-teal-900 font-bold'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
-                              <CreditCard className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-slate-900">Perbelanjaan</div>
-                              <div className="text-[10px] text-slate-400">Pemantauan belanja sebenar program</div>
-                            </div>
-                          </div>
-                          {activeTab === 'perbelanjaan' && (
-                            <Check className="w-4 h-4 text-teal-600 shrink-0" />
-                          )}
-                        </button>
-                      )}
-
-                      {/* 3. Subwaran */}
-                      {canSubwaran && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('subwaran');
-                            setIsMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
-                            activeTab === 'subwaran'
-                              ? 'bg-amber-50 text-amber-900 font-bold'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                              <Share2 className="w-4 h-4" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-slate-900">Subwaran</div>
-                              <div className="text-[10px] text-slate-400">Agihan sub waran ke cawangan/PTJ luar</div>
-                            </div>
-                          </div>
-                          {activeTab === 'subwaran' && (
-                            <Check className="w-4 h-4 text-amber-600 shrink-0" />
-                          )}
-                        </button>
-                      )}
-
-                      {/* 4. Baki Peruntukan */}
-                      {canBaki && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveTab('baki');
-                            setIsMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs text-left transition-colors cursor-pointer ${
-                            activeTab === 'baki'
+                          className={`w-full flex items-center justify-between px-3.5 py-2.5 text-left transition-colors cursor-pointer ${
+                            isCurrent
                               ? 'bg-blue-50 text-blue-900 font-bold'
                               : 'text-slate-700 hover:bg-slate-50'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                              <Scale className="w-4 h-4" />
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${item.iconBg}`}
+                            >
+                              <Icon className="w-4 h-4" />
                             </div>
-                            <div>
-                              <div className="font-semibold text-slate-900">Baki Peruntukan</div>
-                              <div className="text-[10px] text-slate-400">Peruntukan − Belanja − Subwaran</div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                                  {item.label}
+                                </span>
+                                {item.badge !== undefined && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-slate-200 text-slate-700 font-mono">
+                                    {item.badge}
+                                  </span>
+                                )}
+                                {item.hasActiveSession && (
+                                  <span
+                                    className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"
+                                    title="Sesi Log Masuk Aktif"
+                                  />
+                                )}
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">
+                                {item.desc}
+                              </p>
                             </div>
                           </div>
-                          {activeTab === 'baki' && (
-                            <Check className="w-4 h-4 text-blue-600 shrink-0" />
+
+                          {isCurrent && (
+                            <Check className="w-4 h-4 text-blue-600 shrink-0 ml-2" />
                           )}
                         </button>
-                      )}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
                 </div>
-              );
-            })()}
-          </nav>
+              )}
+            </div>
 
-          {/* Zone 3: Primary Action Zone */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Admin User Status (Hanya dipaparkan jika log masuk) */}
-            {currentUser && (
-              <div className="flex items-center gap-2">
-                <div className="hidden lg:flex flex-col items-end text-right">
-                  <span className="text-[11px] font-bold text-slate-900 leading-tight">
-                    {currentUser.id}
-                  </span>
-                  <span className="text-[10px] text-slate-500 leading-tight">
-                    {currentUser.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin Jabatan'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    logout();
-                    setActiveTab('dashboard');
-                  }}
-                  title="Log Keluar dari akaun Admin"
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Log Keluar</span>
-                </button>
-              </div>
+            {/* Pemisah '|' */}
+            <span className="text-slate-300 font-light select-none text-sm">|</span>
+
+            {/* 3. Admin (Bila belum log in) / Log Keluar (Bila admin log in) */}
+            {currentUser ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 shadow-xs font-bold"
+                title={`Log Keluar (${currentUser.id} - ${currentUser.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'})`}
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                <span>Log Keluar</span>
+                <span
+                  className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5"
+                  title="Sesi Aktif"
+                />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('admin');
+                  setIsMenuOpen(false);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer font-bold ${
+                  activeTab === 'admin'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+                title="Buka Portal Admin / Log Masuk"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+                <span>Admin</span>
+              </button>
             )}
-
-            <button
-              onClick={() => {
-                resetToDefaultData();
-              }}
-              title="Set Semula Data Contoh Asal"
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          </nav>
         </div>
       </div>
     </header>

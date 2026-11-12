@@ -10,6 +10,8 @@ import {
   ArrowRight,
   ArrowUpDown,
   Filter,
+  Lock,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const ProgramCatalog: React.FC = () => {
@@ -18,7 +20,17 @@ export const ProgramCatalog: React.FC = () => {
     viewProgramDetail,
     currentUser,
     pegawaiList,
+    setActiveTab,
   } = useProgramContext();
+
+  // Super Admin Check & Page Permission Check
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const canAccess =
+    isSuperAdmin ||
+    (currentUser?.role === 'ADMIN' &&
+      (currentUser.allowedPages?.includes('PERINCIAN PROGRAM') ||
+        !currentUser.allowedPages ||
+        currentUser.allowedPages.length === 0));
 
   // Bilangan paparan katalog dibenarkan: default 6
   const [displayLimit, setDisplayLimit] = useState<string>('6');
@@ -117,6 +129,45 @@ export const ProgramCatalog: React.FC = () => {
     if (displayLimit === 'Semua') return sortedPrograms;
     return sortedPrograms.slice(0, Number(displayLimit));
   }, [sortedPrograms, displayLimit]);
+
+  // Jika pelawat biasa atau admin tanpa kebenaran paparan PERINCIAN PROGRAM
+  if (!currentUser || !canAccess) {
+    return (
+      <div className="max-w-4xl mx-auto py-16 px-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 shadow-sm text-center">
+          <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-rose-50">
+            <Lock className="w-8 h-8" />
+          </div>
+          <span className="text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
+            Akses Dihadkan · Pengguna Diberi Kebenaran Sahaja
+          </span>
+          <h2 className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
+            Perincian &amp; Katalog Program (IAB)
+          </h2>
+          <p className="text-slate-600 text-sm max-w-lg mx-auto mt-2 leading-relaxed">
+            Halaman ini dihadkan daripada capaian pelawat awam. Sila log masuk sebagai pentadbir yang mempunyai kebenaran paparan halaman ini dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong>.
+          </p>
+
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => setActiveTab('admin')}
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <span>Log Masuk Pentadbir</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            >
+              <span>Kembali ke Dashboard Program</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

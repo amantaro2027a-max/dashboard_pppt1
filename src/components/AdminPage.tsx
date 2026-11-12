@@ -198,6 +198,7 @@ export const AdminPage: React.FC = () => {
 
   // REQUIREMENT: Pages available for permission assignment
   const AVAILABLE_PAGES = [
+    { key: 'PERINCIAN PROGRAM', label: 'PERINCIAN PROGRAM' },
     { key: 'PERUNTUKAN', label: 'PERUNTUKAN' },
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },
