@@ -5,6 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    base: process.env.NODE_ENV === 'production' ? '/dashboard_pppt1/' : './',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
