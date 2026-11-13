@@ -17,13 +17,14 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { ProgramItem } from '../../types/program';
+import { ProgramItem, Pegawai } from '../../types/program';
 import { formatNumber, formatRM, getStatusConfig } from '../../utils/formatters';
 import { BULAN_LIST } from '../../data/constants';
 
 interface VisualisationModuleProps {
   programs: ProgramItem[];
   allPrograms: ProgramItem[];
+  pegawaiList?: Pegawai[];
   onOpenDrillDown: (title: string, filteredList: ProgramItem[]) => void;
   onViewProgramDetail: (prog: ProgramItem) => void;
   isExpanded?: boolean;
@@ -33,6 +34,7 @@ interface VisualisationModuleProps {
 export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
   programs,
   allPrograms,
+  pegawaiList = [],
   onOpenDrillDown,
   onViewProgramDetail,
   isExpanded = false,
@@ -259,103 +261,119 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
     };
   }, [programs]);
 
-  // 10.1 Analisis Matriks Risiko Kewangan
-  const kewanganRisk = useMemo(() => {
-    const sihatRendah: ProgramItem[] = []; // >= 95%
-    const sederhana: ProgramItem[] = []; // 80% - 94.99%
-    const tinggi: ProgramItem[] = []; // < 80%
+  // 10. Analisis Keberhasilan Pegawai terhadap setiap program diuruskan
+  const pegawaiSuccessStats = useMemo(() => {
+    interface OfficerAgg {
+      id: string;
+      nama: string;
+      jawatan: string;
+      programsManaged: ProgramItem[];
+    }
+
+    const officerByKey = new Map<string, OfficerAgg>();
+    const idToKey = new Map<string, string>();
+
+    pegawaiList.forEach((pg) => {
+      const nameKey = (pg.nama || '').trim().toUpperCase();
+      if (!nameKey) return;
+      officerByKey.set(nameKey, {
+        id: pg.id,
+        nama: pg.nama,
+        jawatan: pg.jawatan || 'PEGAWAI',
+        programsManaged: [],
+      });
+      if (pg.id) {
+        idToKey.set(pg.id.trim().toUpperCase(), nameKey);
+      }
+    });
+
+    const attachProgramToOfficer = (
+      rawId: string | undefined,
+      rawNama: string | undefined,
+      defaultRole: string,
+      prog: ProgramItem
+    ) => {
+      const cleanId = (rawId || '').trim().toUpperCase();
+      const cleanName = (rawNama || '').trim().toUpperCase();
+      if (!cleanId && !cleanName) return;
+
+      let key = (cleanId && idToKey.get(cleanId)) || cleanName;
+      if (!key) key = cleanId;
+
+      if (!officerByKey.has(key)) {
+        officerByKey.set(key, {
+          id: rawId || key,
+          nama: rawNama || rawId || key,
+          jawatan: defaultRole,
+          programsManaged: [],
+        });
+        if (cleanId) idToKey.set(cleanId, key);
+      }
+
+      const entry = officerByKey.get(key)!;
+      if (!entry.programsManaged.includes(prog)) {
+        entry.programsManaged.push(prog);
+      }
+    };
 
     programs.forEach((p) => {
-      const a = Number(p.jumlahRm) || 0;
-      const b = Number(p.jumlahBelanjaRm) || 0;
-
-      if (a <= 0) {
-        tinggi.push(p);
-        return;
-      }
-
-      const util = (b / a) * 100;
-      if (util >= 95) {
-        sihatRendah.push(p);
-      } else if (util >= 80) {
-        sederhana.push(p);
-      } else {
-        tinggi.push(p);
-      }
+      attachProgramToOfficer(p.pengurusId, p.pengurusNama, 'PENGURUS PROGRAM', p);
+      attachProgramToOfficer(
+        p.pengurusBersamaId,
+        p.pengurusBersamaNama,
+        'PENGURUS BERSAMA',
+        p
+      );
     });
 
-    return { sihatRendah, sederhana, tinggi };
-  }, [programs]);
+    const list = Array.from(officerByKey.values()).map((entry) => {
+      const totalManaged = entry.programsManaged.length;
+      const selesaiCount = entry.programsManaged.filter(
+        (p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI'
+      ).length;
+      const dalamTindakanCount = entry.programsManaged.filter(
+        (p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN'
+      ).length;
+      const tanggungCount = entry.programsManaged.filter(
+        (p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG'
+      ).length;
+      const belumCount = entry.programsManaged.filter(
+        (p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN'
+      ).length;
+      const batalCount = entry.programsManaged.filter(
+        (p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL'
+      ).length;
+      const activeTotal = Math.max(totalManaged - batalCount, 0);
+      const successRate =
+        activeTotal > 0
+          ? Math.round((selesaiCount / activeTotal) * 100)
+          : totalManaged > 0
+          ? 0
+          : 0;
 
-  // 10.2 Analisis Matriks Risiko Tempoh (Melibatkan status selain SELESAI)
-  const tempohRisk = useMemo(() => {
-    const sihatRendah: ProgramItem[] = [];
-    const sederhana: ProgramItem[] = [];
-    const tinggi: ProgramItem[] = [];
-    const tidakBerkenaan: ProgramItem[] = [];
-
-    const nonCompleted = programs.filter(
-      (p) => (p.statusProgram || '').trim().toUpperCase() !== 'SELESAI'
-    );
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    nonCompleted.forEach((p) => {
-      const status = (p.statusProgram || '').trim().toUpperCase();
-
-      // Risiko - Tidak Berkenaan: status BATAL
-      if (status === 'BATAL') {
-        tidakBerkenaan.push(p);
-        return;
-      }
-
-      let diffDays: number | null = null;
-      if (p.tarikhMula) {
-        const d = new Date(p.tarikhMula);
-        if (!isNaN(d.getTime())) {
-          d.setHours(0, 0, 0, 0);
-          diffDays = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        }
-      }
-
-      // Sihat / Rendah (Kelulusan LO/PO diperolehi): status TANGGUNG ATAU > 90 hari sebelum tarikh mula
-      if (status === 'TANGGUNG' || (diffDays !== null && diffDays > 90)) {
-        sihatRendah.push(p);
-        return;
-      }
-
-      // Risiko Sederhana (30 hari sebelum tarikh mula program): status DALAM TINDAKAN dan > 30 hari sebelum tarikh mula
-      if (status === 'DALAM TINDAKAN' && diffDays !== null && diffDays > 30 && diffDays <= 90) {
-        sederhana.push(p);
-        return;
-      }
-
-      // Risiko Tinggi (Kurang 7 hari / kritikal sebelum tarikh mula): status DALAM TINDAKAN (< 30 hari sebelum tarikh mula) ATAU status BELUM AMBIL TINDAKAN
-      if (
-        status === 'BELUM AMBIL TINDAKAN' ||
-        (status === 'DALAM TINDAKAN' && (diffDays === null || diffDays <= 30))
-      ) {
-        tinggi.push(p);
-        return;
-      }
-
-      // Fallback
-      if (diffDays !== null && diffDays <= 30) {
-        tinggi.push(p);
-      } else {
-        sederhana.push(p);
-      }
+      return {
+        ...entry,
+        totalManaged,
+        selesaiCount,
+        dalamTindakanCount,
+        tanggungCount,
+        belumCount,
+        batalCount,
+        successRate,
+      };
     });
 
-    return {
-      totalNonCompleted: nonCompleted.length,
-      sihatRendah,
-      sederhana,
-      tinggi,
-      tidakBerkenaan,
-    };
-  }, [programs]);
+    return list.sort((a, b) => {
+      if (b.selesaiCount !== a.selesaiCount) return b.selesaiCount - a.selesaiCount;
+      if (b.totalManaged !== a.totalManaged) return b.totalManaged - a.totalManaged;
+      return a.nama.localeCompare(b.nama);
+    });
+  }, [programs, pegawaiList]);
+
+  const officersWithPrograms = useMemo(
+    () => pegawaiSuccessStats.filter((o) => o.totalManaged > 0),
+    [pegawaiSuccessStats]
+  );
 
   return (
     <div className="space-y-8 mb-12">
@@ -371,13 +389,13 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
                 MODUL 4
               </span>
               <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                10 CARTA INTERAKTIF, ANALISIS PINDAAN BK04 &amp; MATRIKS RISIKO
+                10 CARTA INTERAKTIF, ANALISIS PINDAAN BK04 &amp; KEBERHASILAN PEGAWAI
               </h3>
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300">
               <span>Kategori:</span>
               <strong className="text-amber-400 font-bold uppercase">
-                VISUALISASI DATA INTERAKTIF (INTERACTIVE DATA VISUALISATION)
+                VISUALISASI DATA INTERAKTIF
               </strong>
             </div>
           </div>
@@ -386,10 +404,10 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
         <div className="flex items-center gap-2.5">
           <div className="bg-slate-800 border border-slate-700 px-3.5 py-1.5 rounded-lg text-right shrink-0">
             <span className="text-[10px] text-slate-400 font-semibold uppercase block">
-              Visualisasi &amp; Risiko
+              Visualisasi Data
             </span>
             <span className="text-xs sm:text-sm font-bold font-mono text-emerald-400">
-              10 Carta + Matriks
+              10 Carta Interaktif
             </span>
           </div>
 
@@ -413,9 +431,9 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                1. Peruntukan vs Belanja Sebenar Mengikut Jabatan
+                1. Peruntukan berbanding Belanja Sebenar Mengikut Jabatan
               </h3>
-              <p className="text-[11px] text-slate-500">Perbandingan peruntukan (biru) vs belanja sebenar (kuning)</p>
+              <p className="text-[11px] text-slate-500">Perbandingan peruntukan (biru) berbanding belanja sebenar (kuning)</p>
             </div>
             <div className="flex items-center gap-3 text-[11px] font-medium">
               <span className="flex items-center gap-1.5">
@@ -472,7 +490,7 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                2. Kadar Utiliti Bajet Mengikut Kod OS
+                2. Kadar Penggunaan Bajet Mengikut Kod OS
               </h3>
               <p className="text-[11px] text-slate-500">Peratusan belanja sebenar berbanding siling diluluskan</p>
             </div>
@@ -711,7 +729,7 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] text-slate-500 block">Impak Kewangan (Varian)</span>
+                <span className="text-[11px] text-slate-500 block">Impak Kewangan (Varians)</span>
                 <span className="text-lg font-black text-slate-900 mt-0.5 block truncate">
                   {bk04Analysis.totalVarianceRm !== 0 ? formatRM(bk04Analysis.totalVarianceRm) : 'RM 0.00'}
                 </span>
@@ -754,226 +772,148 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
           </div>
         </div>
 
-        {/* 10. Analisis Matriks Risiko (Kewangan & Tempoh) */}
+        {/* 10. Analisis Keberhasilan Pegawai terhadap setiap program diuruskan */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  10. Analisis Matriks Risiko
+                  10. Analisis Keberhasilan Pegawai
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Pengelasan risiko kewangan dan risiko tempoh pelaksanaan program
+                  Pencapaian pelaksanaan program bagi setiap pegawai mengurus
                 </p>
               </div>
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                <Users className="w-3.5 h-3.5" />
+                <span>{officersWithPrograms.length} Pegawai Mengurus</span>
+              </span>
             </div>
 
-            {/* 10.1: Analisis Matriks Risiko Kewangan */}
-            <div className="mb-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  10.1: Analisis Matriks Risiko Kewangan
+            <div className="grid grid-cols-3 gap-2.5 mb-4">
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <span className="text-[10px] font-bold text-emerald-700 uppercase block">Program Selesai</span>
+                <span className="text-lg font-black text-emerald-950 block">
+                  {programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length}
                 </span>
-                <span className="text-[10px] text-slate-400 font-medium">Berdasarkan utiliti bajet</span>
               </div>
-              <div className="space-y-2">
-                {/* Sihat / Rendah */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Kewangan: Sihat / Rendah (≥ 95% / Bijak Belanja)',
-                      kewanganRisk.sihatRendah
-                    )
-                  }
-                  className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:border-emerald-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                      <span className="font-bold text-xs text-emerald-950">
-                        Sihat / Rendah (&ge; 95% / Bijak Belanja)
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-950">
-                      {kewanganRisk.sihatRendah.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-emerald-800 mt-1">
-                    Program yang telah memaksimumkan penggunaan peruntukan disediakan.
-                  </p>
-                </div>
-
-                {/* Sederhana */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Kewangan: Risiko Sederhana (80% - 94%)',
-                      kewanganRisk.sederhana
-                    )
-                  }
-                  className="p-3 rounded-xl bg-amber-50 border border-amber-200 hover:border-amber-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                      <span className="font-bold text-xs text-amber-950">
-                        Risiko Sederhana (80% - 94%)
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-950">
-                      {kewanganRisk.sederhana.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 mt-1">
-                    Program yang tidak memaksimumkan penggunaan peruntukan disediakan.
-                  </p>
-                </div>
-
-                {/* Tinggi */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Kewangan: Risiko Tinggi (< 80%)',
-                      kewanganRisk.tinggi
-                    )
-                  }
-                  className="p-3 rounded-xl bg-rose-50 border border-rose-200 hover:border-rose-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                      <span className="font-bold text-xs text-rose-950">
-                        Risiko Tinggi (&lt; 80%)
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-950">
-                      {kewanganRisk.tinggi.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-rose-800 mt-1">
-                    Penggunaan peruntukan rendah, baki peruntukan disediakan masih banyak dan perlu teliti semula duit lebihan.
-                  </p>
-                </div>
+              <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200">
+                <span className="text-[10px] font-bold text-blue-700 uppercase block">Pegawai Aktif</span>
+                <span className="text-lg font-black text-blue-950 block">
+                  {officersWithPrograms.length}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block">Jumlah Pegawai</span>
+                <span className="text-lg font-black text-slate-900 block">
+                  {pegawaiSuccessStats.length}
+                </span>
               </div>
             </div>
 
-            {/* 10.2: Analisis Matriks Risiko Tempoh (Melibatkan status program selain SELESAI) */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  10.2: Analisis Matriks Risiko Tempoh
-                </span>
-                <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
-                  Selain Status SELESAI ({tempohRisk.totalNonCompleted})
-                </span>
-              </div>
-              <div className="space-y-2">
-                {/* Sihat / Rendah */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Tempoh: Sihat / Rendah (Kelulusan LO/PO / >90 Hari)',
-                      tempohRisk.sihatRendah
-                    )
-                  }
-                  className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:border-emerald-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                      <span className="font-bold text-xs text-emerald-950">
-                        Sihat / Rendah (Kelulusan LO/PO diperolehi)
+            <div className="space-y-2.5 max-h-[430px] overflow-y-auto pr-1">
+              {pegawaiSuccessStats.length === 0 ? (
+                <div className="py-10 text-center text-xs text-slate-400">
+                  Tiada rekod pegawai atau program ditemui dalam tapisan ini.
+                </div>
+              ) : (
+                pegawaiSuccessStats.map((peg, idx) => (
+                  <div
+                    key={peg.id || `${peg.nama}-${idx}`}
+                    onClick={() =>
+                      onOpenDrillDown(
+                        `Keberhasilan Pegawai: ${peg.nama}`,
+                        peg.programsManaged
+                      )
+                    }
+                    className={`p-3 rounded-xl border transition-all cursor-pointer group ${
+                      peg.selesaiCount > 0
+                        ? 'bg-emerald-50/40 border-emerald-200 hover:border-emerald-400'
+                        : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 leading-snug">
+                          {peg.nama} berjaya melaksanakan{' '}
+                          <span className="text-emerald-700 font-black">
+                            {peg.selesaiCount} program
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {peg.jawatan} &middot; {peg.totalManaged} program diuruskan
+                        </p>
+                      </div>
+                      <span
+                        className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded shrink-0 ${
+                          peg.successRate >= 80
+                            ? 'bg-emerald-200 text-emerald-950'
+                            : peg.successRate >= 50
+                            ? 'bg-amber-100 text-amber-900'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {peg.successRate}%
                       </span>
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-950">
-                      {tempohRisk.sihatRendah.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-emerald-800 mt-1">
-                    Status TANGGUNG atau &gt; 90 hari sebelum tarikh mula program.
-                  </p>
-                </div>
 
-                {/* Sederhana */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Tempoh: Risiko Sederhana (> 30 Hari Sebelum Mula)',
-                      tempohRisk.sederhana
-                    )
-                  }
-                  className="p-3 rounded-xl bg-amber-50 border border-amber-200 hover:border-amber-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                      <span className="font-bold text-xs text-amber-950">
-                        Risiko Sederhana (30 hari sebelum tarikh mula)
-                      </span>
+                    <div className="w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden mt-2">
+                      <div
+                        style={{ width: `${Math.min(100, peg.successRate)}%` }}
+                        className={`h-full rounded-full ${
+                          peg.successRate >= 80
+                            ? 'bg-emerald-600'
+                            : peg.successRate >= 50
+                            ? 'bg-amber-500'
+                            : 'bg-sky-500'
+                        }`}
+                      />
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-950">
-                      {tempohRisk.sederhana.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-800 mt-1">
-                    Status DALAM TINDAKAN dan &gt; 30 hari sebelum tarikh mula program.
-                  </p>
-                </div>
 
-                {/* Tinggi */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Tempoh: Risiko Tinggi (Kurang 7 Hari / Kritikal)',
-                      tempohRisk.tinggi
-                    )
-                  }
-                  className="p-3 rounded-xl bg-rose-50 border border-rose-200 hover:border-rose-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
-                      <span className="font-bold text-xs text-rose-950">
-                        Risiko Tinggi (Kurang 7 hari / kritikal)
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-semibold">
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        Selesai: {peg.selesaiCount}
                       </span>
-                    </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-950">
-                      {tempohRisk.tinggi.length} Program
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-rose-800 mt-1">
-                    Status DALAM TINDAKAN (&lt; 30 hari sebelum mula) atau status BELUM AMBIL TINDAKAN.
-                  </p>
-                </div>
-
-                {/* Tidak Berkenaan (BATAL) */}
-                <div
-                  onClick={() =>
-                    onOpenDrillDown(
-                      'Matriks Tempoh: Risiko - Tidak Berkenaan (BATAL)',
-                      tempohRisk.tidakBerkenaan
-                    )
-                  }
-                  className="p-3 rounded-xl bg-zinc-100 border border-zinc-300 hover:border-zinc-400 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-zinc-500" />
-                      <span className="font-bold text-xs text-zinc-900">
-                        Risiko - Tidak Berkenaan
+                      <span className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800">
+                        Dalam Tindakan: {peg.dalamTindakanCount}
                       </span>
+                      {peg.tanggungCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                          Tanggung: {peg.tanggungCount}
+                        </span>
+                      )}
+                      {peg.belumCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
+                          Belum Tindakan: {peg.belumCount}
+                        </span>
+                      )}
+                      {peg.batalCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-700">
+                          Batal: {peg.batalCount}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-zinc-200 text-zinc-900">
-                      {tempohRisk.tidakBerkenaan.length} Program
-                    </span>
                   </div>
-                  <p className="text-[11px] text-zinc-600 mt-1">
-                    Status program telah dibatalkan (BATAL).
-                  </p>
-                </div>
-              </div>
+                ))
+              )}
             </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+            <button
+              onClick={() =>
+                onOpenDrillDown(
+                  'Program Berjaya Dilaksanakan (Status SELESAI)',
+                  programs.filter(
+                    (p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI'
+                  )
+                )
+              }
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+            >
+              <span>Lihat Semua Program Selesai</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>

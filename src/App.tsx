@@ -22,7 +22,6 @@ import { ProgramFormModal } from './components/ProgramFormModal';
 import { ExportModal } from './components/ExportModal';
 import { WelcomePage } from './components/WelcomePage';
 import { DashboardBersepaduPage } from './components/DashboardBersepaduPage';
-import { Landmark, ShieldCheck } from 'lucide-react';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
@@ -54,13 +53,7 @@ const DashboardContent: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
               <div className="w-full">
-                {/* Baris 1: Institut Aminuddin Baki · Kementerian Pendidikan */}
-                <div className="flex items-center gap-2 text-xs sm:text-sm font-bold text-slate-800 tracking-wide mb-1">
-                  <Landmark className="w-3.5 h-3.5 text-slate-800 shrink-0" />
-                  <span>{bannerInfo.instansi}</span>
-                </div>
-
-                {/* Baris 2: Pengguna: NAMA PEGAWAI | Jawatan: JAWATAN PEGAWAI */}
+                {/* Baris 1: Pengguna: NAMA PEGAWAI | Jawatan: JAWATAN PEGAWAI */}
                 <div className="text-xs sm:text-sm tracking-wide leading-relaxed">
                   <span className="text-black font-black">Pengguna: </span>
                   <span className="text-blue-600 font-black">{bannerInfo.nama}</span>
@@ -68,10 +61,20 @@ const DashboardContent: React.FC = () => {
                   <span className="text-blue-600 font-black">{bannerInfo.jawatan}</span>
                 </div>
 
-                {/* Baris 3: PUSAT & JABATAN: PUSAT dan JABATAN */}
+                {/* Baris 2: PUSAT: */}
                 <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">PUSAT &amp; JABATAN: </span>
-                  <span className="text-blue-600 font-black">{bannerInfo.pusatDanJabatan}</span>
+                  <span className="text-black font-black">PUSAT:</span>
+                  {bannerInfo.pusat ? (
+                    <span className="text-blue-600 font-black"> {bannerInfo.pusat}</span>
+                  ) : null}
+                </div>
+
+                {/* Baris 3: JABATAN: */}
+                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                  <span className="text-black font-black">JABATAN:</span>
+                  {bannerInfo.jabatan ? (
+                    <span className="text-blue-600 font-black"> {bannerInfo.jabatan}</span>
+                  ) : null}
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 mt-3">
@@ -79,7 +82,7 @@ const DashboardContent: React.FC = () => {
                     {activeTab === 'dashboard'
                       ? 'Dashboard Interaktif Masa Kini IAB'
                       : activeTab === 'bersepadu'
-                      ? 'Dashboard Bersepadu & Analitik Eksekutif PPPT'
+                      ? 'Dashboard Bersepadu & Analitik Eksekutif'
                       : activeTab === 'perincian'
                       ? 'Perincian & Katalog Program Pusat'
                       : activeTab === 'peruntukan'
@@ -96,7 +99,7 @@ const DashboardContent: React.FC = () => {
                   {activeTab === 'dashboard'
                     ? 'Sistem pemantauan dan analisis statistik perancangan aktiviti, sumber kewangan, dan status pelaksanaan program rasmi IAB (Mod Paparan Sahaja).'
                     : activeTab === 'bersepadu'
-                    ? 'Portal eksekutif bersepadu: Prestasi Keseluruhan, Indikator Prestasi KPI, Risikan Kewangan (Financial Intelligence), Papan Pengumuman & Visualisasi Interaktif PPPT.'
+                    ? 'Portal eksekutif bersepadu: Prestasi Keseluruhan, Petunjuk Prestasi Utama (KPI), Risikan Kewangan, Papan Pengumuman & Visualisasi Interaktif.'
                     : activeTab === 'perincian'
                     ? 'Katalog terperinci maklumat program, agihan peruntukan objek sebagai (OS21, OS24, OS27, OS29), dan profil pegawai pengurus (Mod Paparan Sahaja).'
                     : activeTab === 'peruntukan'

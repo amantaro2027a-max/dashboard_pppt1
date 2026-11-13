@@ -108,9 +108,102 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
 
   const totalCount = programs.length;
 
+  // 10.1 Analisis Matriks Risiko Kewangan
+  const kewanganRisk = useMemo(() => {
+    const sihatRendah: ProgramItem[] = []; // >= 95%
+    const sederhana: ProgramItem[] = []; // 80% - 94.99%
+    const tinggi: ProgramItem[] = []; // < 80%
+
+    programs.forEach((p) => {
+      const a = Number(p.jumlahRm) || 0;
+      const b = Number(p.jumlahBelanjaRm) || 0;
+
+      if (a <= 0) {
+        tinggi.push(p);
+        return;
+      }
+
+      const util = (b / a) * 100;
+      if (util >= 95) {
+        sihatRendah.push(p);
+      } else if (util >= 80) {
+        sederhana.push(p);
+      } else {
+        tinggi.push(p);
+      }
+    });
+
+    return { sihatRendah, sederhana, tinggi };
+  }, [programs]);
+
+  // 10.2 Analisis Matriks Risiko Tempoh (Melibatkan status selain SELESAI)
+  const tempohRisk = useMemo(() => {
+    const sihatRendah: ProgramItem[] = [];
+    const sederhana: ProgramItem[] = [];
+    const tinggi: ProgramItem[] = [];
+    const tidakBerkenaan: ProgramItem[] = [];
+
+    const nonCompleted = programs.filter(
+      (p) => (p.statusProgram || '').trim().toUpperCase() !== 'SELESAI'
+    );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    nonCompleted.forEach((p) => {
+      const status = (p.statusProgram || '').trim().toUpperCase();
+
+      if (status === 'BATAL') {
+        tidakBerkenaan.push(p);
+        return;
+      }
+
+      let diffDays: number | null = null;
+      if (p.tarikhMula) {
+        const d = new Date(p.tarikhMula);
+        if (!isNaN(d.getTime())) {
+          d.setHours(0, 0, 0, 0);
+          diffDays = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        }
+      }
+
+      if (status === 'TANGGUNG' || (diffDays !== null && diffDays > 90)) {
+        sihatRendah.push(p);
+        return;
+      }
+
+      if (status === 'DALAM TINDAKAN' && diffDays !== null && diffDays > 30 && diffDays <= 90) {
+        sederhana.push(p);
+        return;
+      }
+
+      if (
+        status === 'BELUM AMBIL TINDAKAN' ||
+        (status === 'DALAM TINDAKAN' && (diffDays === null || diffDays <= 30))
+      ) {
+        tinggi.push(p);
+        return;
+      }
+
+      if (diffDays !== null && diffDays <= 30) {
+        tinggi.push(p);
+      } else {
+        sederhana.push(p);
+      }
+    });
+
+    return {
+      totalNonCompleted: nonCompleted.length,
+      sihatRendah,
+      sederhana,
+      tinggi,
+      tidakBerkenaan,
+    };
+  }, [programs]);
+
   return (
     <div className="space-y-8 mb-12">
-      {/* SECTION HEADER - KAD HEADER GELAP (MENGIKUT CONTOH IMAGE) */}
+      {/* SECTION HEADER */}
       <div className="bg-slate-900 text-white px-5 sm:px-6 py-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 select-none shadow-sm border border-slate-800 transition-all hover:border-slate-700">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold shrink-0">
@@ -122,13 +215,13 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                 MODUL 1
               </span>
               <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider">
-                PRESTASI KESELURUHAN &amp; KAD ANALITIK UTAMA PPPT
+                PRESTASI KESELURUHAN &amp; KAD ANALITIK UTAMA PROGRAM
               </h3>
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300">
               <span>Kategori:</span>
               <strong className="text-amber-400 font-bold uppercase">
-                GAMBARAN EKSEKUTIF (EXECUTIVE OVERVIEW DASHBOARD)
+                GAMBARAN EKSEKUTIF
               </strong>
             </div>
           </div>
@@ -160,14 +253,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
 
       {/* FLASH CARDS – OVERALL PERFORMANCE (UPGRADED PER USER SPECIFICATIONS) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
-        {/* 1. Total Programmes */}
+        {/* 1. Jumlah Program */}
         <div
           onClick={() => onOpenDrillDown('Senarai Semua Program Terpilih', programs)}
           className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Total Programmes
+              Jumlah Program
             </span>
             <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Layers className="w-3.5 h-3.5" />
@@ -186,14 +279,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 2. Completed Programmes */}
+        {/* 2. Program Selesai */}
         <div
           onClick={() => onOpenDrillDown('Program Status SELESAI', completedList)}
           className="bg-white p-4 rounded-xl border border-emerald-200/80 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-              Completed
+              Program Selesai
             </span>
             <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <CheckCircle2 className="w-3.5 h-3.5" />
@@ -212,14 +305,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 3. Ongoing Programmes */}
+        {/* 3. Sedang Berjalan */}
         <div
           onClick={() => onOpenDrillDown('Program Status DALAM TINDAKAN', ongoingList)}
           className="bg-white p-4 rounded-xl border border-sky-200/80 shadow-xs hover:border-sky-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700">
-              Ongoing
+              Sedang Berjalan
             </span>
             <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Clock className="w-3.5 h-3.5" />
@@ -238,14 +331,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 4. Upcoming (HANYA STATUS TANGGUNG SAHAJA) */}
+        {/* 4. Akan Datang (HANYA STATUS TANGGUNG SAHAJA) */}
         <div
-          onClick={() => onOpenDrillDown('Program Status TANGGUNG (Upcoming)', upcomingTanggungList)}
+          onClick={() => onOpenDrillDown('Program Status TANGGUNG (Akan Datang)', upcomingTanggungList)}
           className="bg-white p-4 rounded-xl border border-purple-200/80 shadow-xs hover:border-purple-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
-              Upcoming
+              Akan Datang
             </span>
             <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <CalendarDays className="w-3.5 h-3.5" />
@@ -264,14 +357,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 5. Attention Required (HANYA STATUS BELUM AMBIL TINDAKAN SAHAJA) */}
+        {/* 5. Perlu Perhatian (HANYA STATUS BELUM AMBIL TINDAKAN SAHAJA) */}
         <div
           onClick={() => onOpenDrillDown('Program Status BELUM AMBIL TINDAKAN', attentionBelumAmbilList)}
           className="bg-white p-4 rounded-xl border border-amber-200/80 shadow-xs hover:border-amber-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-              Attention Required
+              Perlu Perhatian
             </span>
             <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
               <AlertTriangle className="w-3.5 h-3.5" />
@@ -318,11 +411,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 7. Total Participants */}
+        {/* 7. Jumlah Peserta */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Total Participants
+              Jumlah Peserta
             </span>
             <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
               <Users className="w-3.5 h-3.5" />
@@ -342,11 +435,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 8. Total Allocation Keseluruhan (AMBIL DALAM PAGE PERUNTUKAN) */}
+        {/* 8. Jumlah Peruntukan Keseluruhan (AMBIL DALAM HALAMAN PERUNTUKAN) */}
         <div className="bg-white p-4 rounded-xl border border-blue-300 shadow-xs flex flex-col justify-between bg-gradient-to-b from-white to-blue-50/20">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
-              Total Allocation
+              Jumlah Peruntukan
             </span>
             <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center">
               <Wallet className="w-3.5 h-3.5" />
@@ -357,19 +450,19 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
               {formatRM(totalAllocationPeruntukanPage)}
             </div>
             <p className="text-[11px] text-blue-700 font-semibold mt-1">
-              Dari Page PERUNTUKAN
+              Dari Halaman PERUNTUKAN
             </p>
           </div>
         </div>
 
-        {/* 9. Total Allocation Program (JUMLAH PERUNTUKAN DITERIMA BAGI PROGRAM) */}
+        {/* 9. Jumlah Peruntukan Program */}
         <div
           onClick={() => onOpenDrillDown('Senarai Program Mengikut Peruntukan Diterima (RM)', programs)}
           className="bg-white p-4 rounded-xl border border-purple-200 shadow-xs hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-purple-50/30"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
-              Total Allocation Program
+              Jumlah Peruntukan Program
             </span>
             <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center">
               <FileCheck className="w-3.5 h-3.5" />
@@ -386,14 +479,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 10. Committed LO (BELANJA SEBENAR STATUS TANGGUNG) */}
+        {/* 10. Komitmen Pesanan Tempatan (BELANJA SEBENAR STATUS TANGGUNG) */}
         <div
-          onClick={() => onOpenDrillDown('Komitmen LO (Belanja Sebenar Status TANGGUNG)', upcomingTanggungList)}
+          onClick={() => onOpenDrillDown('Komitmen Pesanan Tempatan (Belanja Sebenar Status TANGGUNG)', upcomingTanggungList)}
           className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-amber-50/30"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-              Committed LO
+              Komitmen Pesanan Tempatan (LO)
             </span>
             <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
               <Coins className="w-3.5 h-3.5" />
@@ -410,14 +503,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 11. Available Balance (PENJIMATAN BAKI BERSIH STATUS TANGGUNG) */}
+        {/* 11. Baki Tersedia (PENJIMATAN BAKI BERSIH STATUS TANGGUNG) */}
         <div
           onClick={() => onOpenDrillDown('Baki Bersih (Penjimatan Status TANGGUNG)', upcomingTanggungList)}
           className="bg-white p-4 rounded-xl border border-emerald-300 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-emerald-50/40"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-              Available Balance
+              Baki Tersedia
             </span>
             <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
               RM
@@ -434,11 +527,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 12. Total Actual Expenditure Keseluruhan */}
+        {/* 12. Perbelanjaan Sebenar Keseluruhan */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Actual Expenditure
+              Perbelanjaan Sebenar
             </span>
             <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center">
               <TrendingDown className="w-3.5 h-3.5" />
@@ -453,9 +546,9 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
         </div>
       </div>
 
-      {/* B. FOUR MAIN DASHBOARD CARDS (WITH DRILL-DOWN CAPABILITY) */}
+      {/* B. EMPAT KAD UTAMA PAPAN PEMUKA */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Card 1: Programme Overview */}
+        {/* Kad 1: Gambaran Keseluruhan Program */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -464,8 +557,8 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                   <Layers className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">1. Programme Overview</h3>
-                  <p className="text-xs text-slate-500">Kadar pelaksanaan dan volum aktiviti PPPT</p>
+                  <h3 className="text-base font-bold text-slate-900">1. Gambaran Keseluruhan Program</h3>
+                  <p className="text-xs text-slate-500">Kadar pelaksanaan dan jumlah aktiviti program</p>
                 </div>
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -534,7 +627,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
             <span className="text-xs text-slate-500">Papar senarai program terperinci</span>
             <button
-              onClick={() => onOpenDrillDown('Drill-Down: Programme Overview', programs)}
+              onClick={() => onOpenDrillDown('Perincian: Gambaran Keseluruhan Program', programs)}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 cursor-pointer"
             >
               <span>Buka Rekod Program</span>
@@ -543,7 +636,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* Card 2: Financial Overview */}
+        {/* Kad 2: Gambaran Keseluruhan Kewangan */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -552,8 +645,8 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                   <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">2. Financial Overview</h3>
-                  <p className="text-xs text-slate-500">Kadar pembakaran bajet &amp; agihan peruntukan</p>
+                  <h3 className="text-base font-bold text-slate-900">2. Gambaran Keseluruhan Kewangan</h3>
+                  <p className="text-xs text-slate-500">Kadar perbelanjaan bajet &amp; agihan peruntukan</p>
                 </div>
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -569,7 +662,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                 <span className="text-base sm:text-lg font-black text-slate-900 mt-0.5 block truncate">
                   {formatRM(totalAllocationPeruntukanPage)}
                 </span>
-                <span className="text-[10px] text-blue-700 font-semibold">Page PERUNTUKAN</span>
+                <span className="text-[10px] text-blue-700 font-semibold">Halaman PERUNTUKAN</span>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -584,7 +677,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
             {/* Financial Progress Bar */}
             <div className="mt-4">
               <div className="flex justify-between text-xs text-slate-600 mb-1">
-                <span>Perbelanjaan Sebenar vs Peruntukan</span>
+                <span>Perbelanjaan Sebenar berbanding Peruntukan</span>
                 <span className="font-semibold">{formatRM(totalActualExp)} dibelanja</span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden flex">
@@ -608,7 +701,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                     }%`,
                   }}
                   className="bg-amber-400 h-full"
-                  title="Committed LO Tanggung"
+                  title="Komitmen Pesanan Tempatan (LO) Tanggung"
                 />
               </div>
             </div>
@@ -617,7 +710,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
             <span className="text-xs text-slate-500">Analisis lejar kewangan OS</span>
             <button
-              onClick={() => onOpenDrillDown('Drill-Down: Financial Overview', programs)}
+              onClick={() => onOpenDrillDown('Perincian: Gambaran Keseluruhan Kewangan', programs)}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
             >
               <span>Buka Lejar Kewangan</span>
@@ -626,7 +719,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* Card 3: Programme Management Overview */}
+        {/* Kad 3: Gambaran Pengurusan Program */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -635,7 +728,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                   <Briefcase className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">3. Programme Management Overview</h3>
+                  <h3 className="text-base font-bold text-slate-900">3. Gambaran Pengurusan Program</h3>
                   <p className="text-xs text-slate-500">Pengurusan pegawai, jabatan &amp; jangka masa</p>
                 </div>
               </div>
@@ -677,7 +770,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
             <span className="text-xs text-slate-500">Papar profil pengurusan aktiviti</span>
             <button
-              onClick={() => onOpenDrillDown('Drill-Down: Programme Management Overview', programs)}
+              onClick={() => onOpenDrillDown('Perincian: Gambaran Pengurusan Program', programs)}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer"
             >
               <span>Buka Maklumat Pengurus</span>
@@ -686,7 +779,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* Card 4: Amendment and Governance Overview */}
+        {/* Kad 4: Gambaran Pindaan & Tadbir Urus */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -695,12 +788,12 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">4. Amendment &amp; Governance Overview</h3>
-                  <p className="text-xs text-slate-500">Audit pindaan borang BK04 &amp; pematuhan dasar</p>
+                  <h3 className="text-base font-bold text-slate-900">4. Gambaran Pindaan &amp; Tadbir Urus</h3>
+                  <p className="text-xs text-slate-500">Semakan pindaan borang BK04 &amp; pematuhan dasar</p>
                 </div>
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-50 text-purple-800 border border-purple-200">
-                BK04 Audit
+                Semakan BK04
               </span>
             </div>
 
@@ -725,7 +818,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
             </div>
 
             <div className="mt-4 p-3 bg-purple-50/60 rounded-xl text-xs text-purple-950 flex items-center justify-between border border-purple-100">
-              <span>Status Audit Tadbir Urus:</span>
+              <span>Status Semakan Tadbir Urus:</span>
               <strong className="text-emerald-700 font-bold flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Terkawal &amp; Tersimpan (BK04)
@@ -734,14 +827,230 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
 
           <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-500">Audit log pindaan program</span>
+            <span className="text-xs text-slate-500">Rekod pindaan program</span>
             <button
-              onClick={() => onOpenDrillDown('Drill-Down: Rekod Pindaan BK04', amendedList)}
+              onClick={() => onOpenDrillDown('Perincian: Rekod Pindaan BK04', amendedList)}
               className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-700 hover:text-purple-900 cursor-pointer"
             >
-              <span>Buka Log BK04</span>
+              <span>Buka Rekod BK04</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 10. Analisis Matriks Risiko (Dipindahkan ke Modul 1) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">
+              10. Analisis Matriks Risiko
+            </h3>
+            <p className="text-xs text-slate-500">
+              Pengelasan risiko kewangan dan risiko tempoh pelaksanaan program
+            </p>
+          </div>
+          <AlertTriangle className="w-5 h-5 text-amber-500" />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* 10.1: Analisis Matriks Risiko Kewangan */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                10.1: Analisis Matriks Risiko Kewangan
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">Berdasarkan kadar penggunaan bajet</span>
+            </div>
+            <div className="space-y-2">
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Kewangan: Sihat / Rendah (≥ 95% / Bijak Belanja)',
+                    kewanganRisk.sihatRendah
+                  )
+                }
+                className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:border-emerald-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
+                    <span className="font-bold text-xs text-emerald-950">
+                      Sihat / Rendah (&ge; 95% / Bijak Belanja)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-950">
+                    {kewanganRisk.sihatRendah.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 mt-1">
+                  Program yang telah memaksimumkan penggunaan peruntukan disediakan.
+                </p>
+              </div>
+
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Kewangan: Risiko Sederhana (80% - 94%)',
+                    kewanganRisk.sederhana
+                  )
+                }
+                className="p-3 rounded-xl bg-amber-50 border border-amber-200 hover:border-amber-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+                    <span className="font-bold text-xs text-amber-950">
+                      Risiko Sederhana (80% - 94%)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-950">
+                    {kewanganRisk.sederhana.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-1">
+                  Program yang tidak memaksimumkan penggunaan peruntukan disediakan.
+                </p>
+              </div>
+
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Kewangan: Risiko Tinggi (< 80%)',
+                    kewanganRisk.tinggi
+                  )
+                }
+                className="p-3 rounded-xl bg-rose-50 border border-rose-200 hover:border-rose-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+                    <span className="font-bold text-xs text-rose-950">
+                      Risiko Tinggi (&lt; 80%)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-950">
+                    {kewanganRisk.tinggi.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-800 mt-1">
+                  Penggunaan peruntukan rendah, baki peruntukan disediakan masih banyak dan perlu teliti semula duit lebihan.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 10.2: Analisis Matriks Risiko Tempoh */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                10.2: Analisis Matriks Risiko Tempoh
+              </span>
+              <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
+                Selain Status SELESAI ({tempohRisk.totalNonCompleted})
+              </span>
+            </div>
+            <div className="space-y-2">
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Tempoh: Sihat / Rendah (Kelulusan Pesanan Tempatan / >90 Hari)',
+                    tempohRisk.sihatRendah
+                  )
+                }
+                className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 hover:border-emerald-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
+                    <span className="font-bold text-xs text-emerald-950">
+                      Sihat / Rendah (Kelulusan Pesanan Tempatan diperolehi)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-200 text-emerald-950">
+                    {tempohRisk.sihatRendah.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 mt-1">
+                  Status TANGGUNG atau &gt; 90 hari sebelum tarikh mula program.
+                </p>
+              </div>
+
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Tempoh: Risiko Sederhana (> 30 Hari Sebelum Mula)',
+                    tempohRisk.sederhana
+                  )
+                }
+                className="p-3 rounded-xl bg-amber-50 border border-amber-200 hover:border-amber-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
+                    <span className="font-bold text-xs text-amber-950">
+                      Risiko Sederhana (30 hari sebelum tarikh mula)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-950">
+                    {tempohRisk.sederhana.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 mt-1">
+                  Status DALAM TINDAKAN dan &gt; 30 hari sebelum tarikh mula program.
+                </p>
+              </div>
+
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Tempoh: Risiko Tinggi (Kurang 7 Hari / Kritikal)',
+                    tempohRisk.tinggi
+                  )
+                }
+                className="p-3 rounded-xl bg-rose-50 border border-rose-200 hover:border-rose-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-600" />
+                    <span className="font-bold text-xs text-rose-950">
+                      Risiko Tinggi (Kurang 7 hari / kritikal)
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-200 text-rose-950">
+                    {tempohRisk.tinggi.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-rose-800 mt-1">
+                  Status DALAM TINDAKAN (&lt; 30 hari sebelum mula) atau status BELUM AMBIL TINDAKAN.
+                </p>
+              </div>
+
+              <div
+                onClick={() =>
+                  onOpenDrillDown(
+                    'Matriks Tempoh: Risiko - Tidak Berkenaan (BATAL)',
+                    tempohRisk.tidakBerkenaan
+                  )
+                }
+                className="p-3 rounded-xl bg-zinc-100 border border-zinc-300 hover:border-zinc-400 transition-all cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-zinc-500" />
+                    <span className="font-bold text-xs text-zinc-900">
+                      Risiko - Tidak Berkenaan
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded bg-zinc-200 text-zinc-900">
+                    {tempohRisk.tidakBerkenaan.length} Program
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-600 mt-1">
+                  Status program telah dibatalkan (BATAL).
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

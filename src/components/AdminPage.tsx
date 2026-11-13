@@ -86,6 +86,12 @@ export const AdminPage: React.FC = () => {
     addJawatan,
     updateJawatan,
     deleteJawatan,
+    importPegawaiBulk,
+    importPusatBulk,
+    importJabatanBulk,
+    importSumberKewanganBulk,
+    importStatusProgramBulk,
+    importJawatanBulk,
   } = useProgramContext();
 
   // Active sub-tab inside Admin portal
@@ -101,6 +107,9 @@ export const AdminPage: React.FC = () => {
   const [importedPrograms, setImportedPrograms] = useState<ProgramItem[] | null>(null);
   const [importFileName, setImportFileName] = useState<string | null>(null);
   const [importStatusMsg, setImportStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Master Data Tabs 1-6 Import/Eksport feedback state
+  const [masterIoMsg, setMasterIoMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Tab 9: PADAM DATA states
   const [deleteTabMode, setDeleteTabMode] = useState<'semua' | 'pusat' | 'jabatan' | 'status' | 'single'>('semua');
@@ -281,6 +290,233 @@ export const AdminPage: React.FC = () => {
   const [editingJawatan, setEditingJawatan] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+
+  // Master Data Tabs 1-6 Export & Import Helpers
+  const handleExportMasterData = (
+    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
+  ) => {
+    try {
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const wb = XLSX.utils.book_new();
+      let rows: Record<string, any>[] = [];
+      let sheetName = 'Data';
+      let fileName = `DATA_INDUK_${category.toUpperCase()}_${dateStr}.xlsx`;
+
+      if (category === 'pegawai') {
+        sheetName = 'Senarai Pegawai';
+        rows = pegawaiList.map((p, idx) => ({
+          Bil: idx + 1,
+          'ID Pegawai': p.id,
+          'Nama Pegawai': p.nama,
+          Jawatan: p.jawatan || '',
+          Pusat: p.pusat || '',
+          Jabatan: p.jabatan || '',
+          Emel: p.emel || '',
+          'No. HP': p.noHp || '',
+        }));
+      } else if (category === 'pusat') {
+        sheetName = 'Senarai Pusat';
+        rows = pusatList.map((p, idx) => ({
+          Bil: idx + 1,
+          'Nama Pusat': p,
+          'Bilangan Jabatan': (jabatanMap[p] || []).length,
+        }));
+      } else if (category === 'jabatan') {
+        sheetName = 'Senarai Jabatan';
+        let bil = 1;
+        pusatList.forEach((pus) => {
+          (jabatanMap[pus] || []).forEach((jab) => {
+            rows.push({
+              Bil: bil++,
+              'Pusat Induk': pus,
+              'Nama Jabatan': jab,
+            });
+          });
+        });
+      } else if (category === 'sumber') {
+        sheetName = 'Sumber Kewangan';
+        rows = sumberKewanganList.map((s, idx) => ({
+          Bil: idx + 1,
+          'Nama Sumber Kewangan': s,
+        }));
+      } else if (category === 'status') {
+        sheetName = 'Status Program';
+        rows = statusProgramList.map((st, idx) => ({
+          Bil: idx + 1,
+          'Status Program': st,
+        }));
+      } else if (category === 'jawatan') {
+        sheetName = 'Senarai Jawatan';
+        rows = jawatanList.map((j, idx) => ({
+          Bil: idx + 1,
+          'Nama Jawatan': j,
+        }));
+      }
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, fileName);
+
+      setMasterIoMsg({
+        type: 'success',
+        text: `Berjaya mengeksport ${rows.length} rekod ke fail ${fileName}.`,
+      });
+      setTimeout(() => setMasterIoMsg(null), 5000);
+    } catch (err) {
+      console.error('Export Master Data Error:', err);
+      setMasterIoMsg({ type: 'error', text: 'Ralat semasa mengeksport fail Excel.' });
+    }
+  };
+
+  const handleImportMasterData = (
+    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan',
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const pickField = (row: Record<string, any>, aliases: string[], allowFirstColFallback = false): string => {
+      const entries = Object.entries(row);
+      for (const alias of aliases) {
+        const normAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const found = entries.find(([k]) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === normAlias);
+        if (found && String(found[1] ?? '').trim() !== '') {
+          return String(found[1]).trim();
+        }
+      }
+      if (allowFirstColFallback) {
+        const nonBil = entries.find(([k, v]) => {
+          const nk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return nk !== 'bil' && nk !== 'no' && String(v ?? '').trim() !== '';
+        });
+        if (nonBil) return String(nonBil[1]).trim();
+      }
+      return '';
+    };
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' });
+
+        if (!rows || rows.length === 0) {
+          setMasterIoMsg({ type: 'error', text: 'Fail yang dimuat naik kosong atau tidak mengandungi rekod.' });
+          return;
+        }
+
+        if (category === 'pegawai') {
+          const parsed: Partial<Pegawai>[] = rows
+            .map((r) => ({
+              id: pickField(r, ['ID Pegawai', 'ID', 'idPegawai']),
+              nama: pickField(r, ['Nama Pegawai', 'Nama Penuh', 'Nama', 'name']),
+              jawatan: pickField(r, ['Jawatan', 'Gelaran']),
+              pusat: pickField(r, ['Pusat', 'Pusat Induk']),
+              jabatan: pickField(r, ['Jabatan', 'Unit']),
+              emel: pickField(r, ['Emel', 'Emel Rasmi', 'Email']),
+              noHp: pickField(r, ['No. HP', 'No HP', 'No Telefon', 'Telefon', 'HP']),
+            }))
+            .filter((p) => p.nama);
+
+          const res = importPegawaiBulk(parsed);
+          setMasterIoMsg(
+            res.success
+              ? {
+                  type: 'success',
+                  text: `Import Pegawai berjaya: ${res.added} rekod baharu ditambah, ${res.updated} rekod dikemaskini daripada ${file.name}.`,
+                }
+              : { type: 'error', text: res.message || 'Gagal mengimport data pegawai.' }
+          );
+        } else if (category === 'pusat') {
+          const items = rows
+            .map((r) => pickField(r, ['Nama Pusat', 'Pusat'], true))
+            .filter(Boolean);
+          const res = importPusatBulk(items);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Pusat berjaya: ${res.added} pusat baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport data Pusat.' }
+          );
+        } else if (category === 'jabatan') {
+          const entries = rows
+            .map((r) => ({
+              pusat: pickField(r, ['Pusat Induk', 'Nama Pusat', 'Pusat']) || selectedPusatForJabatan,
+              jabatan: pickField(r, ['Nama Jabatan', 'Jabatan'], true),
+            }))
+            .filter((item) => item.jabatan);
+          const res = importJabatanBulk(entries, selectedPusatForJabatan);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Jabatan berjaya: ${res.added} jabatan baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport data Jabatan.' }
+          );
+        } else if (category === 'sumber') {
+          const items = rows
+            .map((r) => pickField(r, ['Nama Sumber Kewangan', 'Sumber Kewangan', 'Sumber'], true))
+            .filter(Boolean);
+          const res = importSumberKewanganBulk(items);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Sumber Kewangan berjaya: ${res.added} rekod baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport Sumber Kewangan.' }
+          );
+        } else if (category === 'status') {
+          const items = rows
+            .map((r) => pickField(r, ['Status Program', 'Nama Status', 'Status'], true))
+            .filter(Boolean);
+          const res = importStatusProgramBulk(items);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Status Program berjaya: ${res.added} status baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport Status Program.' }
+          );
+        } else if (category === 'jawatan') {
+          const items = rows
+            .map((r) => pickField(r, ['Nama Jawatan', 'Jawatan'], true))
+            .filter(Boolean);
+          const res = importJawatanBulk(items);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Jawatan berjaya: ${res.added} jawatan baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport Jawatan.' }
+          );
+        }
+        setTimeout(() => setMasterIoMsg(null), 6000);
+      } catch (err) {
+        console.error('Import Master Data Error:', err);
+        setMasterIoMsg({ type: 'error', text: 'Gagal membaca fail Excel/CSV. Pastikan format fail adalah sah.' });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const renderMasterIoButtons = (
+    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
+  ) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer">
+        <Upload className="w-3.5 h-3.5" />
+        <span>Import Excel/CSV</span>
+        <input
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          onChange={(e) => handleImportMasterData(category, e)}
+          className="sr-only"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => handleExportMasterData(category)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+      >
+        <Download className="w-3.5 h-3.5" />
+        <span>Eksport Excel</span>
+      </button>
+    </div>
+  );
 
   // REQUIREMENT: Pages available for permission assignment
   const AVAILABLE_PAGES = [
@@ -2168,6 +2404,32 @@ export const AdminPage: React.FC = () => {
           </div>
 
           <div className="p-6">
+            {masterIoMsg && masterCategory !== 'muat_turun_naik' && masterCategory !== 'notifikasi' && masterCategory !== 'padam_data' && (
+              <div
+                className={`mb-4 p-3.5 rounded-xl text-xs font-medium flex items-center justify-between ${
+                  masterIoMsg.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                    : 'bg-rose-50 text-rose-800 border border-rose-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {masterIoMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{masterIoMsg.text}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMasterIoMsg(null)}
+                  className="font-bold hover:underline ml-3 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* SUB-CATEGORY 1: PEGAWAI (POP-UP MODAL, AUTOSORT & PAGINATION) */}
             {masterCategory === 'pegawai' && (
               <div className="space-y-4">
@@ -2187,14 +2449,17 @@ export const AdminPage: React.FC = () => {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleOpenAddPegawai}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer self-start sm:self-auto shrink-0"
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    <span>+ Tambah Pegawai Baru</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto shrink-0">
+                    {renderMasterIoButtons('pegawai')}
+                    <button
+                      type="button"
+                      onClick={handleOpenAddPegawai}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>+ Tambah Pegawai Baru</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Table Control Bar: Search & Page Limit Selection */}
@@ -2741,11 +3006,14 @@ export const AdminPage: React.FC = () => {
             {/* SUB-CATEGORY 2: PUSAT */}
             {masterCategory === 'pusat' && (
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Pusat</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Tambah atau edit nama Pusat (cth: PPPT, PKPOP). Perubahan akan dipaparkan dalam semua filter dan pendaftaran program.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Pusat</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Tambah atau edit nama Pusat (cth: PPPT, PKPOP). Perubahan akan dipaparkan dalam semua filter dan pendaftaran program.
+                    </p>
+                  </div>
+                  {renderMasterIoButtons('pusat')}
                 </div>
 
                 <form
@@ -2852,13 +3120,16 @@ export const AdminPage: React.FC = () => {
             {/* SUB-CATEGORY 3: JABATAN */}
             {masterCategory === 'jabatan' && (
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">
-                    Pengurusan Jabatan (Mengikut Pusat)
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Pilih pusat di bawah untuk menambah atau mengemaskini jabatan yang berkaitan.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Pengurusan Jabatan (Mengikut Pusat)
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Pilih pusat di bawah untuk menambah atau mengemaskini jabatan yang berkaitan.
+                    </p>
+                  </div>
+                  {renderMasterIoButtons('jabatan')}
                 </div>
 
                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3 text-xs">
@@ -2990,11 +3261,14 @@ export const AdminPage: React.FC = () => {
             {/* SUB-CATEGORY 4: SUMBER KEWANGAN */}
             {masterCategory === 'sumber' && (
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">Pengurusan Sumber Kewangan</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Tambah atau edit nama Sumber Kewangan (cth: IAB – LATIHAN, BSTP, BPG, BPK).
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Pengurusan Sumber Kewangan</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Tambah atau edit nama Sumber Kewangan (cth: IAB – LATIHAN, BSTP, BPG, BPK).
+                    </p>
+                  </div>
+                  {renderMasterIoButtons('sumber')}
                 </div>
 
                 <form
@@ -3097,11 +3371,14 @@ export const AdminPage: React.FC = () => {
             {/* SUB-CATEGORY 5: STATUS PROGRAM */}
             {masterCategory === 'status' && (
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">Pengurusan Status Program</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Urus status rasmi pelaksanaan program (cth: SELESAI, DALAM TINDAKAN, TANGGUNG, BELUM AMBIL TINDAKAN, BATAL).
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Pengurusan Status Program</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Urus status rasmi pelaksanaan program (cth: SELESAI, DALAM TINDAKAN, TANGGUNG, BELUM AMBIL TINDAKAN, BATAL).
+                    </p>
+                  </div>
+                  {renderMasterIoButtons('status')}
                 </div>
 
                 <form
@@ -3208,11 +3485,14 @@ export const AdminPage: React.FC = () => {
             {/* SUB-CATEGORY 6: JAWATAN (BARU) */}
             {masterCategory === 'jawatan' && (
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Jawatan</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Tambah, edit, atau padam senarai Jawatan rasmi. Senarai jawatan ini akan dijadikan pilihan drop down pada bahagian profil pegawai.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Jawatan</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Tambah, edit, atau padam senarai Jawatan rasmi. Senarai jawatan ini akan dijadikan pilihan drop down pada bahagian profil pegawai.
+                    </p>
+                  </div>
+                  {renderMasterIoButtons('jawatan')}
                 </div>
 
                 <form

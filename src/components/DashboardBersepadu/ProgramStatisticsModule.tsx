@@ -47,7 +47,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
   jabatanMap,
   onOpenDrillDown,
   onViewProgramDetail,
-  isExpanded = true,
+  isExpanded = false,
   onToggleExpand,
 }) => {
   const [activeTab, setActiveTab] = useState<StatTab>('pusat');
@@ -194,7 +194,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         id: pg.id,
         nama: pg.nama,
         jawatan: pg.jawatan || 'PEGAWAI',
-        pusat: pg.pusat || 'PPPT',
+        pusat: pg.pusat || 'TIDAK DINYATAKAN',
         jabatan: pg.jabatan || 'UMUM',
         progs: [],
       });
@@ -388,7 +388,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300">
               <span>Kategori:</span>
               <strong className="text-amber-400 font-bold uppercase">
-                STATISTIK PROGRAM (PROGRAMME STATISTICS INTELLIGENCE)
+                STATISTIK PROGRAM
               </strong>
             </div>
           </div>

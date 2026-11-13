@@ -147,7 +147,7 @@ export const getUserBannerInfo = (
     return {
       instansi,
       penggunaJawatan: 'Pengguna: PELAWAT (VIEW SAHAJA) | Jawatan: PELAWAT (VIEW SAHAJA)',
-      pusatJabatan: 'PUSAT & JABATAN: PELAWAT (VIEW SAHAJA)',
+      pusatJabatan: 'PUSAT: PELAWAT (VIEW SAHAJA) | JABATAN: PELAWAT (VIEW SAHAJA)',
       nama: 'PELAWAT (VIEW SAHAJA)',
       jawatan: 'PELAWAT (VIEW SAHAJA)',
       pusat: 'PELAWAT (VIEW SAHAJA)',
@@ -163,30 +163,36 @@ export const getUserBannerInfo = (
       (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
   );
 
-  const nama = (matched?.nama || currentUser.name || currentUser.id || 'PENGGUNA').toUpperCase();
+  const isSuper = currentUser.role === 'SUPER_ADMIN';
+  const rawName = (matched?.nama || currentUser.name || currentUser.id || 'PENGGUNA').toUpperCase();
+  const nama = isSuper && (rawName === 'SUPER ADMIN AMAN' || currentUser.id.toUpperCase() === 'AMAN')
+    ? 'SUPER ADMIN'
+    : rawName;
   const jawatan = (
     matched?.jawatan ||
-    (currentUser.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : 'ADMIN JABATAN')
-  ).toUpperCase();
-  const pusat = (
-    matched?.pusat ||
-    currentUser.pusat ||
-    'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI'
-  ).toUpperCase();
-  const jabatan = (
-    matched?.jabatan ||
-    currentUser.jabatan ||
-    (currentUser.allowedJabatans && currentUser.allowedJabatans.length > 0
-      ? currentUser.allowedJabatans.join(', ')
-      : 'SEMUA JABATAN')
+    (isSuper ? 'SUPER ADMIN' : 'ADMIN JABATAN')
   ).toUpperCase();
 
-  const pusatDanJabatan = `${pusat} dan ${jabatan}`;
+  const pusat = isSuper
+    ? (matched?.pusat || currentUser.pusat || '').toUpperCase()
+    : (matched?.pusat || currentUser.pusat || '').toUpperCase();
+
+  const jabatan = isSuper
+    ? (matched?.jabatan || currentUser.jabatan || '').toUpperCase()
+    : (
+        matched?.jabatan ||
+        currentUser.jabatan ||
+        (currentUser.allowedJabatans && currentUser.allowedJabatans.length > 0
+          ? currentUser.allowedJabatans.join(', ')
+          : 'SEMUA JABATAN')
+      ).toUpperCase();
+
+  const pusatDanJabatan = [pusat, jabatan].filter(Boolean).join(' dan ');
 
   return {
     instansi,
     penggunaJawatan: `Pengguna: ${nama} | Jawatan: ${jawatan}`,
-    pusatJabatan: `PUSAT & JABATAN: ${pusatDanJabatan}`,
+    pusatJabatan: `PUSAT: ${pusat} | JABATAN: ${jabatan}`,
     nama,
     jawatan,
     pusat,

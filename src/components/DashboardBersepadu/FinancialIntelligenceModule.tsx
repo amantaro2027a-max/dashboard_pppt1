@@ -189,7 +189,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300">
               <span>Kategori:</span>
               <strong className="text-amber-400 font-bold uppercase">
-                RISIKAN KEWANGAN (FINANCIAL INTELLIGENCE DASHBOARD)
+                RISIKAN KEWANGAN
               </strong>
             </div>
           </div>
@@ -218,13 +218,13 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
 
       {isExpanded && (
         <>
-      {/* A. FINANCIAL KPI CARDS (8 CARDS) */}
+      {/* A. KAD KPI KEWANGAN (8 KAD) */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 1. Total Allocation */}
+        {/* 1. Jumlah Peruntukan */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Total Allocation
+              Jumlah Peruntukan
             </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
               <Wallet className="w-4 h-4" />
@@ -236,11 +236,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           <p className="text-[11px] text-slate-500 mt-1">Peruntukan asal diluluskan</p>
         </div>
 
-        {/* 2. Total Actual Expenditure */}
+        {/* 2. Perbelanjaan Sebenar */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Actual Expenditure
+              Perbelanjaan Sebenar
             </span>
             <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
               <TrendingDown className="w-4 h-4" />
@@ -254,27 +254,27 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           </p>
         </div>
 
-        {/* 3. Committed Expenditure (LO) */}
+        {/* 3. Komitmen Pesanan Tempatan (LO) */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Committed LO
+              Komitmen Pesanan Tempatan (LO)
             </span>
             <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center font-bold">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div className="text-xl sm:text-2xl font-black text-purple-950 truncate">
-            {fin.committedLoTotal > 0 ? formatRM(fin.committedLoTotal) : 'Tiada Maklumat LO'}
+            {fin.committedLoTotal > 0 ? formatRM(fin.committedLoTotal) : 'Tiada Maklumat'}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Tanggung / LO belum bayar</p>
+          <p className="text-[11px] text-slate-500 mt-1">Tanggung / pesanan belum bayar</p>
         </div>
 
-        {/* 4. Total Available Balance */}
+        {/* 4. Baki Tersedia */}
         <div className="bg-white rounded-2xl border border-emerald-300 p-5 shadow-xs bg-gradient-to-b from-white to-emerald-50/40">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">
-              Available Balance
+              Baki Tersedia
             </span>
             <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
               RM
@@ -288,11 +288,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           </p>
         </div>
 
-        {/* 5. Total Savings */}
+        {/* 5. Jumlah Penjimatan */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Total Savings
+              Jumlah Penjimatan
             </span>
             <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center font-bold">
               <PiggyBank className="w-4 h-4" />
@@ -304,11 +304,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           <p className="text-[11px] text-slate-500 mt-1">Penjimatan program selesai</p>
         </div>
 
-        {/* 6. Overall Budget Utilisation */}
+        {/* 6. Kadar Penggunaan Bajet */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Budget Utilisation
+              Penggunaan Bajet
             </span>
             <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold">
               <Percent className="w-4 h-4" />
@@ -325,7 +325,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           </div>
         </div>
 
-        {/* 7. Insufficient Allocation (Deficit) */}
+        {/* 7. Defisit Peruntukan */}
         <div
           onClick={() => onOpenDrillDown('Program Defisit Kewangan', deficitList)}
           className={`rounded-2xl border p-5 shadow-xs transition-all cursor-pointer ${
@@ -351,9 +351,9 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           </p>
         </div>
 
-        {/* 8. High Utilisation (>=90%) */}
+        {/* 8. Penggunaan Tinggi (>=90%) */}
         <div
-          onClick={() => onOpenDrillDown('Program Utiliti Tinggi (90%-100%)', highUtilList)}
+          onClick={() => onOpenDrillDown('Program Penggunaan Tinggi (90%-100%)', highUtilList)}
           className={`rounded-2xl border p-5 shadow-xs transition-all cursor-pointer ${
             fin.highUtilCount > 0
               ? 'bg-amber-50/70 border-amber-300 hover:border-amber-500'
@@ -362,7 +362,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
-              Utiliti Tinggi (&ge;90%)
+              Penggunaan Tinggi (&ge;90%)
             </span>
             <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
               <Flame className="w-4 h-4" />
@@ -378,11 +378,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
         </div>
       </div>
 
-      {/* B. CALCULATION RULES ACCORDION EXPLANATION */}
+      {/* B. PENJELASAN FORMULA PENGIRAAN */}
       <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 sm:p-5">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
           <Info className="w-4 h-4 text-blue-600" />
-          <span>Formula &amp; Kaedah Pengiraan Kewangan Diluluskan PPPT</span>
+          <span>Formula &amp; Kaedah Pengiraan Kewangan Diluluskan</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs text-slate-600">
           <div className="bg-white p-3 rounded-xl border border-slate-200">
@@ -390,7 +390,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
             <code>Peruntukan − Belanja Sebenar − Komitmen LO</code>
           </div>
           <div className="bg-white p-3 rounded-xl border border-slate-200">
-            <strong className="text-slate-900 block mb-0.5">Kadar Utiliti Bajet (%)</strong>
+            <strong className="text-slate-900 block mb-0.5">Kadar Penggunaan Bajet (%)</strong>
             <code>(Belanja + LO) ÷ Peruntukan × 100</code>
           </div>
           <div className="bg-white p-3 rounded-xl border border-slate-200">
@@ -404,15 +404,15 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
         </div>
       </div>
 
-      {/* C. FINANCIAL ANALYSIS BY OS CODE (OS21, OS24, OS27, OS29) */}
+      {/* C. ANALISIS KEWANGAN MENGIKUT KOD OS */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
           <div>
             <h3 className="text-base font-bold text-slate-900">
-              Analisis Kewangan Mengikut Kod Objek Sebagai (OS Code)
+              Analisis Kewangan Mengikut Kod Objek Sebagai (Kod OS)
             </h3>
             <p className="text-xs text-slate-500">
-              Pecahan Peruntukan, Belanja Sebenar, Komitmen LO dan Baki Tersedia bagi OS21, OS24, OS27 &amp; OS29
+              Pecahan Peruntukan, Belanja Sebenar, Komitmen Pesanan Tempatan (LO) dan Baki Tersedia bagi OS21, OS24, OS27 &amp; OS29
             </p>
           </div>
           <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
@@ -429,7 +429,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
                 <th className="py-3 px-4 text-right">Belanja Sebenar (RM)</th>
                 <th className="py-3 px-4 text-right">Komitmen LO (RM)</th>
                 <th className="py-3 px-4 text-right">Baki Tersedia (RM)</th>
-                <th className="py-3 px-4 text-center">Kadar Utiliti</th>
+                <th className="py-3 px-4 text-center">Kadar Penggunaan</th>
                 <th className="py-3 px-4 text-center">Tindakan</th>
               </tr>
             </thead>
@@ -497,7 +497,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
                         }
                         className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors cursor-pointer"
                       >
-                        <span>Drill-down</span>
+                        <span>Perincian</span>
                         <ArrowRight className="w-3 h-3" />
                       </button>
                     </td>

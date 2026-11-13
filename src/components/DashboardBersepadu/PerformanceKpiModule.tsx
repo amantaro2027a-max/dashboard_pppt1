@@ -157,7 +157,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-300">
               <span>Kategori:</span>
               <strong className="text-amber-400 font-bold uppercase">
-                KPI &amp; PRESTASI PROGRAM (PROGRAMME PERFORMANCE KPI)
+                PETUNJUK PRESTASI UTAMA (KPI) PROGRAM
               </strong>
             </div>
           </div>
@@ -214,7 +214,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
             />
           </div>
           <p className="text-[11px] text-slate-500 mt-2">
-            Penanda aras KPI tahunan PPPT (&ge;85% sasaran)
+            Penanda aras KPI tahunan (&ge;85% sasaran)
           </p>
         </div>
 
@@ -390,7 +390,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-600" />
-              <h3 className="text-sm font-bold text-slate-900">Perbandingan Tahun ke Tahun (YoY)</h3>
+              <h3 className="text-sm font-bold text-slate-900">Perbandingan Tahun ke Tahun</h3>
             </div>
             <span className="text-[11px] font-semibold text-slate-500">Data Sebenar</span>
           </div>

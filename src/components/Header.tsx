@@ -70,7 +70,7 @@ export const Header: React.FC = () => {
     {
       id: 'bersepadu',
       label: 'Dashboard Bersepadu',
-      desc: 'Analitik eksekutif & risikan bersepadu PPPT',
+      desc: 'Analitik eksekutif & risikan bersepadu program',
       icon: BarChart2,
       iconBg: 'bg-indigo-100 text-indigo-700',
     },
@@ -134,9 +134,9 @@ export const Header: React.FC = () => {
       return true;
     }
 
-    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program dan Dashboard Bersepadu
+    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program sahaja
     if (!currentUser) {
-      return item.id === 'dashboard' || item.id === 'bersepadu';
+      return item.id === 'dashboard';
     }
 
     // 4. Untuk Admin biasa, tapis mengikut halaman yang dipilih dalam KEBENARAN VIEW/PAPAR PAGE

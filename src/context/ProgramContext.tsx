@@ -126,6 +126,14 @@ interface ProgramContextType {
   updateJawatan: (oldNama: string, newNama: string) => void;
   deleteJawatan: (nama: string) => void;
 
+  // Bulk Import Master Data (Super Admin)
+  importPegawaiBulk: (items: Partial<Pegawai>[]) => { success: boolean; added: number; updated: number; message?: string };
+  importPusatBulk: (items: string[]) => { success: boolean; added: number; message?: string };
+  importJabatanBulk: (entries: Array<{ pusat?: string; jabatan: string }>, defaultPusat?: string) => { success: boolean; added: number; message?: string };
+  importSumberKewanganBulk: (items: string[]) => { success: boolean; added: number; message?: string };
+  importStatusProgramBulk: (items: string[]) => { success: boolean; added: number; message?: string };
+  importJawatanBulk: (items: string[]) => { success: boolean; added: number; message?: string };
+
   // Page Peruntukan (Super Admin)
   fasaPeruntukanList: FasaPeruntukanRecord[];
   updateFasaPeruntukan: (fasaId: string, allocations: Record<string, OsAllocation>) => { success: boolean; message?: string };
@@ -695,6 +703,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   jabatanMap: JABATAN_MAP,
                   sumberKewanganList: SUMBER_KEWANGAN_LIST,
                   statusProgramList: STATUS_PROGRAM_LIST,
+                  jawatanList: DEFAULT_JAWATAN_LIST,
                 });
               } catch (e) {
                 handleFirestoreError(e, { operation: OperationType.CREATE, path: 'master_data/settings' });
@@ -705,6 +714,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               if (data?.jabatanMap) setJabatanMap(sanitizeJabatanMap(data.jabatanMap));
               if (data?.sumberKewanganList) setSumberKewanganList(data.sumberKewanganList);
               if (data?.statusProgramList) setStatusProgramList(data.statusProgramList);
+              if (data?.jawatanList) setJawatanList(data.jawatanList);
             }
             isInitialSyncDone.current = true;
           },
@@ -1787,6 +1797,240 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     syncMasterDataToFirestore({ jawatanList: nextList });
   };
 
+  // Bulk Import Master Data Functions (Super Admin)
+  const importPegawaiBulk = (items: Partial<Pegawai>[]) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, updated: 0, message: 'Hanya Super Admin dibenarkan mengimport data pegawai.' };
+    }
+    const valid = items.filter((it) => it.nama && it.nama.trim());
+    if (valid.length === 0) {
+      return { success: false, added: 0, updated: 0, message: 'Tiada rekod nama pegawai yang sah ditemui.' };
+    }
+
+    let maxNum = 0;
+    pegawaiList.forEach((p) => {
+      const m = (p.id || '').match(/(\d+)/);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      }
+    });
+
+    const nextMap = new Map<string, Pegawai>(pegawaiList.map((p) => [p.id.toUpperCase(), p]));
+    const changedRecords: Pegawai[] = [];
+    let added = 0;
+    let updated = 0;
+
+    valid.forEach((raw) => {
+      const cleanNama = (raw.nama || '').trim().toUpperCase();
+      let candidateId = (raw.id || '').trim().toUpperCase();
+      const pegMatch = candidateId.match(/Pegawai\s*(\d+)/i);
+      if (pegMatch) {
+        candidateId = `IAB${String(pegMatch[1]).padStart(3, '0')}`;
+      }
+
+      const existingById = candidateId ? nextMap.get(candidateId) : undefined;
+      const existingByName = !existingById
+        ? Array.from(nextMap.values()).find((p) => p.nama.trim().toUpperCase() === cleanNama)
+        : undefined;
+
+      const targetExisting = existingById || existingByName;
+      if (targetExisting) {
+        const merged: Pegawai = {
+          ...targetExisting,
+          nama: cleanNama,
+          pusat: (raw.pusat !== undefined ? raw.pusat : targetExisting.pusat || '').trim().toUpperCase(),
+          jabatan: (raw.jabatan !== undefined ? raw.jabatan : targetExisting.jabatan || '').trim().toUpperCase(),
+          jawatan: (raw.jawatan !== undefined ? raw.jawatan : targetExisting.jawatan || 'PENSYARAH').trim().toUpperCase(),
+          emel: (raw.emel !== undefined ? raw.emel : targetExisting.emel || '').trim().toLowerCase(),
+          noHp: (raw.noHp !== undefined ? raw.noHp : targetExisting.noHp || '').trim(),
+          label: `${targetExisting.id} (${cleanNama})`,
+        };
+        nextMap.set(targetExisting.id.toUpperCase(), merged);
+        changedRecords.push(merged);
+        updated++;
+      } else {
+        let newId = candidateId;
+        if (!newId || nextMap.has(newId)) {
+          maxNum += 1;
+          newId = `IAB${String(maxNum).padStart(3, '0')}`;
+          while (nextMap.has(newId)) {
+            maxNum += 1;
+            newId = `IAB${String(maxNum).padStart(3, '0')}`;
+          }
+        } else {
+          const m = newId.match(/(\d+)/);
+          if (m) {
+            const n = parseInt(m[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        }
+        const created: Pegawai = {
+          id: newId,
+          nama: cleanNama,
+          pusat: (raw.pusat || pusatList[0] || 'TIDAK BERKENAAN').trim().toUpperCase(),
+          jabatan: (raw.jabatan || 'TIDAK BERKENAAN').trim().toUpperCase(),
+          jawatan: (raw.jawatan || jawatanList[0] || 'PENSYARAH').trim().toUpperCase(),
+          emel: (raw.emel || '').trim().toLowerCase(),
+          noHp: (raw.noHp || '').trim(),
+          label: `${newId} (${cleanNama})`,
+        };
+        nextMap.set(newId.toUpperCase(), created);
+        changedRecords.push(created);
+        added++;
+      }
+    });
+
+    const nextList = Array.from(nextMap.values());
+    setPegawaiList(nextList);
+
+    try {
+      const chunkSize = 400;
+      for (let i = 0; i < changedRecords.length; i += chunkSize) {
+        const chunk = changedRecords.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((p) => {
+          batch.set(doc(db, 'pegawai', p.id), sanitizeData(p));
+        });
+        batch.commit().catch((err) => {
+          handleFirestoreError(err, { operation: OperationType.UPDATE, path: 'pegawai/import' });
+        });
+      }
+    } catch {}
+
+    return { success: true, added, updated };
+  };
+
+  const importPusatBulk = (items: string[]) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport senarai Pusat.' };
+    }
+    const cleaned = Array.from(new Set(items.map((x) => x.trim().toUpperCase()).filter(Boolean)));
+    if (cleaned.length === 0) {
+      return { success: false, added: 0, message: 'Tiada nama Pusat yang sah ditemui.' };
+    }
+    const nextList = [...pusatList];
+    const nextMap = { ...jabatanMap };
+    let added = 0;
+    cleaned.forEach((p) => {
+      if (!nextList.includes(p)) {
+        nextList.push(p);
+        if (!nextMap[p]) nextMap[p] = [];
+        added++;
+      }
+    });
+    if (added > 0) {
+      setPusatList(nextList);
+      setJabatanMap(nextMap);
+      syncMasterDataToFirestore({ pusatList: nextList, jabatanMap: nextMap });
+    }
+    return { success: true, added };
+  };
+
+  const importJabatanBulk = (entries: Array<{ pusat?: string; jabatan: string }>, defaultPusat?: string) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport senarai Jabatan.' };
+    }
+    const nextPusatList = [...pusatList];
+    const nextMap = { ...jabatanMap };
+    let added = 0;
+    let pusatAdded = false;
+
+    entries.forEach((entry) => {
+      const jab = (entry.jabatan || '').trim().toUpperCase();
+      const pus = (entry.pusat || defaultPusat || pusatList[0] || '').trim().toUpperCase();
+      if (!jab || !pus) return;
+      if (!nextPusatList.includes(pus)) {
+        nextPusatList.push(pus);
+        pusatAdded = true;
+      }
+      const existing = nextMap[pus] || [];
+      if (!existing.includes(jab)) {
+        nextMap[pus] = [...existing, jab];
+        added++;
+      }
+    });
+
+    if (added > 0 || pusatAdded) {
+      if (pusatAdded) setPusatList(nextPusatList);
+      setJabatanMap(nextMap);
+      syncMasterDataToFirestore({
+        ...(pusatAdded ? { pusatList: nextPusatList } : {}),
+        jabatanMap: nextMap,
+      });
+    }
+    return { success: true, added };
+  };
+
+  const importSumberKewanganBulk = (items: string[]) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport Sumber Kewangan.' };
+    }
+    const cleaned = Array.from(new Set(items.map((x) => x.trim().toUpperCase()).filter(Boolean)));
+    if (cleaned.length === 0) {
+      return { success: false, added: 0, message: 'Tiada Sumber Kewangan yang sah ditemui.' };
+    }
+    const nextList = [...sumberKewanganList];
+    let added = 0;
+    cleaned.forEach((s) => {
+      if (!nextList.includes(s)) {
+        nextList.push(s);
+        added++;
+      }
+    });
+    if (added > 0) {
+      setSumberKewanganList(nextList);
+      syncMasterDataToFirestore({ sumberKewanganList: nextList });
+    }
+    return { success: true, added };
+  };
+
+  const importStatusProgramBulk = (items: string[]) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport Status Program.' };
+    }
+    const cleaned = Array.from(new Set(items.map((x) => x.trim().toUpperCase()).filter(Boolean)));
+    if (cleaned.length === 0) {
+      return { success: false, added: 0, message: 'Tiada Status Program yang sah ditemui.' };
+    }
+    const nextList = [...statusProgramList];
+    let added = 0;
+    cleaned.forEach((st) => {
+      if (!nextList.includes(st)) {
+        nextList.push(st);
+        added++;
+      }
+    });
+    if (added > 0) {
+      setStatusProgramList(nextList);
+      syncMasterDataToFirestore({ statusProgramList: nextList });
+    }
+    return { success: true, added };
+  };
+
+  const importJawatanBulk = (items: string[]) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport Jawatan.' };
+    }
+    const cleaned = Array.from(new Set(items.map((x) => x.trim().toUpperCase()).filter(Boolean)));
+    if (cleaned.length === 0) {
+      return { success: false, added: 0, message: 'Tiada Jawatan yang sah ditemui.' };
+    }
+    const nextList = [...jawatanList];
+    let added = 0;
+    cleaned.forEach((j) => {
+      if (!nextList.includes(j)) {
+        nextList.push(j);
+        added++;
+      }
+    });
+    if (added > 0) {
+      setJawatanList(nextList);
+      syncMasterDataToFirestore({ jawatanList: nextList });
+    }
+    return { success: true, added };
+  };
+
   // Peruntukan Fasa CRUD Functions (Super Admin Only)
   const updateFasaPeruntukan = (
     fasaId: string,
@@ -2021,6 +2265,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addJawatan,
         updateJawatan,
         deleteJawatan,
+        importPegawaiBulk,
+        importPusatBulk,
+        importJabatanBulk,
+        importSumberKewanganBulk,
+        importStatusProgramBulk,
+        importJawatanBulk,
         fasaPeruntukanList,
         updateFasaPeruntukan,
         addFasaPeruntukan,

@@ -25,7 +25,7 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
   onSelectRiskFilter,
   onViewProgram,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Compute automated alerts dynamically from database
   const deficitPrograms = programs.filter(
@@ -66,7 +66,7 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
                 Papan Pengumuman &amp; Amaran Automatik
               </span>
               <span className="text-[10px] text-slate-400 font-mono">
-                Sistem Pengurusan Eksekutif PPPT
+                Sistem Pengurusan Eksekutif Program
               </span>
             </div>
             <h2 className="text-base sm:text-lg font-bold text-white tracking-tight mt-0.5">
@@ -90,9 +90,9 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
             <Sparkles className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="text-xs text-slate-200 leading-relaxed">
               <span className="font-bold text-white block mb-0.5 text-sm">
-                Memo Eksekutif: Sasaran Pelaksanaan Program PPPT Tahun Semasa
+                Memo Eksekutif: Sasaran Pelaksanaan Program Tahun Semasa
               </span>
-              Semua program dan bengkel di bawah Pusat Pembangunan dan Pengurusan Teknologi (PPPT) dipantau secara langsung menerusi Dashboard Bersepadu ini. Sila pastikan pelaporan perbelanjaan sebenar (OS21, OS24, OS27, OS29) dan rekod pindaan BK04 dikemaskini tepat pada masanya bagi tujuan pengauditan dan pematuhan tadbir urus IAB.
+              Semua program dan bengkel di bawah Institut Aminuddin Baki (IAB) dipantau secara langsung menerusi papan pemuka bersepadu ini. Sila pastikan pelaporan perbelanjaan sebenar (OS21, OS24, OS27, OS29) dan rekod pindaan BK04 dikemaskini tepat pada masanya bagi tujuan pengauditan dan pematuhan tadbir urus IAB.
             </div>
           </div>
 
@@ -141,7 +141,7 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Coins className="w-3.5 h-3.5 text-amber-400" />
-                  Utiliti Tinggi (&ge;90%)
+                  Penggunaan Tinggi (&ge;90%)
                 </span>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-bold ${
@@ -156,7 +156,7 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
               <p className="text-xs text-slate-300 mt-2 line-clamp-2">
                 {highUtilPrograms.length > 0
                   ? `${highUtilPrograms.length} program telah membelanjakan 90% ke atas daripada peruntukan.`
-                  : 'Semua program berada dalam zon utiliti berwaspada.'}
+                  : 'Semua program berada dalam zon penggunaan berwaspada.'}
               </p>
             </div>
 
@@ -172,7 +172,7 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-sky-400" />
-                  Komitmen LO (Tanggung)
+                  Komitmen Pesanan Tempatan (Tanggung)
                 </span>
                 <span
                   className={`text-xs px-2 py-0.5 rounded-full font-bold ${
@@ -186,8 +186,8 @@ export const AnnouncementBoard: React.FC<AnnouncementBoardProps> = ({
               </div>
               <p className="text-xs text-slate-300 mt-2 line-clamp-2">
                 {pendingLoPrograms.length > 0
-                  ? `${pendingLoPrograms.length} aktiviti berstatus Tanggung dengan komitmen LO belum selesai.`
-                  : 'Tiada komitmen LO tertunggak.'}
+                  ? `${pendingLoPrograms.length} aktiviti berstatus Tanggung dengan komitmen pesanan tempatan belum selesai.`
+                  : 'Tiada komitmen pesanan tempatan tertunggak.'}
               </p>
             </div>
 

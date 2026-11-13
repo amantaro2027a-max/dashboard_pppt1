@@ -44,7 +44,6 @@ export const DashboardBersepaduPage: React.FC = () => {
   // Super Admin Check & Page Permission Check
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const canAccess =
-    !currentUser || // Guest / public viewer can access
     isSuperAdmin ||
     (currentUser?.role === 'ADMIN' &&
       (currentUser.allowedPages?.includes('DASHBOARD BERSEPADU') ||
@@ -52,12 +51,12 @@ export const DashboardBersepaduPage: React.FC = () => {
         currentUser.allowedPages.length === 0));
 
   // Kawalan Paparan / Collapse Modul:
-  // By default:
+  // Secara lalai:
   // MODUL 1: GAMBARAN EKSEKUTIF -> PAPAR (true)
-  // MODUL 2: KPI & PRESTASI PROGRAM -> COLLAPSE/HIDE (false)
-  // MODUL 3: RISIKAN KEWANGAN -> COLLAPSE/HIDE (false)
-  // MODUL 4: VISUALISASI DATA INTERAKTIF -> COLLAPSE/HIDE (false)
-  // MODUL 5: STATISTIK PROGRAM -> PAPAR (true)
+  // MODUL 2: KPI & PRESTASI PROGRAM -> SEMBUNYI (false)
+  // MODUL 3: RISIKAN KEWANGAN -> SEMBUNYI (false)
+  // MODUL 4: VISUALISASI DATA INTERAKTIF -> SEMBUNYI (false)
+  // MODUL 5: STATISTIK PROGRAM -> SEMBUNYI (false)
   const [moduleExpanded, setModuleExpanded] = useState<{
     m1: boolean;
     m2: boolean;
@@ -257,12 +256,12 @@ export const DashboardBersepaduPage: React.FC = () => {
         const b = Number(p.jumlahBelanjaRm) || 0;
         return a > 0 && (b / a) * 100 >= 90;
       });
-      handleOpenDrillDown('Program Utiliti Bajet Tinggi (≥90%)', list);
+      handleOpenDrillDown('Program Penggunaan Bajet Tinggi (≥90%)', list);
     } else if (type === 'pending_lo') {
       const list = filteredPrograms.filter(
         (p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG'
       );
-      handleOpenDrillDown('Program Komitmen LO Tertunggak (Status Tanggung)', list);
+      handleOpenDrillDown('Program Komitmen Pesanan Tempatan (LO) Tertunggak (Status Tanggung)', list);
     }
   };
 
@@ -314,7 +313,7 @@ export const DashboardBersepaduPage: React.FC = () => {
               title="Set semula semua tapisan"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset</span>
+              <span>Set Semula</span>
             </button>
           </div>
         </div>
@@ -466,7 +465,7 @@ export const DashboardBersepaduPage: React.FC = () => {
       <div className="bg-slate-900 text-white rounded-2xl p-3 sm:p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 bg-teal-950/80 px-2.5 py-1 rounded-md border border-teal-800/80">
-            Kawalan Modul Dashboard
+            Kawalan Modul Papan Pemuka
           </span>
           <span className="text-xs text-slate-300 hidden sm:inline">
             Klik mana-mana modul untuk papar/sembunyi:
@@ -581,10 +580,11 @@ export const DashboardBersepaduPage: React.FC = () => {
         onToggleExpand={() => toggleModule('m3')}
       />
 
-      {/* 6. MODUL 4: DATA VISUALISATION (10 INTERACTIVE CHARTS) */}
+      {/* 6. MODUL 4: VISUALISASI DATA INTERAKTIF */}
       <VisualisationModule
         programs={filteredPrograms}
         allPrograms={programs}
+        pegawaiList={pegawaiList}
         onOpenDrillDown={handleOpenDrillDown}
         onViewProgramDetail={viewProgramDetail}
         isExpanded={moduleExpanded.m4}
@@ -612,7 +612,7 @@ export const DashboardBersepaduPage: React.FC = () => {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100/60 px-2 py-0.5 rounded">
-                  Drill-Down Data Sebenar
+                  Perincian Data Sebenar
                 </span>
                 <h3 className="text-lg font-bold text-slate-900 mt-1">
                   {drillDownModal.title}
@@ -701,7 +701,7 @@ export const DashboardBersepaduPage: React.FC = () => {
             {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
               <span className="text-xs text-slate-500 font-medium">
-                Institut Aminuddin Baki · Pusat Pembangunan dan Pengurusan Teknologi (PPPT)
+                Institut Aminuddin Baki · Kementerian Pendidikan
               </span>
               <button
                 onClick={() => setDrillDownModal({ isOpen: false, title: '', items: [] })}
