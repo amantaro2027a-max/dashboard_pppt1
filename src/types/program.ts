@@ -181,3 +181,22 @@ export interface SubwaranRecord {
   createdAt?: string;
 }
 
+export interface BudgetRatesConfig {
+  makanMinum: {
+    sarapan: number;
+    minumPagi: number;
+    lunch: number;
+    minumPetang: number;
+    dinner: number;
+  };
+  dobi: {
+    inapanIabi: number;
+    bestari: number;
+    eksekutif: number;
+    iabcu: number;
+    iabcswk: number;
+    iabcsbh: number;
+  };
+  updatedAt?: string;
+  updatedBy?: string;
+}

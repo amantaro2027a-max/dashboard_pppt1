@@ -22,6 +22,8 @@ import { ProgramFormModal } from './components/ProgramFormModal';
 import { ExportModal } from './components/ExportModal';
 import { WelcomePage } from './components/WelcomePage';
 import { DashboardBersepaduPage } from './components/DashboardBersepaduPage';
+import { PengiraanBajetPage } from './components/PengiraanBajetPage';
+import { AnalisisPegawaiPage } from './components/AnalisisPegawaiPage';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
@@ -85,6 +87,10 @@ const DashboardContent: React.FC = () => {
                       ? 'Dashboard Bersepadu & Analitik Eksekutif'
                       : activeTab === 'perincian'
                       ? 'Perincian & Katalog Program Pusat'
+                      : activeTab === 'analisisPegawai'
+                      ? 'Analisis Pegawai Mengikut Program'
+                      : activeTab === 'pengiraan'
+                      ? 'Pengiraan Bajet Program & Pakej Hotel'
                       : activeTab === 'peruntukan'
                       ? 'Pengurusan Peruntukan'
                       : activeTab === 'perbelanjaan'
@@ -102,6 +108,10 @@ const DashboardContent: React.FC = () => {
                     ? 'Portal eksekutif bersepadu: Prestasi Keseluruhan, Petunjuk Prestasi Utama (KPI), Risikan Kewangan, Papan Pengumuman & Visualisasi Interaktif.'
                     : activeTab === 'perincian'
                     ? 'Katalog terperinci maklumat program, agihan peruntukan objek sebagai (OS21, OS24, OS27, OS29), dan profil pegawai pengurus (Mod Paparan Sahaja).'
+                    : activeTab === 'analisisPegawai'
+                    ? 'Analisis terperinci beban tugas, visualisasi data, dan pencapaian pelaksanaan program bagi setiap pegawai mengikut Pusat, Jabatan, Jawatan & Status.'
+                    : activeTab === 'pengiraan'
+                    ? 'Kalkulator pengiraan bajet Makan Minum, Dobi, dan Pakej Hotel (beserta SST 6% & 8%). Pengguna boleh mengisi sel kuning; kadar kos seunit (RM) dikawal oleh Super Admin.'
                     : activeTab === 'peruntukan'
                     ? 'Penetapan peruntukan Fasa 1, Fasa 2 dan seterusnya mengikut Sumber Kewangan & pecahan Kod OS bagi kegunaan rasmi IAB.'
                     : activeTab === 'perbelanjaan'
@@ -144,6 +154,12 @@ const DashboardContent: React.FC = () => {
           ) : activeTab === 'perincian' ? (
             /* PAGE 3 – PERINCIAN PROGRAM (VIEW ONLY) */
             <ProgramCatalog />
+          ) : activeTab === 'analisisPegawai' ? (
+            /* PAGE BARU – ANALISIS PEGAWAI MENGIKUT PROGRAM */
+            <AnalisisPegawaiPage />
+          ) : activeTab === 'pengiraan' ? (
+            /* PAGE BARU – PENGIRAAN BAJET (AKSES PELAWAT) */
+            <PengiraanBajetPage />
           ) : activeTab === 'peruntukan' ? (
             /* PAGE 4 – PERUNTUKAN FASA (SUPER ADMIN) */
             <PeruntukanPage />

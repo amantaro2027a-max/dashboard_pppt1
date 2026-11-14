@@ -522,6 +522,7 @@ export const AdminPage: React.FC = () => {
   const AVAILABLE_PAGES = [
     { key: 'DASHBOARD BERSEPADU', label: 'DASHBOARD BERSEPADU' },
     { key: 'PERINCIAN PROGRAM', label: 'PERINCIAN PROGRAM' },
+    { key: 'ANALISIS PEGAWAI', label: 'ANALISIS PEGAWAI MENGIKUT PROGRAM' },
     { key: 'PERUNTUKAN', label: 'PERUNTUKAN' },
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },

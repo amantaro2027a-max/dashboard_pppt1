@@ -13,6 +13,8 @@ import {
   ChevronDown,
   Check,
   BarChart2,
+  Calculator,
+  Users,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -83,6 +85,20 @@ export const Header: React.FC = () => {
       badge: filteredPrograms.length,
     },
     {
+      id: 'analisisPegawai',
+      label: 'Analisis Pegawai Mengikut Program',
+      desc: 'Slicer, senarai pegawai, visualisasi & analisis program',
+      icon: Users,
+      iconBg: 'bg-cyan-100 text-cyan-700',
+    },
+    {
+      id: 'pengiraan',
+      label: 'Pengiraan Bajet',
+      desc: 'Kalkulator bajet makan minum, dobi & pakej hotel',
+      icon: Calculator,
+      iconBg: 'bg-amber-100 text-amber-700',
+    },
+    {
       id: 'peruntukan',
       label: 'Peruntukan',
       desc: 'Penetapan peruntukan fasa mengikut kod OS',
@@ -120,12 +136,9 @@ export const Header: React.FC = () => {
     },
   ];
 
-  // User requirement:
-  // "From Page UTAMA, once klik MASUK, viewer sahaja can only see Page Dashboard Program and Dashboard Bersepadu sahaja.
-  // Other page hide from guest/view user/public. Only certain user can view page based on selected page from KEBENARAN VIEW/PAPAR PAGE."
   const visibleMenuItems = allMenuItems.filter((item) => {
-    // 1. Dashboard Program sentiasa dibenarkan untuk semua
-    if (item.id === 'dashboard') {
+    // 1. Dashboard Program & Pengiraan Bajet dibenarkan untuk akses pelawat dari Laman Utama
+    if (item.id === 'dashboard' || item.id === 'pengiraan') {
       return true;
     }
 
@@ -134,9 +147,9 @@ export const Header: React.FC = () => {
       return true;
     }
 
-    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program sahaja
+    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program & Pengiraan Bajet sahaja
     if (!currentUser) {
-      return item.id === 'dashboard';
+      return false;
     }
 
     // 4. Untuk Admin biasa, tapis mengikut halaman yang dipilih dalam KEBENARAN VIEW/PAPAR PAGE
@@ -144,6 +157,7 @@ export const Header: React.FC = () => {
       if (item.id === 'admin') return true;
       if (item.id === 'bersepadu') return allowedPages.includes('DASHBOARD BERSEPADU');
       if (item.id === 'perincian') return allowedPages.includes('PERINCIAN PROGRAM');
+      if (item.id === 'analisisPegawai') return allowedPages.includes('ANALISIS PEGAWAI');
       if (item.id === 'peruntukan') return allowedPages.includes('PERUNTUKAN');
       if (item.id === 'perbelanjaan') return allowedPages.includes('PERBELANJAAN');
       if (item.id === 'subwaran') return allowedPages.includes('SUBWARAN');

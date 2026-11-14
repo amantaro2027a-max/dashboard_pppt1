@@ -10,6 +10,7 @@ import {
   SubwaranRecord,
   RekodPindaanBK04,
   ItemPerubahanBK04,
+  BudgetRatesConfig,
 } from '../types/program';
 import { formatRM } from '../utils/formatters';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
@@ -67,8 +68,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -146,6 +147,10 @@ interface ProgramContextType {
   updateSubwaran: (id: string, record: Partial<SubwaranRecord>) => { success: boolean; message?: string };
   deleteSubwaran: (id: string) => { success: boolean; message?: string };
 
+  // Pengiraan Bajet Unit Rates (Super Admin editable, persisted in Firestore)
+  budgetRates: BudgetRatesConfig;
+  updateBudgetRates: (rates: BudgetRatesConfig) => { success: boolean; message?: string };
+
   // Firebase Live Status
   firebaseStatus: 'connecting' | 'connected' | 'offline';
 }
@@ -169,6 +174,25 @@ const STORAGE_ADMINS = 'pppt_dashboard_admins_v2';
 const STORAGE_SESSION = 'pppt_dashboard_session_v2';
 const STORAGE_MASTER = 'pppt_dashboard_master_v2';
 const STORAGE_PERUNTUKAN_FASA = 'pppt_dashboard_peruntukan_fasa_v2';
+const STORAGE_BUDGET_RATES = 'pppt_dashboard_budget_rates_v2';
+
+export const DEFAULT_BUDGET_RATES: BudgetRatesConfig = {
+  makanMinum: {
+    sarapan: 7.2,
+    minumPagi: 5.4,
+    lunch: 13.5,
+    minumPetang: 5.4,
+    dinner: 13.5,
+  },
+  dobi: {
+    inapanIabi: 10.0,
+    bestari: 12.2,
+    eksekutif: 14.0,
+    iabcu: 10.0,
+    iabcswk: 10.0,
+    iabcsbh: 10.0,
+  },
+};
 
 const INITIAL_FASA_PERUNTUKAN: FasaPeruntukanRecord[] = [
   {
@@ -499,6 +523,23 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return INITIAL_SUBWARAN;
   });
 
+  // Budget Unit Rates state (Super Admin editable)
+  const [budgetRates, setBudgetRates] = useState<BudgetRatesConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_BUDGET_RATES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          makanMinum: { ...DEFAULT_BUDGET_RATES.makanMinum, ...(parsed?.makanMinum || {}) },
+          dobi: { ...DEFAULT_BUDGET_RATES.dobi, ...(parsed?.dobi || {}) },
+          updatedAt: parsed?.updatedAt,
+          updatedBy: parsed?.updatedBy,
+        };
+      }
+    } catch {}
+    return DEFAULT_BUDGET_RATES;
+  });
+
   // UI States
   const [filters, setFilters] = useState<ProgramFilterState>(defaultFilters);
   const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
@@ -506,7 +547,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -555,6 +596,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem(STORAGE_MASTER + '_jawatan', JSON.stringify(jawatanList));
     } catch {}
   }, [pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList, jawatanList]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_BUDGET_RATES, JSON.stringify(budgetRates));
+    } catch {}
+  }, [budgetRates]);
 
   // Firebase Firestore Connection & Real-Time Listeners
   useEffect(() => {
@@ -704,6 +751,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   sumberKewanganList: SUMBER_KEWANGAN_LIST,
                   statusProgramList: STATUS_PROGRAM_LIST,
                   jawatanList: DEFAULT_JAWATAN_LIST,
+                  budgetRates: DEFAULT_BUDGET_RATES,
                 });
               } catch (e) {
                 handleFirestoreError(e, { operation: OperationType.CREATE, path: 'master_data/settings' });
@@ -715,6 +763,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               if (data?.sumberKewanganList) setSumberKewanganList(data.sumberKewanganList);
               if (data?.statusProgramList) setStatusProgramList(data.statusProgramList);
               if (data?.jawatanList) setJawatanList(data.jawatanList);
+              if (data?.budgetRates) {
+                setBudgetRates({
+                  makanMinum: { ...DEFAULT_BUDGET_RATES.makanMinum, ...(data.budgetRates.makanMinum || {}) },
+                  dobi: { ...DEFAULT_BUDGET_RATES.dobi, ...(data.budgetRates.dobi || {}) },
+                  updatedAt: data.budgetRates.updatedAt,
+                  updatedBy: data.budgetRates.updatedBy,
+                });
+              }
             }
             isInitialSyncDone.current = true;
           },
@@ -745,6 +801,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     sumberKewanganList: string[];
     statusProgramList: string[];
     jawatanList: string[];
+    budgetRates: BudgetRatesConfig;
   }>) => {
     try {
       const docRef = doc(db, 'master_data', 'settings');
@@ -2204,6 +2261,35 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
+  // Update Budget Rates (Super Admin Only)
+  const updateBudgetRates = (newRates: BudgetRatesConfig): { success: boolean; message?: string } => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, message: 'Hanya Super Admin dibenarkan mengubah kadar RM seunit.' };
+    }
+    const sanitizedRates: BudgetRatesConfig = {
+      makanMinum: {
+        sarapan: Math.max(0, Number(newRates.makanMinum.sarapan) || 0),
+        minumPagi: Math.max(0, Number(newRates.makanMinum.minumPagi) || 0),
+        lunch: Math.max(0, Number(newRates.makanMinum.lunch) || 0),
+        minumPetang: Math.max(0, Number(newRates.makanMinum.minumPetang) || 0),
+        dinner: Math.max(0, Number(newRates.makanMinum.dinner) || 0),
+      },
+      dobi: {
+        inapanIabi: Math.max(0, Number(newRates.dobi.inapanIabi) || 0),
+        bestari: Math.max(0, Number(newRates.dobi.bestari) || 0),
+        eksekutif: Math.max(0, Number(newRates.dobi.eksekutif) || 0),
+        iabcu: Math.max(0, Number(newRates.dobi.iabcu) || 0),
+        iabcswk: Math.max(0, Number(newRates.dobi.iabcswk) || 0),
+        iabcsbh: Math.max(0, Number(newRates.dobi.iabcsbh) || 0),
+      },
+      updatedAt: new Date().toISOString().slice(0, 10),
+      updatedBy: currentUser.name || currentUser.id,
+    };
+    setBudgetRates(sanitizedRates);
+    syncMasterDataToFirestore({ budgetRates: sanitizedRates });
+    return { success: true };
+  };
+
   return (
     <ProgramContext.Provider
       value={{
@@ -2279,6 +2365,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addSubwaran,
         updateSubwaran,
         deleteSubwaran,
+        budgetRates,
+        updateBudgetRates,
         firebaseStatus,
       }}
     >

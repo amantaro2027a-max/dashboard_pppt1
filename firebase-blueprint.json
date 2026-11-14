@@ -71,7 +71,9 @@
         "pusatList": { "type": "array" },
         "jabatanMap": { "type": "object" },
         "sumberKewanganList": { "type": "array" },
-        "statusList": { "type": "array" }
+        "statusList": { "type": "array" },
+        "jawatanList": { "type": "array" },
+        "budgetRates": { "type": "object" }
       },
       "rules": {
         "read": "true",
