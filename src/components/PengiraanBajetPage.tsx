@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useProgramContext, DEFAULT_BUDGET_RATES } from '../context/ProgramContext';
 import { BudgetRatesConfig } from '../types/program';
 import { formatRM } from '../utils/formatters';
+import { ALL_JABATAN_LIST } from '../data/constants';
 import {
   RotateCcw,
   Lock,
@@ -16,6 +17,10 @@ import {
   FileText,
   X,
   Eraser,
+  ChevronDown,
+  ChevronUp,
+  ZoomIn,
+  Maximize2,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -97,17 +102,23 @@ const loadImageAsDataUrl = (src: string): Promise<string | null> =>
   });
 
 export const PengiraanBajetPage: React.FC = () => {
-  const { currentUser, isSuperAdmin, budgetRates, updateBudgetRates, jabatanMap } = useProgramContext();
+  const { currentUser, isSuperAdmin, budgetRates, updateBudgetRates, jabatanMap, programs, pegawaiList } = useProgramContext();
 
   const jabatanOptions = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(ALL_JABATAN_LIST);
     Object.values(jabatanMap || {}).forEach((arr) => {
       arr.forEach((j) => {
         if (j && j !== 'SEMUA JABATAN') set.add(j);
       });
     });
+    (programs || []).forEach((p) => {
+      if (p.jabatan && p.jabatan !== 'SEMUA JABATAN') set.add(p.jabatan);
+    });
+    (pegawaiList || []).forEach((peg) => {
+      if (peg.jabatan && peg.jabatan !== 'SEMUA JABATAN') set.add(peg.jabatan);
+    });
     return Array.from(set).sort();
-  }, [jabatanMap]);
+  }, [jabatanMap, programs, pegawaiList]);
 
   // Pilihan mod utama kalkulator (Makan Minum & Dobi ATAU Pakej Hotel)
   const [selectedMode, setSelectedMode] = useState<CalcMode>('makanDobi');
@@ -123,11 +134,16 @@ export const PengiraanBajetPage: React.FC = () => {
       year: 'numeric',
     })
   );
-  const [programJabatan, setProgramJabatan] = useState(() => currentUser?.jabatan || '');
+  const [programJabatan, setProgramJabatan] = useState(() =>
+    currentUser?.jabatan && currentUser.jabatan !== 'SEMUA JABATAN' ? currentUser.jabatan : ''
+  );
+  const [isCustomJabatanMode, setIsCustomJabatanMode] = useState(false);
+  const [isMobileMetaOpen, setIsMobileMetaOpen] = useState(false);
+  const [previewZoomMode, setPreviewZoomMode] = useState<'fit' | 'readable'>('fit');
 
   // Responsive scaling for A4 Portrait preview sheet (794px x 1123px @ 96dpi)
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const [previewScale, setPreviewScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
 
   useEffect(() => {
     if (!isPreviewOpen) return;
@@ -135,9 +151,9 @@ export const PengiraanBajetPage: React.FC = () => {
     if (!el) return;
 
     const updateScale = () => {
-      const availableWidth = Math.max(260, el.clientWidth - 24);
+      const availableWidth = Math.max(260, el.clientWidth - 16);
       const a4PixelWidth = 794;
-      setPreviewScale(Math.min(1, availableWidth / a4PixelWidth));
+      setFitScale(Math.min(1, availableWidth / a4PixelWidth));
     };
 
     updateScale();
@@ -148,7 +164,10 @@ export const PengiraanBajetPage: React.FC = () => {
       observer.disconnect();
       window.removeEventListener('resize', updateScale);
     };
-  }, [isPreviewOpen]);
+  }, [isPreviewOpen, isMobileMetaOpen]);
+
+  const effectivePreviewScale =
+    previewZoomMode === 'readable' ? Math.max(fitScale, 0.85) : fitScale;
 
   useEffect(() => {
     if (!isPreviewOpen) return;
@@ -445,9 +464,11 @@ export const PengiraanBajetPage: React.FC = () => {
 
   const openPreviewModal = (mode: CalcMode = selectedMode) => {
     setPreviewOption(mode);
-    if (!programJabatan && currentUser?.jabatan) {
+    if (!programJabatan && currentUser?.jabatan && currentUser.jabatan !== 'SEMUA JABATAN') {
       setProgramJabatan(currentUser.jabatan);
     }
+    setIsMobileMetaOpen(false);
+    setPreviewZoomMode('fit');
     setIsPreviewOpen(true);
   };
 
@@ -592,10 +613,14 @@ export const PengiraanBajetPage: React.FC = () => {
       doc.setTextColor(15, 23, 42);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
-      doc.text('KEMENTERIAN PENDIDIKAN · INSTITUT AMINUDDIN BAKI', pageWidth / 2, cursorY, {
+      doc.text('KEMENTERIAN PENDIDIKAN', pageWidth / 2, cursorY, {
         align: 'center',
       });
-      cursorY += 5.2;
+      cursorY += 3.8;
+      doc.text('INSTITUT AMINUDDIN BAKI', pageWidth / 2, cursorY, {
+        align: 'center',
+      });
+      cursorY += 4.8;
 
       doc.setFontSize(11);
       doc.text(
@@ -2305,20 +2330,20 @@ export const PengiraanBajetPage: React.FC = () => {
       {/* ============================================================== */}
       {isPreviewOpen && (
         <div
-          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4"
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-1 sm:p-4"
           onClick={() => setIsPreviewOpen(false)}
         >
           <div
-            className="bg-white w-full max-w-5xl max-h-[94vh] rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden"
+            className="bg-white w-full max-w-5xl h-[96vh] sm:h-auto sm:max-h-[94vh] rounded-xl sm:rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header Modal */}
-            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0 bg-white">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+            {/* Header Modal (Padat untuk mobile agar ruang preview lebih besar) */}
+            <div className="px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0 bg-white">
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-lg font-bold text-slate-900 truncate">
                   Preview &amp; Simpan Dokumen (A4 Potrait)
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
                   Pilih jenis pengiraan bajet untuk dipaparkan dalam format A4 Potret dan disimpan
                 </p>
               </div>
@@ -2326,48 +2351,99 @@ export const PengiraanBajetPage: React.FC = () => {
                 type="button"
                 onClick={() => setIsPreviewOpen(false)}
                 aria-label="Tutup Preview"
-                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="min-h-[38px] min-w-[38px] sm:min-h-[44px] sm:min-w-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Kawalan Pilihan Dokumen Preview & Maklumat Program */}
-            <div className="px-4 sm:px-6 py-3 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-1 bg-slate-200/70 rounded-xl w-full md:w-auto">
+            <div className="px-3 sm:px-6 py-2 sm:py-3 bg-slate-50 border-b border-slate-200 space-y-2 sm:space-y-3 shrink-0">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                <div className="grid grid-cols-2 gap-1 p-1 bg-slate-200/70 rounded-xl w-full md:w-auto">
                   <button
                     type="button"
                     onClick={() => setPreviewOption('makanDobi')}
-                    className={`min-h-[40px] px-3.5 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`min-h-[36px] sm:min-h-[40px] px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                       previewOption === 'makanDobi'
                         ? 'bg-slate-900 text-white shadow-xs'
                         : 'text-slate-700 hover:text-slate-900'
                     }`}
                   >
-                    <Calculator className="w-3.5 h-3.5" />
-                    <span>Pengiraan Bajet Makan Minum &amp; Dobi</span>
+                    <Calculator className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Makan Minum &amp; Dobi</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPreviewOption('hotel')}
-                    className={`min-h-[40px] px-3.5 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`min-h-[36px] sm:min-h-[40px] px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                       previewOption === 'hotel'
                         ? 'bg-slate-900 text-white shadow-xs'
                         : 'text-slate-700 hover:text-slate-900'
                     }`}
                   >
-                    <Building className="w-3.5 h-3.5" />
-                    <span>Pengiraan Pakej Hotel</span>
+                    <Building className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Pakej Hotel</span>
                   </button>
                 </div>
-                <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
-                  Paparan A4 Potret (1 Muka Surat)
-                </span>
+
+                <div className="flex items-center justify-between gap-2">
+                  {/* Mobile Accordion Toggle untuk Maklumat Program */}
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileMetaOpen((prev) => !prev)}
+                    className="sm:hidden flex-1 min-h-[34px] px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-slate-800 flex items-center justify-between gap-1.5 cursor-pointer"
+                  >
+                    <span className="truncate">
+                      {isMobileMetaOpen
+                        ? 'Sembunyi Maklumat Program'
+                        : `Isi Maklumat Program${programRefTitle ? ` (${programRefTitle})` : ''}`}
+                    </span>
+                    {isMobileMetaOpen ? (
+                      <ChevronUp className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+                    )}
+                  </button>
+
+                  {/* Zoom Toggle untuk bacaan jelas pada skrin kecil */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreviewZoomMode((prev) => (prev === 'fit' ? 'readable' : 'fit'))
+                    }
+                    className={`min-h-[34px] px-2.5 py-1 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors ${
+                      previewZoomMode === 'readable'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                    title="Tukar saiz paparan A4 (Fit Skrin / Zum Baca Jelas)"
+                  >
+                    {previewZoomMode === 'readable' ? (
+                      <>
+                        <Maximize2 className="w-3 h-3" />
+                        <span>Fit A4</span>
+                      </>
+                    ) : (
+                      <>
+                        <ZoomIn className="w-3 h-3" />
+                        <span>Zum Jelas</span>
+                      </>
+                    )}
+                  </button>
+
+                  <span className="hidden md:inline text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                    Paparan A4 Potret (1 Muka Surat)
+                  </span>
+                </div>
               </div>
 
-              {/* Medan Tambahan: NAMA PROGRAM, TARIKH, JABATAN */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Medan Tambahan: NAMA PROGRAM, TARIKH, JABATAN (Boleh lipat pada mobile) */}
+              <div
+                className={`${
+                  isMobileMetaOpen ? 'grid' : 'hidden sm:grid'
+                } grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5 pt-1 sm:pt-0`}
+              >
                 <div>
                   <label
                     htmlFor="preview-nama-program"
@@ -2401,26 +2477,62 @@ export const PengiraanBajetPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label
-                    htmlFor="preview-jabatan"
-                    className="block text-[11px] font-bold text-slate-700 uppercase mb-1"
-                  >
-                    Jabatan
-                  </label>
-                  <input
-                    id="preview-jabatan"
-                    type="text"
-                    list="pengiraan-jabatan-list"
-                    value={programJabatan}
-                    onChange={(e) => setProgramJabatan(e.target.value)}
-                    placeholder="Pilih atau taip nama jabatan..."
-                    className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-2 focus:outline-blue-600"
-                  />
-                  <datalist id="pengiraan-jabatan-list">
-                    {jabatanOptions.map((jab) => (
-                      <option key={jab} value={jab} />
-                    ))}
-                  </datalist>
+                  <div className="flex items-center justify-between mb-1">
+                    <label
+                      htmlFor="preview-jabatan"
+                      className="block text-[11px] font-bold text-slate-700 uppercase"
+                    >
+                      Jabatan
+                    </label>
+                    {isCustomJabatanMode && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomJabatanMode(false)}
+                        className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        Pilih Senarai
+                      </button>
+                    )}
+                  </div>
+                  {isCustomJabatanMode ? (
+                    <input
+                      id="preview-jabatan"
+                      type="text"
+                      value={programJabatan}
+                      onChange={(e) => setProgramJabatan(e.target.value.toUpperCase())}
+                      placeholder="Taip nama jabatan..."
+                      className="w-full min-h-[38px] px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-2 focus:outline-blue-600 uppercase"
+                    />
+                  ) : (
+                    <select
+                      id="preview-jabatan"
+                      value={
+                        jabatanOptions.includes(programJabatan) || programJabatan === ''
+                          ? programJabatan
+                          : '__CUSTOM_VAL__'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__MANUAL__') {
+                          setIsCustomJabatanMode(true);
+                        } else if (val !== '__CUSTOM_VAL__') {
+                          setProgramJabatan(val);
+                        }
+                      }}
+                      className="w-full min-h-[38px] px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-900 focus:outline-2 focus:outline-blue-600 cursor-pointer"
+                    >
+                      <option value="">-- Pilih Jabatan --</option>
+                      {programJabatan && !jabatanOptions.includes(programJabatan) && (
+                        <option value="__CUSTOM_VAL__">{programJabatan}</option>
+                      )}
+                      {jabatanOptions.map((jab) => (
+                        <option key={jab} value={jab}>
+                          {jab}
+                        </option>
+                      ))}
+                      <option value="__MANUAL__">+ Taip Nama Jabatan Lain...</option>
+                    </select>
+                  )}
                 </div>
               </div>
             </div>
@@ -2428,12 +2540,12 @@ export const PengiraanBajetPage: React.FC = () => {
             {/* Viewport Kertas A4 Potrait (Skala Responsif Untuk Mobile & Desktop - 1 Page) */}
             <div
               ref={previewContainerRef}
-              className="flex-1 overflow-y-auto bg-slate-200/80 p-3 sm:p-5 flex justify-center items-start"
+              className="flex-1 overflow-auto bg-slate-200/80 p-2 sm:p-5 flex justify-center items-start"
             >
               <div
                 style={{
-                  width: `${Math.round(794 * previewScale)}px`,
-                  height: `${Math.round(1123 * previewScale)}px`,
+                  width: `${Math.round(794 * effectivePreviewScale)}px`,
+                  height: `${Math.round(1123 * effectivePreviewScale)}px`,
                 }}
                 className="relative shrink-0"
               >
@@ -2441,7 +2553,7 @@ export const PengiraanBajetPage: React.FC = () => {
                   style={{
                     width: '794px',
                     height: '1123px',
-                    transform: `scale(${previewScale})`,
+                    transform: `scale(${effectivePreviewScale})`,
                     transformOrigin: 'top left',
                   }}
                   className="bg-white shadow-xl border border-slate-400 px-10 py-7 text-slate-900 flex flex-col justify-between overflow-hidden"
@@ -2454,8 +2566,9 @@ export const PengiraanBajetPage: React.FC = () => {
                         alt="Jata Negara Malaysia"
                         className="h-12 w-auto mx-auto object-contain"
                       />
-                      <div className="mt-1 text-[10.5px] font-bold tracking-wider uppercase text-slate-800">
-                        KEMENTERIAN PENDIDIKAN · INSTITUT AMINUDDIN BAKI
+                      <div className="mt-1 text-[10.5px] font-bold tracking-wider uppercase text-slate-800 leading-tight">
+                        <div>KEMENTERIAN PENDIDIKAN</div>
+                        <div>INSTITUT AMINUDDIN BAKI</div>
                       </div>
                       <h3 className="text-base font-black tracking-wide uppercase text-slate-950 mt-1">
                         {previewOption === 'makanDobi'
@@ -2989,33 +3102,32 @@ export const PengiraanBajetPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Footer Modal: Butang Simpan */}
-            <div className="px-4 sm:px-6 py-3.5 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
+            {/* Footer Modal: Butang Simpan (Padat di mobile) */}
+            <div className="px-3 sm:px-6 py-2.5 sm:py-3.5 border-t border-slate-200 bg-white flex items-center justify-between gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsPreviewOpen(false)}
-                className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors cursor-pointer order-3 sm:order-1"
+                className="hidden sm:inline-flex min-h-[42px] px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors cursor-pointer"
               >
                 Tutup
               </button>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 order-1 sm:order-2">
+              <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => handleExportExcel(previewOption)}
-                  className="min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-colors cursor-pointer whitespace-nowrap"
+                  className="min-h-[40px] sm:min-h-[42px] inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold text-slate-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
-                  <span>Simpan Excel (.xlsx)</span>
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>Excel (.xlsx)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleSavePdfA4Portrait(previewOption)}
-                  className="min-h-[44px] inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap shadow-xs"
+                  className="min-h-[40px] sm:min-h-[42px] inline-flex items-center justify-center gap-1.5 px-3 sm:px-5 py-2 rounded-xl text-[11px] sm:text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap shadow-xs"
                 >
-                  <Download className="w-4 h-4" />
-                  <FileText className="w-4 h-4" />
-                  <span>Simpan PDF (A4 Potret)</span>
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span>Simpan PDF</span>
                 </button>
               </div>
             </div>

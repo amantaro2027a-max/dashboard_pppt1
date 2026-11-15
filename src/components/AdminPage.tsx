@@ -44,6 +44,7 @@ import {
   Key,
   FileDown,
   RotateCcw,
+  Layers,
 } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
@@ -71,12 +72,18 @@ export const AdminPage: React.FC = () => {
     canEditJabatan,
     getEditableJabatans,
     getAuthorizedJabatanList,
+    klusterList,
+    klusterMap,
+    getKlusterForPusat,
     pusatList,
     jabatanMap,
     pegawaiList,
     sumberKewanganList,
     statusProgramList,
     jawatanList,
+    addKluster,
+    updateKluster,
+    deleteKluster,
     addPegawai,
     updatePegawai,
     deletePegawai,
@@ -95,6 +102,7 @@ export const AdminPage: React.FC = () => {
     addJawatan,
     updateJawatan,
     deleteJawatan,
+    importKlusterBulk,
     importPegawaiBulk,
     importPusatBulk,
     importJabatanBulk,
@@ -106,9 +114,9 @@ export const AdminPage: React.FC = () => {
   // Active sub-tab inside Admin portal
   const [adminTab, setAdminTab] = useState<'programs' | 'master'>('programs');
 
-  // Master Data active subcategory (Pengurusan ID Admin placed after 1. Pegawai)
+  // Master Data active subcategory (Kluster IAB placed before 4. Pusat)
   const [masterCategory, setMasterCategory] = useState<
-    'pegawai' | 'users' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan' | 'muat_turun_naik' | 'notifikasi' | 'padam_data'
+    'pegawai' | 'users' | 'kluster' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan' | 'muat_turun_naik' | 'notifikasi' | 'padam_data'
   >('pegawai');
 
   // Tab 7: Muat Naik / Muat Turun Data states
@@ -300,26 +308,39 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  // Form states for Pusat, Jabatan, Sumber, Status, Jawatan
+  // Pop-up modal & form states for Kluster, Pusat, Jabatan, Sumber, Status, Jawatan
+  const [isKlusterModalOpen, setIsKlusterModalOpen] = useState(false);
+  const [klusterInput, setKlusterInput] = useState('');
+  const [editingKluster, setEditingKluster] = useState<string | null>(null);
+
+  const [isPusatModalOpen, setIsPusatModalOpen] = useState(false);
+  const [pusatKlusterInput, setPusatKlusterInput] = useState(klusterList[0] || '');
   const [pusatInput, setPusatInput] = useState('');
   const [editingPusat, setEditingPusat] = useState<string | null>(null);
 
+  const [selectedKlusterForJabatan, setSelectedKlusterForJabatan] = useState<string>('SEMUA');
   const [selectedPusatForJabatan, setSelectedPusatForJabatan] = useState(pusatList[0] || '');
+  const [isJabatanModalOpen, setIsJabatanModalOpen] = useState(false);
+  const [modalKlusterForJabatan, setModalKlusterForJabatan] = useState(klusterList[0] || '');
+  const [modalPusatForJabatan, setModalPusatForJabatan] = useState(pusatList[0] || '');
   const [jabatanInput, setJabatanInput] = useState('');
   const [editingJabatan, setEditingJabatan] = useState<string | null>(null);
 
+  const [isSumberModalOpen, setIsSumberModalOpen] = useState(false);
   const [sumberInput, setSumberInput] = useState('');
   const [editingSumber, setEditingSumber] = useState<string | null>(null);
 
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [statusInput, setStatusInput] = useState('');
   const [editingStatus, setEditingStatus] = useState<string | null>(null);
 
+  const [isJawatanModalOpen, setIsJawatanModalOpen] = useState(false);
   const [jawatanInput, setJawatanInput] = useState('');
   const [editingJawatan, setEditingJawatan] = useState<string | null>(null);
 
-  // Master Data Tabs 1-6 Export & Import Helpers
+  // Master Data Tabs Export & Import Helpers
   const handleExportMasterData = (
-    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
+    category: 'pegawai' | 'kluster' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
   ) => {
     try {
       const dateStr = new Date().toISOString().slice(0, 10);
@@ -340,10 +361,19 @@ export const AdminPage: React.FC = () => {
           Emel: p.emel || '',
           'No. HP': p.noHp || '',
         }));
+      } else if (category === 'kluster') {
+        sheetName = 'Kluster IAB';
+        rows = klusterList.map((k, idx) => ({
+          Bil: idx + 1,
+          'Nama Kluster': k,
+          'Bilangan Pusat': (klusterMap[k] || []).length,
+          'Senarai Pusat': (klusterMap[k] || []).join('; '),
+        }));
       } else if (category === 'pusat') {
         sheetName = 'Senarai Pusat';
         rows = pusatList.map((p, idx) => ({
           Bil: idx + 1,
+          'Kluster IAB': getKlusterForPusat(p) || '-',
           'Nama Pusat': p,
           'Bilangan Jabatan': (jabatanMap[p] || []).length,
         }));
@@ -351,9 +381,11 @@ export const AdminPage: React.FC = () => {
         sheetName = 'Senarai Jabatan';
         let bil = 1;
         pusatList.forEach((pus) => {
+          const klusterName = getKlusterForPusat(pus) || '-';
           (jabatanMap[pus] || []).forEach((jab) => {
             rows.push({
               Bil: bil++,
+              'Kluster IAB': klusterName,
               'Pusat Induk': pus,
               'Nama Jabatan': jab,
             });
@@ -395,7 +427,7 @@ export const AdminPage: React.FC = () => {
   };
 
   const handleImportMasterData = (
-    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan',
+    category: 'pegawai' | 'kluster' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan',
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
@@ -456,10 +488,23 @@ export const AdminPage: React.FC = () => {
                 }
               : { type: 'error', text: res.message || 'Gagal mengimport data pegawai.' }
           );
+        } else if (category === 'kluster') {
+          const items = rows
+            .map((r) => pickField(r, ['Nama Kluster', 'Kluster IAB', 'Kluster'], true))
+            .filter(Boolean);
+          const res = importKlusterBulk(items);
+          setMasterIoMsg(
+            res.success
+              ? { type: 'success', text: `Import Kluster IAB berjaya: ${res.added} kluster baharu ditambah daripada ${file.name}.` }
+              : { type: 'error', text: res.message || 'Gagal mengimport data Kluster IAB.' }
+          );
         } else if (category === 'pusat') {
           const items = rows
-            .map((r) => pickField(r, ['Nama Pusat', 'Pusat'], true))
-            .filter(Boolean);
+            .map((r) => ({
+              pusat: pickField(r, ['Nama Pusat', 'Pusat'], true),
+              kluster: pickField(r, ['Kluster IAB', 'Nama Kluster', 'Kluster']),
+            }))
+            .filter((x) => Boolean(x.pusat));
           const res = importPusatBulk(items);
           setMasterIoMsg(
             res.success
@@ -469,6 +514,7 @@ export const AdminPage: React.FC = () => {
         } else if (category === 'jabatan') {
           const entries = rows
             .map((r) => ({
+              kluster: pickField(r, ['Kluster IAB', 'Nama Kluster', 'Kluster']),
               pusat: pickField(r, ['Pusat Induk', 'Nama Pusat', 'Pusat']) || selectedPusatForJabatan,
               jabatan: pickField(r, ['Nama Jabatan', 'Jabatan'], true),
             }))
@@ -520,7 +566,7 @@ export const AdminPage: React.FC = () => {
   };
 
   const renderMasterIoButtons = (
-    category: 'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
+    category: 'pegawai' | 'kluster' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan'
   ) => (
     <div className="flex flex-wrap items-center gap-2">
       <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer">
@@ -547,6 +593,9 @@ export const AdminPage: React.FC = () => {
   // REQUIREMENT: Pages available for permission assignment
   const AVAILABLE_PAGES = [
     { key: 'DASHBOARD BERSEPADU', label: 'DASHBOARD BERSEPADU' },
+    { key: 'IAB ALL', label: 'PAGE IAB ALL' },
+    { key: 'KLUSTER KHIDMAT PROFESIONAL', label: 'PAGE KLUSTER KHIDMAT PROFESIONAL' },
+    { key: 'KLUSTER KHIDMAT LATIHAN', label: 'PAGE KLUSTER KHIDMAT LATIHAN' },
     { key: 'PERINCIAN PROGRAM', label: 'PERINCIAN PROGRAM' },
     { key: 'ANALISIS PEGAWAI', label: 'ANALISIS PEGAWAI MENGIKUT PROGRAM' },
     { key: 'PUSAT', label: 'PAGE PUSAT' },
@@ -1886,6 +1935,18 @@ export const AdminPage: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setMasterCategory('kluster')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                masterCategory === 'kluster'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>3. Kluster IAB</span>
+            </button>
+
+            <button
               onClick={() => setMasterCategory('pusat')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                 masterCategory === 'pusat'
@@ -1893,7 +1954,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              3. Pusat
+              4. Pusat
             </button>
 
             <button
@@ -1904,7 +1965,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              4. Jabatan
+              5. Jabatan
             </button>
 
             <button
@@ -1915,7 +1976,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              5. Sumber Kewangan
+              6. Sumber Kewangan
             </button>
 
             <button
@@ -1926,7 +1987,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              6. Status Program
+              7. Status Program
             </button>
 
             <button
@@ -1937,7 +1998,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              7. Jawatan
+              8. Jawatan
             </button>
 
             <button
@@ -1949,7 +2010,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>8. Muat Naik/Muat Turun Data</span>
+              <span>9. Muat Naik/Muat Turun Data</span>
             </button>
 
             <button
@@ -1961,7 +2022,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Bell className="w-3.5 h-3.5" />
-              <span>9. Notifikasi</span>
+              <span>10. Notifikasi</span>
             </button>
 
             <button
@@ -1973,7 +2034,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-              <span>10. PADAM DATA</span>
+              <span>11. PADAM DATA</span>
             </button>
           </div>
 
@@ -3458,136 +3519,462 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
-            {/* SUB-CATEGORY 3: PUSAT */}
+            {/* SUB-CATEGORY 3: KLUSTER IAB */}
+            {masterCategory === 'kluster' && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Pengurusan Kluster IAB</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Urus senarai Kluster IAB (cth: Kluster Khidmat Profesional, Kluster Khidmat Latihan). Klik butang tambah untuk membuka borang pop-up.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('kluster')}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingKluster(null);
+                        setKlusterInput('');
+                        setIsKlusterModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Kluster Baru</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                        <th className="py-2.5 px-4 w-14 text-center">Bil</th>
+                        <th className="py-2.5 px-4">NAMA KLUSTER IAB</th>
+                        <th className="py-2.5 px-4">PUSAT DI BAWAH KLUSTER</th>
+                        <th className="py-2.5 px-4 w-36 text-center">TINDAKAN</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {klusterList.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-400">
+                            Tiada kluster didaftarkan. Klik &quot;Tambah Kluster Baru&quot;.
+                          </td>
+                        </tr>
+                      ) : (
+                        klusterList.map((klu, idx) => {
+                          const pusatsUnder = klusterMap[klu] || [];
+                          return (
+                            <tr key={klu} className="hover:bg-slate-50">
+                              <td className="py-3 px-4 text-center font-mono font-bold text-slate-400">
+                                {idx + 1}.
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-900">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-900 border border-indigo-200">
+                                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                                  {klu}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-slate-600">
+                                {pusatsUnder.length === 0 ? (
+                                  <span className="text-slate-400 italic">Belum ada pusat dipautkan</span>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1">
+                                    {pusatsUnder.map((p) => (
+                                      <span
+                                        key={p}
+                                        className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700"
+                                      >
+                                        {p}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingKluster(klu);
+                                      setKlusterInput(klu);
+                                      setIsKlusterModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      requestDeleteConfirm(
+                                        'Padam Kluster IAB',
+                                        `Adakah anda pasti ingin memadamkan kluster "${klu}"?`,
+                                        () => {
+                                          deleteKluster(klu);
+                                        }
+                                      );
+                                    }}
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded cursor-pointer"
+                                  >
+                                    Padam
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Modal Pop-up Tambah / Edit Kluster */}
+                {isKlusterModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingKluster ? 'Kemaskini Kluster IAB' : 'Tambah Kluster IAB Baru'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsKlusterModalOpen(false);
+                            setEditingKluster(null);
+                            setKlusterInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!klusterInput.trim()) return;
+                          if (editingKluster) {
+                            updateKluster(editingKluster, klusterInput.trim());
+                          } else {
+                            addKluster(klusterInput.trim());
+                          }
+                          setIsKlusterModalOpen(false);
+                          setEditingKluster(null);
+                          setKlusterInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            Nama Kluster (HURUF BESAR) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            autoFocus
+                            placeholder="CTH: KLUSTER KHIDMAT PROFESIONAL"
+                            value={klusterInput}
+                            onChange={(e) => setKlusterInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsKlusterModalOpen(false);
+                              setEditingKluster(null);
+                              setKlusterInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingKluster ? 'Simpan Kluster' : 'Daftar Kluster Baru'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-CATEGORY 4: PUSAT */}
             {masterCategory === 'pusat' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Pusat</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Tambah atau edit nama Pusat (cth: PPPT, PKPOP). Perubahan akan dipaparkan dalam semua filter dan pendaftaran program.
+                      Pilih Kluster IAB dan tambah/kemaskini nama Pusat melalui borang pop-up.
                     </p>
                   </div>
-                  {renderMasterIoButtons('pusat')}
-                </div>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!pusatInput.trim()) return;
-                    if (editingPusat) {
-                      updatePusat(editingPusat, pusatInput.trim());
-                      setEditingPusat(null);
-                    } else {
-                      addPusat(pusatInput.trim());
-                    }
-                    setPusatInput('');
-                  }}
-                  className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-end gap-3 text-xs"
-                >
-                  <div className="flex-1 w-full">
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Nama Pusat *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="CTH: PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI"
-                      value={pusatInput}
-                      onChange={(e) => setPusatInput(e.target.value.toUpperCase())}
-                      className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-medium"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('pusat')}
                     <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        setEditingPusat(null);
+                        setPusatKlusterInput(klusterList[0] || '');
+                        setPusatInput('');
+                        setIsPusatModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
                     >
-                      {editingPusat ? 'Simpan Pusat' : '+ Tambah Pusat'}
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Pusat Baru</span>
                     </button>
-                    {editingPusat && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingPusat(null);
-                          setPusatInput('');
-                        }}
-                        className="px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        Batal
-                      </button>
-                    )}
                   </div>
-                </form>
+                </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                        <th className="py-2.5 px-4">KLUSTER IAB</th>
                         <th className="py-2.5 px-4">NAMA PUSAT</th>
-                        <th className="py-2.5 px-4 w-44">BILANGAN JABATAN</th>
+                        <th className="py-2.5 px-4 w-36">BIL. JABATAN</th>
                         <th className="py-2.5 px-4 w-36 text-center">TINDAKAN</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {pusatList.map((p) => (
-                        <tr key={p} className="hover:bg-slate-50">
-                          <td className="py-3 px-4 font-bold text-slate-900">{p}</td>
-                          <td className="py-3 px-4 text-slate-600 tabular-nums">
-                            {(jabatanMap[p] || []).length} jabatan
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => {
-                                  setEditingPusat(p);
-                                  setPusatInput(p);
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => {
-                                  requestDeleteConfirm(
-                                    'Padam Pusat',
-                                    `Adakah anda pasti ingin memadamkan pusat "${p}" dan semua jabatannya?`,
-                                    () => {
-                                      deletePusat(p);
-                                    }
-                                  );
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded cursor-pointer"
-                              >
-                                Padam
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {pusatList.map((p) => {
+                        const klusterName = getKlusterForPusat(p);
+                        return (
+                          <tr key={p} className="hover:bg-slate-50">
+                            <td className="py-3 px-4">
+                              {klusterName ? (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 uppercase">
+                                  {klusterName}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 italic">Belum ditetapkan</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-slate-900">{p}</td>
+                            <td className="py-3 px-4 text-slate-600 tabular-nums">
+                              {(jabatanMap[p] || []).length} jabatan
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPusat(p);
+                                    setPusatKlusterInput(klusterName || klusterList[0] || '');
+                                    setPusatInput(p);
+                                    setIsPusatModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    requestDeleteConfirm(
+                                      'Padam Pusat',
+                                      `Adakah anda pasti ingin memadamkan pusat "${p}" dan semua jabatannya?`,
+                                      () => {
+                                        deletePusat(p);
+                                      }
+                                    );
+                                  }}
+                                  className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded cursor-pointer"
+                                >
+                                  Padam
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modal Pop-up Tambah / Edit Pusat (Select Kluster dulu, then Nama Pusat) */}
+                {isPusatModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <Building className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingPusat ? 'Kemaskini Maklumat Pusat' : 'Tambah Pusat Baru'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPusatModalOpen(false);
+                            setEditingPusat(null);
+                            setPusatInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!pusatInput.trim()) return;
+                          if (editingPusat) {
+                            updatePusat(editingPusat, pusatInput.trim(), pusatKlusterInput);
+                          } else {
+                            addPusat(pusatInput.trim(), pusatKlusterInput);
+                          }
+                          setIsPusatModalOpen(false);
+                          setEditingPusat(null);
+                          setPusatInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            1. Pilih Kluster IAB *
+                          </label>
+                          <select
+                            required
+                            value={pusatKlusterInput}
+                            onChange={(e) => setPusatKlusterInput(e.target.value)}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900"
+                          >
+                            <option value="">-- Pilih Kluster IAB --</option>
+                            {klusterList.map((k) => (
+                              <option key={k} value={k}>
+                                {k}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            2. Nama Pusat (HURUF BESAR) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="CTH: PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI"
+                            value={pusatInput}
+                            onChange={(e) => setPusatInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsPusatModalOpen(false);
+                              setEditingPusat(null);
+                              setPusatInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingPusat ? 'Simpan Pusat' : 'Daftar Pusat Baru'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* SUB-CATEGORY 3: JABATAN */}
+            {/* SUB-CATEGORY 5: JABATAN */}
             {masterCategory === 'jabatan' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">
-                      Pengurusan Jabatan (Mengikut Pusat)
+                      Pengurusan Jabatan (Mengikut Kluster &amp; Pusat)
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Pilih pusat di bawah untuk menambah atau mengemaskini jabatan yang berkaitan.
+                      Tapis paparan atau klik &quot;Tambah Jabatan Baru&quot; (pilih Kluster IAB dahulu, kemudian Pusat Induk).
                     </p>
                   </div>
-                  {renderMasterIoButtons('jabatan')}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('jabatan')}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultKluster =
+                          selectedKlusterForJabatan !== 'SEMUA'
+                            ? selectedKlusterForJabatan
+                            : getKlusterForPusat(selectedPusatForJabatan) || klusterList[0] || '';
+                        const pusatsForKluster = defaultKluster
+                          ? (klusterMap[defaultKluster] || []).filter((p) => pusatList.includes(p))
+                          : pusatList;
+                        const defaultPusat = pusatsForKluster.includes(selectedPusatForJabatan)
+                          ? selectedPusatForJabatan
+                          : pusatsForKluster[0] || pusatList[0] || '';
+                        setEditingJabatan(null);
+                        setModalKlusterForJabatan(defaultKluster);
+                        setModalPusatForJabatan(defaultPusat);
+                        setJabatanInput('');
+                        setIsJabatanModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Jabatan Baru</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3 text-xs">
+                {/* Penapis Kluster & Pusat Induk */}
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                      Tapis Kluster IAB
+                    </label>
+                    <select
+                      value={selectedKlusterForJabatan}
+                      onChange={(e) => {
+                        const nextK = e.target.value;
+                        setSelectedKlusterForJabatan(nextK);
+                        if (nextK !== 'SEMUA') {
+                          const pusatsInK = (klusterMap[nextK] || []).filter((p) =>
+                            pusatList.includes(p)
+                          );
+                          if (pusatsInK.length > 0 && !pusatsInK.includes(selectedPusatForJabatan)) {
+                            setSelectedPusatForJabatan(pusatsInK[0]);
+                          }
+                        }
+                      }}
+                      className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900"
+                    >
+                      <option value="SEMUA">SEMUA KLUSTER</option>
+                      {klusterList.map((k) => (
+                        <option key={k} value={k}>
+                          {k}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
                       Pusat Induk
@@ -3597,75 +3984,38 @@ export const AdminPage: React.FC = () => {
                       onChange={(e) => setSelectedPusatForJabatan(e.target.value)}
                       className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900"
                     >
-                      {pusatList.map((p) => (
+                      {(selectedKlusterForJabatan === 'SEMUA'
+                        ? pusatList
+                        : (klusterMap[selectedKlusterForJabatan] || []).filter((p) =>
+                            pusatList.includes(p)
+                          )
+                      ).map((p) => (
                         <option key={p} value={p}>
                           {p}
                         </option>
                       ))}
                     </select>
                   </div>
-
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (!jabatanInput.trim()) return;
-                      if (editingJabatan) {
-                        updateJabatan(selectedPusatForJabatan, editingJabatan, jabatanInput.trim());
-                        setEditingJabatan(null);
-                      } else {
-                        addJabatan(selectedPusatForJabatan, jabatanInput.trim());
-                      }
-                      setJabatanInput('');
-                    }}
-                    className="flex flex-col sm:flex-row items-end gap-3 pt-2"
-                  >
-                    <div className="flex-1 w-full">
-                      <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                        Nama Jabatan Baru / Kemaskini *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="CTH: JABATAN KECERDASAN BUATAN DAN INOVASI DIGITAL"
-                        value={jabatanInput}
-                        onChange={(e) => setJabatanInput(e.target.value.toUpperCase())}
-                        className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-medium"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="submit"
-                        className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
-                      >
-                        {editingJabatan ? 'Simpan Jabatan' : '+ Tambah Jabatan'}
-                      </button>
-                      {editingJabatan && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingJabatan(null);
-                            setJabatanInput('');
-                          }}
-                          className="px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                        >
-                          Batal
-                        </button>
-                      )}
-                    </div>
-                  </form>
                 </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <div className="bg-slate-100 px-4 py-2.5 font-bold text-xs text-slate-800 border-b border-slate-200">
-                    Senarai Jabatan di bawah: <span className="text-slate-950 font-extrabold">{selectedPusatForJabatan}</span>
+                  <div className="bg-slate-100 px-4 py-2.5 font-bold text-xs text-slate-800 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      Senarai Jabatan di bawah:{' '}
+                      <span className="text-slate-950 font-extrabold">{selectedPusatForJabatan}</span>
+                    </div>
+                    {getKlusterForPusat(selectedPusatForJabatan) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        {getKlusterForPusat(selectedPusatForJabatan)}
+                      </span>
+                    )}
                   </div>
                   <table className="w-full text-left text-xs">
                     <tbody className="divide-y divide-slate-100">
                       {(jabatanMap[selectedPusatForJabatan] || []).length === 0 ? (
                         <tr>
                           <td className="py-6 text-center text-slate-400">
-                            Tiada jabatan di bawah pusat ini lagi. Sila tambah di atas.
+                            Tiada jabatan di bawah pusat ini lagi. Klik &quot;Tambah Jabatan Baru&quot;.
                           </td>
                         </tr>
                       ) : (
@@ -3680,15 +4030,22 @@ export const AdminPage: React.FC = () => {
                             <td className="py-2.5 px-4 w-36 text-center">
                               <div className="flex items-center justify-center gap-2">
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     setEditingJabatan(jab);
+                                    setModalKlusterForJabatan(
+                                      getKlusterForPusat(selectedPusatForJabatan) || klusterList[0] || ''
+                                    );
+                                    setModalPusatForJabatan(selectedPusatForJabatan);
                                     setJabatanInput(jab);
+                                    setIsJabatanModalOpen(true);
                                   }}
                                   className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
                                 >
                                   Edit
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => {
                                     requestDeleteConfirm(
                                       'Padam Jabatan',
@@ -3710,71 +4067,166 @@ export const AdminPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modal Pop-up Tambah / Edit Jabatan (Select Kluster dulu -> Nama Pusat -> Nama Jabatan) */}
+                {isJabatanModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingJabatan ? 'Kemaskini Maklumat Jabatan' : 'Tambah Jabatan Baru'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsJabatanModalOpen(false);
+                            setEditingJabatan(null);
+                            setJabatanInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!jabatanInput.trim() || !modalPusatForJabatan) return;
+                          if (editingJabatan) {
+                            updateJabatan(modalPusatForJabatan, editingJabatan, jabatanInput.trim());
+                          } else {
+                            addJabatan(modalPusatForJabatan, jabatanInput.trim());
+                          }
+                          setSelectedPusatForJabatan(modalPusatForJabatan);
+                          setIsJabatanModalOpen(false);
+                          setEditingJabatan(null);
+                          setJabatanInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            1. Pilih Kluster IAB *
+                          </label>
+                          <select
+                            required
+                            disabled={Boolean(editingJabatan)}
+                            value={modalKlusterForJabatan}
+                            onChange={(e) => {
+                              const nextK = e.target.value;
+                              setModalKlusterForJabatan(nextK);
+                              const pusatsInK = (klusterMap[nextK] || []).filter((p) =>
+                                pusatList.includes(p)
+                              );
+                              setModalPusatForJabatan(pusatsInK[0] || '');
+                            }}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900 disabled:bg-slate-100"
+                          >
+                            <option value="">-- Pilih Kluster IAB --</option>
+                            {klusterList.map((k) => (
+                              <option key={k} value={k}>
+                                {k}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            2. Pilih Nama Pusat *
+                          </label>
+                          <select
+                            required
+                            disabled={Boolean(editingJabatan)}
+                            value={modalPusatForJabatan}
+                            onChange={(e) => setModalPusatForJabatan(e.target.value)}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900 disabled:bg-slate-100"
+                          >
+                            <option value="">-- Pilih Nama Pusat --</option>
+                            {(modalKlusterForJabatan
+                              ? (klusterMap[modalKlusterForJabatan] || []).filter((p) =>
+                                  pusatList.includes(p)
+                                )
+                              : pusatList
+                            ).map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            3. Nama Jabatan (HURUF BESAR) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="CTH: JABATAN KECERDASAN BUATAN DAN INOVASI DIGITAL"
+                            value={jabatanInput}
+                            onChange={(e) => setJabatanInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsJabatanModalOpen(false);
+                              setEditingJabatan(null);
+                              setJabatanInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={!modalPusatForJabatan}
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingJabatan ? 'Simpan Jabatan' : 'Daftar Jabatan Baru'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* SUB-CATEGORY 4: SUMBER KEWANGAN */}
+            {/* SUB-CATEGORY 6: SUMBER KEWANGAN */}
             {masterCategory === 'sumber' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">Pengurusan Sumber Kewangan</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Tambah atau edit nama Sumber Kewangan (cth: IAB – LATIHAN, BSTP, BPG, BPK).
+                      Tambah atau edit nama Sumber Kewangan (cth: IAB – LATIHAN, BSTP, BPG, BPK) melalui borang pop-up.
                     </p>
                   </div>
-                  {renderMasterIoButtons('sumber')}
-                </div>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!sumberInput.trim()) return;
-                    if (editingSumber) {
-                      updateSumberKewangan(editingSumber, sumberInput.trim());
-                      setEditingSumber(null);
-                    } else {
-                      addSumberKewangan(sumberInput.trim());
-                    }
-                    setSumberInput('');
-                  }}
-                  className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-end gap-3 text-xs"
-                >
-                  <div className="flex-1 w-full">
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Nama Sumber Kewangan *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="CTH: IAB - PENYELIDIKAN"
-                      value={sumberInput}
-                      onChange={(e) => setSumberInput(e.target.value.toUpperCase())}
-                      className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-medium"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('sumber')}
                     <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        setEditingSumber(null);
+                        setSumberInput('');
+                        setIsSumberModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
                     >
-                      {editingSumber ? 'Simpan' : '+ Tambah Sumber'}
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Sumber Baru</span>
                     </button>
-                    {editingSumber && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingSumber(null);
-                          setSumberInput('');
-                        }}
-                        className="px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        Batal
-                      </button>
-                    )}
                   </div>
-                </form>
+                </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
@@ -3791,15 +4243,18 @@ export const AdminPage: React.FC = () => {
                           <td className="py-2.5 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setEditingSumber(sk);
                                   setSumberInput(sk);
+                                  setIsSumberModalOpen(true);
                                 }}
                                 className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
                               >
                                 Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => {
                                   requestDeleteConfirm(
                                     'Padam Sumber Kewangan',
@@ -3820,10 +4275,88 @@ export const AdminPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modal Pop-up Sumber Kewangan */}
+                {isSumberModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingSumber ? 'Kemaskini Sumber Kewangan' : 'Tambah Sumber Kewangan'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsSumberModalOpen(false);
+                            setEditingSumber(null);
+                            setSumberInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!sumberInput.trim()) return;
+                          if (editingSumber) {
+                            updateSumberKewangan(editingSumber, sumberInput.trim());
+                          } else {
+                            addSumberKewangan(sumberInput.trim());
+                          }
+                          setIsSumberModalOpen(false);
+                          setEditingSumber(null);
+                          setSumberInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            Nama Sumber Kewangan *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            autoFocus
+                            placeholder="CTH: IAB - PENYELIDIKAN"
+                            value={sumberInput}
+                            onChange={(e) => setSumberInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSumberModalOpen(false);
+                              setEditingSumber(null);
+                              setSumberInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingSumber ? 'Simpan Sumber' : 'Tambah Sumber'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* SUB-CATEGORY 5: STATUS PROGRAM */}
+            {/* SUB-CATEGORY 7: STATUS PROGRAM */}
             {masterCategory === 'status' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
@@ -3833,58 +4366,22 @@ export const AdminPage: React.FC = () => {
                       Urus status rasmi pelaksanaan program (cth: SELESAI, DALAM TINDAKAN, TANGGUNG, BELUM AMBIL TINDAKAN, BATAL).
                     </p>
                   </div>
-                  {renderMasterIoButtons('status')}
-                </div>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!statusInput.trim()) return;
-                    if (editingStatus) {
-                      updateStatusProgram(editingStatus, statusInput.trim());
-                      setEditingStatus(null);
-                    } else {
-                      addStatusProgram(statusInput.trim());
-                    }
-                    setStatusInput('');
-                  }}
-                  className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-end gap-3 text-xs"
-                >
-                  <div className="flex-1 w-full">
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Nama Status Program *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="CTH: DALAM PERANCANGAN"
-                      value={statusInput}
-                      onChange={(e) => setStatusInput(e.target.value.toUpperCase())}
-                      className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-medium"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('status')}
                     <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        setEditingStatus(null);
+                        setStatusInput('');
+                        setIsStatusModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
                     >
-                      {editingStatus ? 'Simpan' : '+ Tambah Status'}
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Status Baru</span>
                     </button>
-                    {editingStatus && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingStatus(null);
-                          setStatusInput('');
-                        }}
-                        className="px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        Batal
-                      </button>
-                    )}
                   </div>
-                </form>
+                </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
@@ -3905,15 +4402,18 @@ export const AdminPage: React.FC = () => {
                           <td className="py-2.5 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setEditingStatus(st);
                                   setStatusInput(st);
+                                  setIsStatusModalOpen(true);
                                 }}
                                 className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
                               >
                                 Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => {
                                   requestDeleteConfirm(
                                     'Padam Status Program',
@@ -3934,71 +4434,113 @@ export const AdminPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modal Pop-up Status Program */}
+                {isStatusModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingStatus ? 'Kemaskini Status Program' : 'Tambah Status Program'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsStatusModalOpen(false);
+                            setEditingStatus(null);
+                            setStatusInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!statusInput.trim()) return;
+                          if (editingStatus) {
+                            updateStatusProgram(editingStatus, statusInput.trim());
+                          } else {
+                            addStatusProgram(statusInput.trim());
+                          }
+                          setIsStatusModalOpen(false);
+                          setEditingStatus(null);
+                          setStatusInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            Nama Status Program *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            autoFocus
+                            placeholder="CTH: DALAM PERANCANGAN"
+                            value={statusInput}
+                            onChange={(e) => setStatusInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsStatusModalOpen(false);
+                              setEditingStatus(null);
+                              setStatusInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingStatus ? 'Simpan Status' : 'Tambah Status'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* SUB-CATEGORY 6: JAWATAN (BARU) */}
+            {/* SUB-CATEGORY 8: JAWATAN */}
             {masterCategory === 'jawatan' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">Pengurusan Senarai Jawatan</h4>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Tambah, edit, atau padam senarai Jawatan rasmi. Senarai jawatan ini akan dijadikan pilihan drop down pada bahagian profil pegawai.
+                      Tambah, edit, atau padam senarai Jawatan rasmi melalui borang pop-up untuk kegunaan profil pegawai.
                     </p>
                   </div>
-                  {renderMasterIoButtons('jawatan')}
-                </div>
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!jawatanInput.trim()) return;
-                    if (editingJawatan) {
-                      updateJawatan(editingJawatan, jawatanInput.trim());
-                      setEditingJawatan(null);
-                    } else {
-                      addJawatan(jawatanInput.trim());
-                    }
-                    setJawatanInput('');
-                  }}
-                  className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col sm:flex-row items-end gap-3 text-xs"
-                >
-                  <div className="flex-1 w-full">
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Nama Jawatan *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="CTH: PENGARAH / PENSYARAH CEMERLANG"
-                      value={jawatanInput}
-                      onChange={(e) => setJawatanInput(e.target.value.toUpperCase())}
-                      className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-medium"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderMasterIoButtons('jawatan')}
                     <button
-                      type="submit"
-                      className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap cursor-pointer"
+                      type="button"
+                      onClick={() => {
+                        setEditingJawatan(null);
+                        setJawatanInput('');
+                        setIsJawatanModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
                     >
-                      {editingJawatan ? 'Simpan' : '+ Tambah Jawatan'}
+                      <Plus className="w-4 h-4" />
+                      <span>Tambah Jawatan Baru</span>
                     </button>
-                    {editingJawatan && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingJawatan(null);
-                          setJawatanInput('');
-                        }}
-                        className="px-3 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                      >
-                        Batal
-                      </button>
-                    )}
                   </div>
-                </form>
+                </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left text-xs">
@@ -4023,15 +4565,18 @@ export const AdminPage: React.FC = () => {
                           <td className="py-2.5 px-4 text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                type="button"
                                 onClick={() => {
                                   setEditingJawatan(jwt);
                                   setJawatanInput(jwt);
+                                  setIsJawatanModalOpen(true);
                                 }}
                                 className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded cursor-pointer"
                               >
                                 Edit
                               </button>
                               <button
+                                type="button"
                                 onClick={() => {
                                   requestDeleteConfirm(
                                     'Padam Jawatan',
@@ -4052,16 +4597,94 @@ export const AdminPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Modal Pop-up Jawatan */}
+                {isJawatanModalOpen && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-blue-400" />
+                          <h4 className="text-sm font-bold">
+                            {editingJawatan ? 'Kemaskini Jawatan' : 'Tambah Jawatan Baru'}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsJawatanModalOpen(false);
+                            setEditingJawatan(null);
+                            setJawatanInput('');
+                          }}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!jawatanInput.trim()) return;
+                          if (editingJawatan) {
+                            updateJawatan(editingJawatan, jawatanInput.trim());
+                          } else {
+                            addJawatan(jawatanInput.trim());
+                          }
+                          setIsJawatanModalOpen(false);
+                          setEditingJawatan(null);
+                          setJawatanInput('');
+                        }}
+                        className="p-5 space-y-4 text-xs"
+                      >
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            Nama Jawatan *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            autoFocus
+                            placeholder="CTH: PENGARAH / PENSYARAH CEMERLANG"
+                            value={jawatanInput}
+                            onChange={(e) => setJawatanInput(e.target.value.toUpperCase())}
+                            className="w-full py-2.5 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-semibold text-slate-900"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsJawatanModalOpen(false);
+                              setEditingJawatan(null);
+                              setJawatanInput('');
+                            }}
+                            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                          >
+                            {editingJawatan ? 'Simpan Jawatan' : 'Tambah Jawatan'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* SUB-CATEGORY 7: MUAT NAIK / MUAT TURUN DATA (SUPER ADMIN ONLY) */}
+            {/* SUB-CATEGORY 9: MUAT NAIK / MUAT TURUN DATA (SUPER ADMIN ONLY) */}
             {masterCategory === 'muat_turun_naik' && (
               <div className="space-y-6">
                 <div>
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <Upload className="w-5 h-5 text-blue-600" />
-                    <span>7. Pengurusan Muat Naik / Muat Turun Data Program</span>
+                    <span>9. Pengurusan Muat Naik / Muat Turun Data Program</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 uppercase">
                       Super Admin Sahaja
                     </span>
@@ -4315,13 +4938,13 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
-            {/* SUB-CATEGORY 8: NOTIFIKASI (SUPER ADMIN ONLY - CLEAN PLACEHOLDER) */}
+            {/* SUB-CATEGORY 10: NOTIFIKASI (SUPER ADMIN ONLY - CLEAN PLACEHOLDER) */}
             {masterCategory === 'notifikasi' && (
               <div className="space-y-6">
                 <div>
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <Bell className="w-5 h-5 text-slate-700" />
-                    <span>8. Pengurusan Notifikasi Sistem</span>
+                    <span>10. Pengurusan Notifikasi Sistem</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 border border-slate-300 text-slate-700 uppercase">
                       Super Admin Sahaja
                     </span>
@@ -4346,13 +4969,13 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
-            {/* SUB-CATEGORY 9: PADAM DATA (SUPER ADMIN ONLY - WITH STRICT BACKUP & SECURE RE-AUTH) */}
+            {/* SUB-CATEGORY 11: PADAM DATA (SUPER ADMIN ONLY - WITH STRICT BACKUP & SECURE RE-AUTH) */}
             {masterCategory === 'padam_data' && (
               <div className="space-y-6">
                 <div>
                   <h3 className="text-base font-bold text-rose-700 flex items-center gap-2">
                     <Trash2 className="w-5 h-5 text-rose-600" />
-                    <span>9. PADAM DATA PROGRAM</span>
+                    <span>11. PADAM DATA PROGRAM</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 uppercase border border-rose-300">
                       Super Admin Sahaja · Zon Keselamatan Tinggi
                     </span>

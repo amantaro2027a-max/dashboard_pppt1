@@ -1,9 +1,23 @@
 import { Pegawai, PusatType, StatusProgram, SumberKewangan } from '../types/program';
 
+export const KLUSTER_LIST: string[] = [
+  'KLUSTER KHIDMAT PROFESIONAL',
+  'KLUSTER KHIDMAT LATIHAN',
+];
+
 export const PUSAT_LIST: PusatType[] = [
   'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
   'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
 ];
+
+export const KLUSTER_MAP: Record<string, PusatType[]> = {
+  'KLUSTER KHIDMAT PROFESIONAL': [
+    'PUSAT KONSULTASI DAN PEMBANGUNAN ORGANISASI PENDIDIKAN',
+  ],
+  'KLUSTER KHIDMAT LATIHAN': [
+    'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
+  ],
+};
 
 export const JABATAN_MAP: Record<PusatType, string[]> = {
   'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI': [

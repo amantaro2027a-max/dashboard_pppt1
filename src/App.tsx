@@ -26,6 +26,8 @@ import { PengiraanBajetPage } from './components/PengiraanBajetPage';
 import { AnalisisPegawaiPage } from './components/AnalisisPegawaiPage';
 import { PusatPage } from './components/PusatPage';
 import { JabatanPage } from './components/JabatanPage';
+import { KlusterPage } from './components/KlusterPage';
+import { IabAllPage } from './components/IabAllPage';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
@@ -95,6 +97,12 @@ const DashboardContent: React.FC = () => {
                       ? 'Perincian & Katalog Program Pusat'
                       : activeTab === 'analisisPegawai'
                       ? 'Analisis Pegawai Mengikut Program'
+                      : activeTab === 'iabAll'
+                      ? 'Profil, Perbandingan & Rumusan IAB All'
+                      : activeTab === 'klusterProfesional'
+                      ? 'Kluster Khidmat Profesional'
+                      : activeTab === 'klusterLatihan'
+                      ? 'Kluster Khidmat Latihan'
                       : activeTab === 'pusat'
                       ? 'Profil, Perbandingan & Rumusan Pusat'
                       : activeTab === 'jabatan'
@@ -120,6 +128,12 @@ const DashboardContent: React.FC = () => {
                     ? 'Katalog terperinci maklumat program, agihan peruntukan objek sebagai (OS21, OS24, OS27, OS29), dan profil pegawai pengurus (Mod Paparan Sahaja).'
                     : activeTab === 'analisisPegawai'
                     ? 'Analisis terperinci beban tugas, visualisasi data, dan pencapaian pelaksanaan program bagi setiap pegawai mengikut Pusat, Jabatan, Jawatan & Status.'
+                    : activeTab === 'iabAll'
+                    ? 'Paparan menyeluruh semua Kluster, Pusat, Jabatan, dan Pegawai IAB beserta visualisasi infografik, perbandingan antara kluster/pusat/jabatan dan rumusan status.'
+                    : activeTab === 'klusterProfesional'
+                    ? 'Paparan terperinci Kluster Khidmat Profesional: senarai Pusat, Jabatan, Pegawai, visualisasi infografik, perbandingan dan rumusan pelaksanaan program.'
+                    : activeTab === 'klusterLatihan'
+                    ? 'Paparan terperinci Kluster Khidmat Latihan: senarai Pusat, Jabatan, Pegawai, visualisasi infografik, perbandingan dan rumusan pelaksanaan program.'
                     : activeTab === 'pusat'
                     ? 'Paparan terperinci Pusat, senarai jabatan & pegawai di bawah pusat, visualisasi infografik, perbandingan antara jabatan, dan rumusan keseluruhan.'
                     : activeTab === 'jabatan'
@@ -171,6 +185,15 @@ const DashboardContent: React.FC = () => {
           ) : activeTab === 'analisisPegawai' ? (
             /* PAGE BARU – ANALISIS PEGAWAI MENGIKUT PROGRAM */
             <AnalisisPegawaiPage />
+          ) : activeTab === 'iabAll' ? (
+            /* PAGE BARU – PAGE IAB ALL */
+            <IabAllPage />
+          ) : activeTab === 'klusterProfesional' ? (
+            /* PAGE BARU – KLUSTER KHIDMAT PROFESIONAL */
+            <KlusterPage targetKlusterKey="KLUSTER KHIDMAT PROFESIONAL" />
+          ) : activeTab === 'klusterLatihan' ? (
+            /* PAGE BARU – KLUSTER KHIDMAT LATIHAN */
+            <KlusterPage targetKlusterKey="KLUSTER KHIDMAT LATIHAN" />
           ) : activeTab === 'pusat' ? (
             /* PAGE BARU – PAGE PUSAT */
             <PusatPage />

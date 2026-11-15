@@ -17,6 +17,8 @@ import {
   Users,
   Landmark,
   Briefcase,
+  Globe,
+  Layers,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -91,6 +93,27 @@ export const Header: React.FC = () => {
       desc: 'Slicer, senarai pegawai, visualisasi & analisis program',
       icon: Users,
       iconBg: 'bg-cyan-100 text-cyan-700',
+    },
+    {
+      id: 'iabAll',
+      label: 'Page IAB All',
+      desc: 'Analisis semua Kluster, Pusat, Jabatan & Pegawai IAB',
+      icon: Globe,
+      iconBg: 'bg-indigo-100 text-indigo-700',
+    },
+    {
+      id: 'klusterProfesional',
+      label: 'Kluster Khidmat Profesional',
+      desc: 'Pusat, Jabatan, Pegawai, Infografik & Rumusan kluster',
+      icon: Layers,
+      iconBg: 'bg-blue-100 text-blue-700',
+    },
+    {
+      id: 'klusterLatihan',
+      label: 'Kluster Khidmat Latihan',
+      desc: 'Pusat, Jabatan, Pegawai, Infografik & Rumusan kluster',
+      icon: Layers,
+      iconBg: 'bg-teal-100 text-teal-700',
     },
     {
       id: 'pusat',
@@ -172,6 +195,9 @@ export const Header: React.FC = () => {
     if (item.id === 'bersepadu') return getPageAccessMode('DASHBOARD BERSEPADU') !== 'none';
     if (item.id === 'perincian') return getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
     if (item.id === 'analisisPegawai') return getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
+    if (item.id === 'iabAll') return getPageAccessMode('IAB ALL') !== 'none';
+    if (item.id === 'klusterProfesional') return getPageAccessMode('KLUSTER KHIDMAT PROFESIONAL') !== 'none';
+    if (item.id === 'klusterLatihan') return getPageAccessMode('KLUSTER KHIDMAT LATIHAN') !== 'none';
     if (item.id === 'pusat') return getPageAccessMode('PUSAT') !== 'none';
     if (item.id === 'jabatan') return getPageAccessMode('JABATAN') !== 'none';
     if (item.id === 'peruntukan') return getPageAccessMode('PERUNTUKAN') !== 'none';

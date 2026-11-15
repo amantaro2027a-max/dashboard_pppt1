@@ -75,6 +75,8 @@
       "description": "Konfigurasi pusat, jabatan, sumber kewangan, dan status program",
       "type": "object",
       "properties": {
+        "klusterList": { "type": "array" },
+        "klusterMap": { "type": "object" },
         "pusatList": { "type": "array" },
         "jabatanMap": { "type": "object" },
         "sumberKewanganList": { "type": "array" },

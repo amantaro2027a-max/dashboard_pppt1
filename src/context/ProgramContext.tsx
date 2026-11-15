@@ -18,6 +18,8 @@ import {
 import { formatRM } from '../utils/formatters';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
+  KLUSTER_LIST,
+  KLUSTER_MAP,
   PUSAT_LIST,
   JABATAN_MAP,
   PEGAWAI_LIST,
@@ -71,8 +73,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -108,6 +110,9 @@ interface ProgramContextType {
   getAuthorizedJabatanList: () => string[];
 
   // Master Data
+  klusterList: string[];
+  klusterMap: Record<string, string[]>;
+  getKlusterForPusat: (pusatName: string) => string;
   pusatList: string[];
   jabatanMap: Record<string, string[]>;
   pegawaiList: Pegawai[];
@@ -116,12 +121,16 @@ interface ProgramContextType {
   jawatanList: string[];
 
   // Master Data Mutations
+  addKluster: (namaKluster: string) => void;
+  updateKluster: (oldKluster: string, newKluster: string) => void;
+  deleteKluster: (namaKluster: string) => void;
+
   addPegawai: (pegawai: Pegawai) => void;
   updatePegawai: (id: string, updated: Partial<Pegawai>) => void;
   deletePegawai: (id: string) => void;
 
-  addPusat: (namaPusat: string) => void;
-  updatePusat: (oldPusat: string, newPusat: string) => void;
+  addPusat: (namaPusat: string, kluster?: string) => void;
+  updatePusat: (oldPusat: string, newPusat: string, newKluster?: string) => void;
   deletePusat: (pusat: string) => void;
 
   addJabatan: (pusat: string, namaJabatan: string) => void;
@@ -141,9 +150,10 @@ interface ProgramContextType {
   deleteJawatan: (nama: string) => void;
 
   // Bulk Import Master Data (Super Admin)
+  importKlusterBulk: (items: string[]) => { success: boolean; added: number; message?: string };
   importPegawaiBulk: (items: Partial<Pegawai>[]) => { success: boolean; added: number; updated: number; message?: string };
-  importPusatBulk: (items: string[]) => { success: boolean; added: number; message?: string };
-  importJabatanBulk: (entries: Array<{ pusat?: string; jabatan: string }>, defaultPusat?: string) => { success: boolean; added: number; message?: string };
+  importPusatBulk: (items: Array<string | { pusat: string; kluster?: string }>) => { success: boolean; added: number; message?: string };
+  importJabatanBulk: (entries: Array<{ pusat?: string; jabatan: string; kluster?: string }>, defaultPusat?: string) => { success: boolean; added: number; message?: string };
   importSumberKewanganBulk: (items: string[]) => { success: boolean; added: number; message?: string };
   importStatusProgramBulk: (items: string[]) => { success: boolean; added: number; message?: string };
   importJawatanBulk: (items: string[]) => { success: boolean; added: number; message?: string };
@@ -431,6 +441,46 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   // 4. Master Data state
+  const [klusterList, setKlusterList] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_MASTER + '_kluster');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return KLUSTER_LIST;
+  });
+
+  const sanitizeKlusterMap = (map: any): Record<string, string[]> => {
+    if (!map || typeof map !== 'object') return KLUSTER_MAP;
+    const cleaned: Record<string, string[]> = {};
+    for (const [k, list] of Object.entries(map)) {
+      const cleanK = k.trim().toUpperCase();
+      if (!cleanK) continue;
+      if (Array.isArray(list)) {
+        cleaned[cleanK] = Array.from(
+          new Set(
+            list
+              .filter((p) => typeof p === 'string' && p.trim())
+              .map((p) => (p as string).trim().toUpperCase())
+          )
+        );
+      } else {
+        cleaned[cleanK] = [];
+      }
+    }
+    return cleaned;
+  };
+
+  const [klusterMap, setKlusterMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_MASTER + '_kluster_map');
+      if (saved) return sanitizeKlusterMap(JSON.parse(saved));
+    } catch {}
+    return KLUSTER_MAP;
+  });
+
   const [pusatList, setPusatList] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_MASTER + '_pusat');
@@ -573,7 +623,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -614,6 +664,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_MASTER + '_kluster', JSON.stringify(klusterList));
+      localStorage.setItem(STORAGE_MASTER + '_kluster_map', JSON.stringify(klusterMap));
       localStorage.setItem(STORAGE_MASTER + '_pusat', JSON.stringify(pusatList));
       localStorage.setItem(STORAGE_MASTER + '_jabatan', JSON.stringify(jabatanMap));
       localStorage.setItem(STORAGE_MASTER + '_pegawai', JSON.stringify(pegawaiList));
@@ -621,7 +673,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem(STORAGE_MASTER + '_status', JSON.stringify(statusProgramList));
       localStorage.setItem(STORAGE_MASTER + '_jawatan', JSON.stringify(jawatanList));
     } catch {}
-  }, [pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList, jawatanList]);
+  }, [klusterList, klusterMap, pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList, jawatanList]);
 
   useEffect(() => {
     try {
@@ -772,6 +824,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             if (!snapshot.exists() && !isInitialSyncDone.current) {
               try {
                 await setDoc(masterDocRef, {
+                  klusterList: KLUSTER_LIST,
+                  klusterMap: KLUSTER_MAP,
                   pusatList: PUSAT_LIST,
                   jabatanMap: JABATAN_MAP,
                   sumberKewanganList: SUMBER_KEWANGAN_LIST,
@@ -784,6 +838,19 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               }
             } else if (snapshot.exists()) {
               const data = snapshot.data();
+              if (Array.isArray(data?.klusterList) && data.klusterList.length > 0) {
+                setKlusterList(data.klusterList);
+              } else {
+                // Seed initial 2 klusters if existing settings doc doesn't have klusterList yet
+                setKlusterList(KLUSTER_LIST);
+                setKlusterMap(KLUSTER_MAP);
+                setDoc(
+                  masterDocRef,
+                  { klusterList: KLUSTER_LIST, klusterMap: KLUSTER_MAP },
+                  { merge: true }
+                ).catch(() => {});
+              }
+              if (data?.klusterMap) setKlusterMap(sanitizeKlusterMap(data.klusterMap));
               if (data?.pusatList) setPusatList(data.pusatList);
               if (data?.jabatanMap) setJabatanMap(sanitizeJabatanMap(data.jabatanMap));
               if (data?.sumberKewanganList) setSumberKewanganList(data.sumberKewanganList);
@@ -822,6 +889,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Helper to persist master data updates to Firestore
   const syncMasterDataToFirestore = async (updates: Partial<{
+    klusterList: string[];
+    klusterMap: Record<string, string[]>;
     pusatList: string[];
     jabatanMap: Record<string, string[]>;
     sumberKewanganList: string[];
@@ -1889,6 +1958,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const resetToDefaultData = () => {
     setPrograms(INITIAL_PROGRAMS);
+    setKlusterList(KLUSTER_LIST);
+    setKlusterMap(KLUSTER_MAP);
     setPusatList(PUSAT_LIST);
     setJabatanMap(JABATAN_MAP);
     setPegawaiList(PEGAWAI_LIST);
@@ -1898,6 +1969,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setFasaPeruntukanList(INITIAL_FASA_PERUNTUKAN);
     setSubwaranList(INITIAL_SUBWARAN);
     localStorage.removeItem(STORAGE_PROGRAMS);
+    localStorage.removeItem(STORAGE_MASTER + '_kluster');
+    localStorage.removeItem(STORAGE_MASTER + '_kluster_map');
     localStorage.removeItem(STORAGE_MASTER + '_pusat');
     localStorage.removeItem(STORAGE_MASTER + '_jabatan');
     localStorage.removeItem(STORAGE_MASTER + '_pegawai');
@@ -1916,6 +1989,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Pastikan master data kekal selaras
     try {
       syncMasterDataToFirestore({
+        klusterList: KLUSTER_LIST,
+        klusterMap: KLUSTER_MAP,
         pusatList: PUSAT_LIST,
         jabatanMap: JABATAN_MAP,
         sumberKewanganList: SUMBER_KEWANGAN_LIST,
@@ -1926,6 +2001,47 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Master Data CRUD functions (Super Admin Only)
+  const getKlusterForPusat = (pusatName: string): string => {
+    const cleanP = (pusatName || '').trim().toUpperCase();
+    for (const [k, pusats] of Object.entries(klusterMap)) {
+      if ((pusats || []).some((p) => p.trim().toUpperCase() === cleanP)) {
+        return k;
+      }
+    }
+    return '';
+  };
+
+  const addKluster = (namaKluster: string) => {
+    const trimmed = namaKluster.trim().toUpperCase();
+    if (!trimmed || klusterList.includes(trimmed)) return;
+    const nextList = [...klusterList, trimmed];
+    const nextMap = { ...klusterMap, [trimmed]: klusterMap[trimmed] || [] };
+    setKlusterList(nextList);
+    setKlusterMap(nextMap);
+    syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+  };
+
+  const updateKluster = (oldKluster: string, newKluster: string) => {
+    const trimmed = newKluster.trim().toUpperCase();
+    if (!trimmed || oldKluster === trimmed) return;
+    const nextList = klusterList.map((k) => (k === oldKluster ? trimmed : k));
+    const nextMap = { ...klusterMap };
+    const pusats = nextMap[oldKluster] || [];
+    delete nextMap[oldKluster];
+    nextMap[trimmed] = Array.from(new Set([...(nextMap[trimmed] || []), ...pusats]));
+    setKlusterList(nextList);
+    setKlusterMap(nextMap);
+    syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+  };
+
+  const deleteKluster = (namaKluster: string) => {
+    const nextList = klusterList.filter((k) => k !== namaKluster);
+    const nextMap = { ...klusterMap };
+    delete nextMap[namaKluster];
+    setKlusterList(nextList);
+    setKlusterMap(nextMap);
+    syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+  };
   const addPegawai = (peg: Pegawai) => {
     setPegawaiList((prev) => [...prev, peg]);
     setDoc(doc(db, 'pegawai', peg.id), sanitizeData(peg)).catch((err) => {
@@ -1968,41 +2084,101 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const addPusat = (namaPusat: string) => {
+  const addPusat = (namaPusat: string, kluster?: string) => {
     const trimmed = namaPusat.trim().toUpperCase();
-    if (!trimmed || pusatList.includes(trimmed)) return;
-    const nextList = [...pusatList, trimmed];
-    const nextMap = { ...jabatanMap, [trimmed]: [] };
+    if (!trimmed) return;
+    const targetKluster = (kluster || '').trim().toUpperCase();
+    const nextList = pusatList.includes(trimmed) ? pusatList : [...pusatList, trimmed];
+    const nextJabMap = jabatanMap[trimmed] ? jabatanMap : { ...jabatanMap, [trimmed]: [] };
+
+    const nextKlusterMap = { ...klusterMap };
+    if (targetKluster) {
+      Object.keys(nextKlusterMap).forEach((k) => {
+        nextKlusterMap[k] = (nextKlusterMap[k] || []).filter((p) => p !== trimmed);
+      });
+      nextKlusterMap[targetKluster] = Array.from(
+        new Set([...(nextKlusterMap[targetKluster] || []), trimmed])
+      );
+    }
+
     setPusatList(nextList);
-    setJabatanMap(nextMap);
-    syncMasterDataToFirestore({ pusatList: nextList, jabatanMap: nextMap });
+    setJabatanMap(nextJabMap);
+    if (targetKluster) setKlusterMap(nextKlusterMap);
+    syncMasterDataToFirestore({
+      pusatList: nextList,
+      jabatanMap: nextJabMap,
+      ...(targetKluster ? { klusterMap: nextKlusterMap } : {}),
+    });
   };
 
-  const updatePusat = (oldPusat: string, newPusat: string) => {
+  const updatePusat = (oldPusat: string, newPusat: string, newKluster?: string) => {
     const trimmed = newPusat.trim().toUpperCase();
-    if (!trimmed || oldPusat === trimmed) return;
-    const nextList = pusatList.map((p) => (p === oldPusat ? trimmed : p));
-    const nextMap = { ...jabatanMap };
-    const jabatans = nextMap[oldPusat] || [];
-    delete nextMap[oldPusat];
-    nextMap[trimmed] = jabatans;
-    setPusatList(nextList);
-    setJabatanMap(nextMap);
-    syncMasterDataToFirestore({ pusatList: nextList, jabatanMap: nextMap });
+    if (!trimmed) return;
+    const targetKluster = (newKluster || '').trim().toUpperCase();
+    const isNameChanged = oldPusat !== trimmed;
 
-    // Update existing programs
-    setPrograms((prev) =>
-      prev.map((p) => (p.pusat === oldPusat ? { ...p, pusat: trimmed } : p))
-    );
+    const nextList = isNameChanged
+      ? Array.from(new Set(pusatList.map((p) => (p === oldPusat ? trimmed : p))))
+      : pusatList;
+
+    const nextJabMap = { ...jabatanMap };
+    if (isNameChanged) {
+      const jabatans = nextJabMap[oldPusat] || [];
+      delete nextJabMap[oldPusat];
+      nextJabMap[trimmed] = Array.from(new Set([...(nextJabMap[trimmed] || []), ...jabatans]));
+    }
+
+    const nextKlusterMap = { ...klusterMap };
+    if (targetKluster) {
+      Object.keys(nextKlusterMap).forEach((k) => {
+        nextKlusterMap[k] = (nextKlusterMap[k] || []).filter(
+          (p) => p !== oldPusat && p !== trimmed
+        );
+      });
+      nextKlusterMap[targetKluster] = Array.from(
+        new Set([...(nextKlusterMap[targetKluster] || []), trimmed])
+      );
+    } else if (isNameChanged) {
+      Object.keys(nextKlusterMap).forEach((k) => {
+        nextKlusterMap[k] = (nextKlusterMap[k] || []).map((p) => (p === oldPusat ? trimmed : p));
+      });
+    }
+
+    setPusatList(nextList);
+    setJabatanMap(nextJabMap);
+    setKlusterMap(nextKlusterMap);
+    syncMasterDataToFirestore({
+      pusatList: nextList,
+      jabatanMap: nextJabMap,
+      klusterMap: nextKlusterMap,
+    });
+
+    if (isNameChanged) {
+      setPrograms((prev) =>
+        prev.map((p) => (p.pusat === oldPusat ? { ...p, pusat: trimmed } : p))
+      );
+      setPegawaiList((prev) =>
+        prev.map((peg) => (peg.pusat === oldPusat ? { ...peg, pusat: trimmed } : peg))
+      );
+    }
   };
 
   const deletePusat = (pusat: string) => {
     const nextList = pusatList.filter((p) => p !== pusat);
     const nextMap = { ...jabatanMap };
     delete nextMap[pusat];
+    const nextKlusterMap = { ...klusterMap };
+    Object.keys(nextKlusterMap).forEach((k) => {
+      nextKlusterMap[k] = (nextKlusterMap[k] || []).filter((p) => p !== pusat);
+    });
     setPusatList(nextList);
     setJabatanMap(nextMap);
-    syncMasterDataToFirestore({ pusatList: nextList, jabatanMap: nextMap });
+    setKlusterMap(nextKlusterMap);
+    syncMasterDataToFirestore({
+      pusatList: nextList,
+      jabatanMap: nextMap,
+      klusterMap: nextKlusterMap,
+    });
   };
 
   const addJabatan = (pusat: string, namaJabatan: string) => {
@@ -2223,48 +2399,116 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true, added, updated };
   };
 
-  const importPusatBulk = (items: string[]) => {
+  const importKlusterBulk = (items: string[]) => {
     if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport senarai Pusat.' };
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport Kluster IAB.' };
     }
     const cleaned = Array.from(new Set(items.map((x) => x.trim().toUpperCase()).filter(Boolean)));
     if (cleaned.length === 0) {
+      return { success: false, added: 0, message: 'Tiada nama Kluster yang sah ditemui.' };
+    }
+    const nextList = [...klusterList];
+    const nextMap = { ...klusterMap };
+    let added = 0;
+    cleaned.forEach((k) => {
+      if (!nextList.includes(k)) {
+        nextList.push(k);
+        if (!nextMap[k]) nextMap[k] = [];
+        added++;
+      }
+    });
+    if (added > 0) {
+      setKlusterList(nextList);
+      setKlusterMap(nextMap);
+      syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+    }
+    return { success: true, added };
+  };
+
+  const importPusatBulk = (items: Array<string | { pusat: string; kluster?: string }>) => {
+    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport senarai Pusat.' };
+    }
+    const normalized = items
+      .map((item) =>
+        typeof item === 'string'
+          ? { pusat: item.trim().toUpperCase(), kluster: '' }
+          : {
+              pusat: (item.pusat || '').trim().toUpperCase(),
+              kluster: (item.kluster || '').trim().toUpperCase(),
+            }
+      )
+      .filter((x) => Boolean(x.pusat));
+
+    if (normalized.length === 0) {
       return { success: false, added: 0, message: 'Tiada nama Pusat yang sah ditemui.' };
     }
+
     const nextList = [...pusatList];
     const nextMap = { ...jabatanMap };
+    const nextKlusterList = [...klusterList];
+    const nextKlusterMap = { ...klusterMap };
     let added = 0;
-    cleaned.forEach((p) => {
+    let klusterChanged = false;
+
+    normalized.forEach(({ pusat: p, kluster: k }) => {
       if (!nextList.includes(p)) {
         nextList.push(p);
         if (!nextMap[p]) nextMap[p] = [];
         added++;
       }
+      if (k) {
+        if (!nextKlusterList.includes(k)) nextKlusterList.push(k);
+        Object.keys(nextKlusterMap).forEach((existingK) => {
+          nextKlusterMap[existingK] = (nextKlusterMap[existingK] || []).filter((x) => x !== p);
+        });
+        nextKlusterMap[k] = Array.from(new Set([...(nextKlusterMap[k] || []), p]));
+        klusterChanged = true;
+      }
     });
-    if (added > 0) {
+    if (added > 0 || klusterChanged) {
       setPusatList(nextList);
       setJabatanMap(nextMap);
-      syncMasterDataToFirestore({ pusatList: nextList, jabatanMap: nextMap });
+      if (klusterChanged) {
+        setKlusterList(nextKlusterList);
+        setKlusterMap(nextKlusterMap);
+      }
+      syncMasterDataToFirestore({
+        pusatList: nextList,
+        jabatanMap: nextMap,
+        ...(klusterChanged ? { klusterList: nextKlusterList, klusterMap: nextKlusterMap } : {}),
+      });
     }
     return { success: true, added };
   };
 
-  const importJabatanBulk = (entries: Array<{ pusat?: string; jabatan: string }>, defaultPusat?: string) => {
+  const importJabatanBulk = (entries: Array<{ pusat?: string; jabatan: string; kluster?: string }>, defaultPusat?: string) => {
     if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
       return { success: false, added: 0, message: 'Hanya Super Admin dibenarkan mengimport senarai Jabatan.' };
     }
     const nextPusatList = [...pusatList];
     const nextMap = { ...jabatanMap };
+    const nextKlusterList = [...klusterList];
+    const nextKlusterMap = { ...klusterMap };
     let added = 0;
     let pusatAdded = false;
+    let klusterChanged = false;
 
     entries.forEach((entry) => {
       const jab = (entry.jabatan || '').trim().toUpperCase();
       const pus = (entry.pusat || defaultPusat || pusatList[0] || '').trim().toUpperCase();
+      const klu = (entry.kluster || '').trim().toUpperCase();
       if (!jab || !pus) return;
       if (!nextPusatList.includes(pus)) {
         nextPusatList.push(pus);
         pusatAdded = true;
+      }
+      if (klu) {
+        if (!nextKlusterList.includes(klu)) nextKlusterList.push(klu);
+        if (!(nextKlusterMap[klu] || []).includes(pus)) {
+          nextKlusterMap[klu] = Array.from(new Set([...(nextKlusterMap[klu] || []), pus]));
+          klusterChanged = true;
+        }
       }
       const existing = nextMap[pus] || [];
       if (!existing.includes(jab)) {
@@ -2273,11 +2517,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     });
 
-    if (added > 0 || pusatAdded) {
+    if (added > 0 || pusatAdded || klusterChanged) {
       if (pusatAdded) setPusatList(nextPusatList);
       setJabatanMap(nextMap);
+      if (klusterChanged) {
+        setKlusterList(nextKlusterList);
+        setKlusterMap(nextKlusterMap);
+      }
       syncMasterDataToFirestore({
         ...(pusatAdded ? { pusatList: nextPusatList } : {}),
+        ...(klusterChanged ? { klusterList: nextKlusterList, klusterMap: nextKlusterMap } : {}),
         jabatanMap: nextMap,
       });
     }
@@ -2602,12 +2851,18 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getEditableJabatans,
         getAuthorizedPusatList,
         getAuthorizedJabatanList,
+        klusterList,
+        klusterMap,
+        getKlusterForPusat,
         pusatList,
         jabatanMap,
         pegawaiList,
         sumberKewanganList,
         statusProgramList,
         jawatanList,
+        addKluster,
+        updateKluster,
+        deleteKluster,
         addPegawai,
         updatePegawai,
         deletePegawai,
@@ -2626,6 +2881,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addJawatan,
         updateJawatan,
         deleteJawatan,
+        importKlusterBulk,
         importPegawaiBulk,
         importPusatBulk,
         importJabatanBulk,
