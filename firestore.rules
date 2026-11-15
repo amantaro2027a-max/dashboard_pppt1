@@ -24,5 +24,17 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // User activity logs collection - real-time activity tracking & admin monitoring
+    match /user_activity_logs/{logId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Security alerts collection - suspicious activity detection & triage workflow
+    match /security_alerts/{alertId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }

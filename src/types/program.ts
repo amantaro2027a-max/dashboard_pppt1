@@ -213,7 +213,76 @@ export interface AdminUser {
   allowedPages?: string[]; // Legacy & convenience list of authorized pages
   pageAccess?: Record<string, AccessMode>; // Per-page 'view' | 'edit' permission
   photoUrl?: string; // Base64 passport photo uploaded by user
+  isActive?: boolean; // Account active/deactivated status
+  lastLoginAt?: string; // Last successful login timestamp (Asia/Kuala_Lumpur)
   createdAt: string;
+}
+
+export type ActivityActionType =
+  | 'LOGIN'
+  | 'FAILED_LOGIN'
+  | 'LOGOUT'
+  | 'SESSION_TIMEOUT'
+  | 'PASSWORD_CHANGE'
+  | 'PASSWORD_RESET'
+  | 'UNAUTHORIZED_ACCESS'
+  | 'NAVIGATE'
+  | 'PAGE_DURATION'
+  | 'VIEW'
+  | 'CREATE'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'UPLOAD'
+  | 'DOWNLOAD'
+  | 'PREVIEW'
+  | 'REPLACE'
+  | 'SEARCH'
+  | 'EXPORT'
+  | 'PRINT'
+  | 'REPORT'
+  | 'ADMIN_ACTION';
+
+export type ActivityLogStatus = 'SUCCESS' | 'FAILED' | 'BLOCKED';
+
+export interface UserActivityLog {
+  log_id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  action_type: ActivityActionType | string;
+  module_name: string;
+  activity_description: string;
+  record_id: string;
+  ip_address: string;
+  device_info: string;
+  session_id: string;
+  timestamp: string; // Asia/Kuala_Lumpur ISO+08:00 timestamp
+  malaysia_date: string; // YYYY-MM-DD in Asia/Kuala_Lumpur
+  malaysia_datetime_display: string; // DD/MM/YYYY, HH:mm:ss AM/PM
+  duration_seconds?: number;
+  status: ActivityLogStatus;
+}
+
+export type AlertSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
+export type AlertStatus = 'New' | 'Under Review' | 'Resolved';
+
+export interface SecurityAlert {
+  alert_id: string;
+  rule_code: string;
+  title: string;
+  description: string;
+  severity: AlertSeverity;
+  status: AlertStatus;
+  user_id: string;
+  user_name: string;
+  module_name: string;
+  trigger_count: number;
+  related_log_ids: string[];
+  timestamp: string;
+  malaysia_datetime_display: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
 }
 
 export interface OsAllocation {

@@ -29,6 +29,7 @@ import { PusatPage } from './components/PusatPage';
 import { JabatanPage } from './components/JabatanPage';
 import { KlusterPage } from './components/KlusterPage';
 import { IabAllPage } from './components/IabAllPage';
+import { AdminMonitoringPage } from './components/AdminMonitoringPage';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
@@ -120,6 +121,8 @@ const DashboardContent: React.FC = () => {
                       ? 'Pengurusan Sub Waran Peruntukan'
                       : activeTab === 'baki'
                       ? 'Pemantauan Baki Peruntukan Kewangan'
+                      : activeTab === 'monitoring'
+                      ? 'Admin Monitoring Dashboard'
                       : !currentUser
                       ? 'Log Masuk Akaun Pengguna & Pentadbir'
                       : isSuperAdmin
@@ -157,6 +160,8 @@ const DashboardContent: React.FC = () => {
                     ? 'Pendaftaran dan pemantauan peruntukan yang diagihkan / disubwaran kepada PTJ Cawangan IAB, JPN, PPD, IPG, dan KV mengikut Sumber Kewangan & pecahan OS.'
                     : activeTab === 'baki'
                     ? 'Analisis baki peruntukan menyeluruh: Peruntukan (Page Peruntukan) − Belanja Sebenar (Page Perbelanjaan) = Penjimatan; Penjimatan − Subwaran = Baki Bersih Akhir.'
+                    : activeTab === 'monitoring'
+                    ? 'Real-time user activity audit log, trend analytics, security incident alerts, user activity profiles & official audit report generation (Asia/Kuala_Lumpur).'
                     : !currentUser
                     ? 'Sila masukkan ID Pengguna dan Kata Laluan untuk mengakses halaman dan maklumat mengikut tahap kebenaran anda.'
                     : isSuperAdmin
@@ -231,6 +236,9 @@ const DashboardContent: React.FC = () => {
           ) : activeTab === 'baki' ? (
             /* PAGE 7 – BAKI PERUNTUKAN (SUPER ADMIN) */
             <BakiPeruntukanPage />
+          ) : activeTab === 'monitoring' ? (
+            /* PAGE BARU – ADMIN MONITORING DASHBOARD */
+            <AdminMonitoringPage />
           ) : (
             /* PAGE 3 – ADMIN */
             <AdminPage />

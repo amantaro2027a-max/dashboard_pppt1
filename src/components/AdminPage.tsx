@@ -45,6 +45,7 @@ import {
   FileDown,
   RotateCcw,
   Layers,
+  Power,
 } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
@@ -64,9 +65,11 @@ export const AdminPage: React.FC = () => {
     adminUsers,
     createAdminUser,
     updateAdminUser,
+    toggleAdminUserActive,
     deleteAdminUser,
     changeOwnPassword,
     resetUserPassword,
+    logActivity,
     getPageAccessMode,
     canEditPage,
     canEditJabatan,
@@ -415,6 +418,14 @@ export const AdminPage: React.FC = () => {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
       XLSX.writeFile(wb, fileName);
 
+      logActivity({
+        action_type: 'EXPORT',
+        module_name: 'Portal Admin',
+        activity_description: `Exported Master Data "${category.toUpperCase()}" (${rows.length} rows): ${fileName}`,
+        record_id: fileName,
+        status: 'SUCCESS',
+      });
+
       setMasterIoMsg({
         type: 'success',
         text: `Berjaya mengeksport ${rows.length} rekod ke fail ${fileName}.`,
@@ -604,6 +615,7 @@ export const AdminPage: React.FC = () => {
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },
     { key: 'BAKI PERUNTUKAN', label: 'BAKI PERUNTUKAN' },
+    { key: 'ADMIN MONITORING DASHBOARD', label: 'ADMIN MONITORING DASHBOARD' },
   ];
 
   const authorizedJabatans = useMemo(() => getAuthorizedJabatanList(), [getAuthorizedJabatanList]);
@@ -774,6 +786,14 @@ export const AdminPage: React.FC = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
+    logActivity({
+      action_type: 'DOWNLOAD',
+      module_name: 'Portal Admin',
+      activity_description: `Downloaded full JSON backup (${programs.length} programs + BK04): ${fileName}`,
+      record_id: fileName,
+      status: 'SUCCESS',
+    });
+
     setImportStatusMsg({
       type: 'success',
       text: `Fail JSON lengkap (${programs.length} program termasuk rekod pindaan BK04) berjaya dimuat turun (${fileName})!`,
@@ -854,6 +874,13 @@ export const AdminPage: React.FC = () => {
       }
 
       XLSX.writeFile(wb, fileName);
+      logActivity({
+        action_type: 'EXPORT',
+        module_name: 'Portal Admin',
+        activity_description: `Exported full Excel workbook (${programs.length} programs): ${fileName}`,
+        record_id: fileName,
+        status: 'SUCCESS',
+      });
       setImportStatusMsg({
         type: 'success',
         text: `Fail Excel lengkap berjaya dimuat turun (${fileName})!`,
@@ -3096,6 +3123,7 @@ export const AdminPage: React.FC = () => {
                             <th className="py-2.5 px-3">ID PENGGUNA</th>
                             <th className="py-2.5 px-3">NAMA PEGAWAI</th>
                             <th className="py-2.5 px-3">LEVEL ID</th>
+                            <th className="py-2.5 px-3 text-center">STATUS</th>
                             <th className="py-2.5 px-3 min-w-[180px]">JABATAN DIBERI AKSES</th>
                             <th className="py-2.5 px-3 min-w-[180px]">KEBENARAN PAGE</th>
                             <th className="py-2.5 px-3 text-center">TINDAKAN</th>
@@ -3104,6 +3132,7 @@ export const AdminPage: React.FC = () => {
                         <tbody className="divide-y divide-slate-100 text-slate-800">
                           {adminUsers.map((user) => {
                             const isUserSuper = user.role === 'SUPER_ADMIN' || user.levelId === 'SUPER_ADMIN';
+                            const isUserActive = user.isActive !== false;
                             const levelLabel = getAdminLevelLabel(user.levelId, user.role);
                             const jabEntries: Array<[string, AccessMode]> =
                               user.jabatanAccess && Object.keys(user.jabatanAccess).length > 0
@@ -3131,6 +3160,17 @@ export const AdminPage: React.FC = () => {
                                     }`}
                                   >
                                     {levelLabel}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-center whitespace-nowrap">
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                                      isUserActive
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    }`}
+                                  >
+                                    {isUserActive ? 'Active' : 'Inactive'}
                                   </span>
                                 </td>
                                 <td className="py-3 px-3 text-[11px] text-slate-700">
@@ -3214,6 +3254,36 @@ export const AdminPage: React.FC = () => {
                                         title={`Reset kata laluan ${user.id} kepada 123`}
                                       >
                                         <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    {/* Activate / Deactivate Account */}
+                                    {user.id.toUpperCase() !== 'AMAN' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const res = toggleAdminUserActive(user.id);
+                                          if (res.success) {
+                                            setUserActionMsg({
+                                              type: 'success',
+                                              text: `Status akaun "${user.id}" dikemaskini kepada ${
+                                                user.isActive === false ? 'Active' : 'Inactive'
+                                              }.`,
+                                            });
+                                          }
+                                        }}
+                                        className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                          user.isActive === false
+                                            ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                                            : 'text-slate-600 bg-slate-100 hover:bg-rose-50 hover:text-rose-700'
+                                        }`}
+                                        title={
+                                          user.isActive === false
+                                            ? `Aktifkan akaun ${user.id}`
+                                            : `Nyahaktifkan akaun ${user.id}`
+                                        }
+                                      >
+                                        <Power className="w-3.5 h-3.5" />
                                       </button>
                                     )}
 

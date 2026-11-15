@@ -102,7 +102,7 @@ const loadImageAsDataUrl = (src: string): Promise<string | null> =>
   });
 
 export const PengiraanBajetPage: React.FC = () => {
-  const { currentUser, isSuperAdmin, budgetRates, updateBudgetRates, jabatanMap, programs, pegawaiList } = useProgramContext();
+  const { currentUser, isSuperAdmin, budgetRates, updateBudgetRates, jabatanMap, programs, pegawaiList, logActivity } = useProgramContext();
 
   const jabatanOptions = useMemo(() => {
     const set = new Set<string>(ALL_JABATAN_LIST);
@@ -470,6 +470,13 @@ export const PengiraanBajetPage: React.FC = () => {
     setIsMobileMetaOpen(false);
     setPreviewZoomMode('fit');
     setIsPreviewOpen(true);
+    logActivity({
+      action_type: 'PREVIEW',
+      module_name: 'Pengiraan Bajet',
+      activity_description: `Opened A4 Portrait budget preview (${mode === 'makanDobi' ? 'Makan Minum & Dobi' : 'Pakej Hotel'})`,
+      record_id: programRefTitle.trim() || mode,
+      status: 'SUCCESS',
+    });
   };
 
   const handleExportExcel = (targetMode: CalcMode) => {
@@ -523,6 +530,13 @@ export const PengiraanBajetPage: React.FC = () => {
         wb,
         `Pengiraan_Bajet_Makan_Minum_Dobi_${new Date().toISOString().slice(0, 10)}.xlsx`
       );
+      logActivity({
+        action_type: 'EXPORT',
+        module_name: 'Pengiraan Bajet',
+        activity_description: `Exported Makan Minum & Dobi budget calculation to Excel`,
+        record_id: programRefTitle.trim() || 'MakanMinumDobi',
+        status: 'SUCCESS',
+      });
     } else {
       const sheet2Rows: (string | number)[][] = [
         ...metaRows,
@@ -584,6 +598,13 @@ export const PengiraanBajetPage: React.FC = () => {
       ws2['!cols'] = [{ wch: 24 }, { wch: 20 }, { wch: 18 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Pakej Hotel');
       XLSX.writeFile(wb, `Pengiraan_Pakej_Hotel_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      logActivity({
+        action_type: 'EXPORT',
+        module_name: 'Pengiraan Bajet',
+        activity_description: `Exported Pakej Hotel budget calculation to Excel`,
+        record_id: programRefTitle.trim() || 'PakejHotel',
+        status: 'SUCCESS',
+      });
     }
   };
 
@@ -1342,7 +1363,16 @@ export const PengiraanBajetPage: React.FC = () => {
         targetMode === 'makanDobi'
           ? 'Pengiraan_Bajet_Makan_Minum_Dobi'
           : 'Pengiraan_Bajet_Pakej_Hotel';
-      doc.save(`${fileSlug}_A4_Potret_${new Date().toISOString().slice(0, 10)}.pdf`);
+      const pdfFileName = `${fileSlug}_A4_Potret_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(pdfFileName);
+
+      logActivity({
+        action_type: 'DOWNLOAD',
+        module_name: 'Pengiraan Bajet',
+        activity_description: `Saved A4 Portrait budget PDF (${targetMode === 'makanDobi' ? 'Makan Minum & Dobi' : 'Pakej Hotel'}): ${pdfFileName}`,
+        record_id: programRefTitle.trim() || pdfFileName,
+        status: 'SUCCESS',
+      });
 
       setSaveNotice({
         type: 'success',

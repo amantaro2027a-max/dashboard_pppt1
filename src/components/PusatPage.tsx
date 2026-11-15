@@ -57,6 +57,7 @@ export const PusatPage: React.FC = () => {
     getAuthorizedPusatList,
     viewProgramDetail,
     setActiveTab,
+    logActivity,
   } = useProgramContext();
 
   const pageMode = getPageAccessMode('PUSAT');
@@ -334,6 +335,13 @@ export const PusatPage: React.FC = () => {
         .toISOString()
         .slice(0, 10)}.xlsx`
     );
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: 'Page Pusat',
+      activity_description: `Exported Pusat "${selectedPusat || 'IAB'}" summary to Excel`,
+      record_id: selectedPusat || 'IAB',
+      status: 'SUCCESS',
+    });
   };
 
   if (!canAccess) {

@@ -90,6 +90,60 @@
         "read": "true",
         "write": "true"
       }
+    },
+    "user_activity_logs": {
+      "title": "UserActivityLog",
+      "description": "Log aktiviti pengguna masa nyata dalam zon masa Asia/Kuala_Lumpur",
+      "type": "object",
+      "properties": {
+        "log_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "user_name": { "type": "string" },
+        "user_email": { "type": "string" },
+        "user_role": { "type": "string" },
+        "action_type": { "type": "string" },
+        "module_name": { "type": "string" },
+        "activity_description": { "type": "string" },
+        "record_id": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "device_info": { "type": "string" },
+        "session_id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "malaysia_date": { "type": "string" },
+        "malaysia_datetime_display": { "type": "string" },
+        "duration_seconds": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
+    },
+    "security_alerts": {
+      "title": "SecurityAlert",
+      "description": "Amaran keselamatan automatik bagi aktiviti mencurigakan",
+      "type": "object",
+      "properties": {
+        "alert_id": { "type": "string" },
+        "rule_code": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string" },
+        "status": { "type": "string" },
+        "user_id": { "type": "string" },
+        "user_name": { "type": "string" },
+        "module_name": { "type": "string" },
+        "trigger_count": { "type": "number" },
+        "related_log_ids": { "type": "array" },
+        "timestamp": { "type": "string" },
+        "malaysia_datetime_display": { "type": "string" },
+        "reviewed_by": { "type": "string" },
+        "reviewed_at": { "type": "string" }
+      },
+      "rules": {
+        "read": "true",
+        "write": "true"
+      }
     }
   }
 }

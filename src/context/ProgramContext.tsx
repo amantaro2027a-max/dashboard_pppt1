@@ -14,7 +14,21 @@ import {
   AdminLevelId,
   AccessMode,
   AdminRole,
+  UserActivityLog,
+  SecurityAlert,
+  ActivityActionType,
+  ActivityLogStatus,
+  AlertStatus,
+  getAdminLevelLabel,
 } from '../types/program';
+import {
+  getMalaysiaTimestampParts,
+  getDeviceInfo,
+  generateSessionId,
+  generateLogId,
+  resolveModuleLabel,
+  evaluateSecurityAlertRules,
+} from '../utils/activityLogger';
 import { formatRM } from '../utils/formatters';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
@@ -36,6 +50,9 @@ import {
   onSnapshot,
   writeBatch,
   getDoc,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, testFirestoreConnection } from '../firebase';
 
@@ -73,8 +90,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -98,6 +115,7 @@ interface ProgramContextType {
   logout: () => void;
   createAdminUser: (user: Omit<AdminUser, 'createdAt'>) => { success: boolean; message?: string };
   updateAdminUser: (id: string, updated: Partial<AdminUser>) => { success: boolean; message?: string };
+  toggleAdminUserActive: (userId: string) => { success: boolean; message?: string };
   deleteAdminUser: (id: string) => { success: boolean; message?: string };
   changeOwnPassword: (currentPassword: string, newPassword: string) => { success: boolean; message?: string };
   updateOwnPhoto: (photoUrl: string) => { success: boolean; message?: string };
@@ -175,6 +193,26 @@ interface ProgramContextType {
   budgetRates: BudgetRatesConfig;
   updateBudgetRates: (rates: BudgetRatesConfig) => { success: boolean; message?: string };
 
+  // User Activity Logs & Security Alerts (Admin Monitoring Dashboard)
+  activityLogs: UserActivityLog[];
+  securityAlerts: SecurityAlert[];
+  sessionId: string;
+  logActivity: (params: {
+    action_type: ActivityActionType | string;
+    module_name: string;
+    activity_description: string;
+    record_id?: string;
+    status?: ActivityLogStatus;
+    duration_seconds?: number;
+    userOverride?: {
+      user_id?: string;
+      user_name?: string;
+      user_email?: string;
+      user_role?: string;
+    };
+  }) => void;
+  updateAlertStatus: (alertId: string, newStatus: AlertStatus) => { success: boolean; message?: string };
+
   // Firebase Live Status
   firebaseStatus: 'connecting' | 'connected' | 'offline';
 }
@@ -199,6 +237,9 @@ const STORAGE_SESSION = 'pppt_dashboard_session_v2';
 const STORAGE_MASTER = 'pppt_dashboard_master_v2';
 const STORAGE_PERUNTUKAN_FASA = 'pppt_dashboard_peruntukan_fasa_v2';
 const STORAGE_BUDGET_RATES = 'pppt_dashboard_budget_rates_v2';
+const STORAGE_ACTIVITY_LOGS = 'pppt_dashboard_activity_logs_v1';
+const STORAGE_SECURITY_ALERTS = 'pppt_dashboard_security_alerts_v1';
+const STORAGE_SESSION_ID = 'pppt_dashboard_session_id_v1';
 
 export const DEFAULT_BUDGET_RATES: BudgetRatesConfig = {
   makanMinum: {
@@ -624,7 +665,80 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTabState] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+
+  // Activity Logs, Security Alerts & Session Metadata
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_ACTIVITY_LOGS);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_SECURITY_ALERTS);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [sessionId, setSessionId] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_SESSION_ID);
+      if (saved) return saved;
+    } catch {}
+    return generateSessionId();
+  });
+
+  const ipAddressRef = useRef<string>('Client Browser (Private/Masked)');
+  const activityLogsRef = useRef<UserActivityLog[]>(activityLogs);
+  const securityAlertsRef = useRef<SecurityAlert[]>(securityAlerts);
+  const pageVisitRef = useRef<{ tab: string; enteredAtMs: number }>({
+    tab: 'welcome',
+    enteredAtMs: Date.now(),
+  });
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    activityLogsRef.current = activityLogs;
+    try {
+      localStorage.setItem(STORAGE_ACTIVITY_LOGS, JSON.stringify(activityLogs.slice(0, 2000)));
+    } catch {}
+  }, [activityLogs]);
+
+  useEffect(() => {
+    securityAlertsRef.current = securityAlerts;
+    try {
+      localStorage.setItem(STORAGE_SECURITY_ALERTS, JSON.stringify(securityAlerts.slice(0, 500)));
+    } catch {}
+  }, [securityAlerts]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_SESSION_ID, sessionId);
+    } catch {}
+  }, [sessionId]);
+
+  // Non-blocking best-effort IP lookup (subject to privacy/network policy)
+  useEffect(() => {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 3000);
+    fetch('https://api.ipify.org?format=json', { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.ip && typeof d.ip === 'string') {
+          ipAddressRef.current = d.ip;
+        }
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(t));
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
+  }, []);
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -878,13 +992,61 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     };
 
+    let unsubscribeLogs = () => {};
+    let unsubscribeAlerts = () => {};
+
+    const setupFirebaseSyncWithLogs = async () => {
+      try {
+        const logsQuery = query(
+          collection(db, 'user_activity_logs'),
+          orderBy('timestamp', 'desc'),
+          limit(2000)
+        );
+        unsubscribeLogs = onSnapshot(
+          logsQuery,
+          (snapshot) => {
+            const loaded: UserActivityLog[] = [];
+            snapshot.forEach((docSnap) => {
+              loaded.push(docSnap.data() as UserActivityLog);
+            });
+            if (loaded.length > 0) {
+              setActivityLogs(loaded);
+            }
+          },
+          () => {}
+        );
+
+        const alertsQuery = query(
+          collection(db, 'security_alerts'),
+          orderBy('timestamp', 'desc'),
+          limit(500)
+        );
+        unsubscribeAlerts = onSnapshot(
+          alertsQuery,
+          (snapshot) => {
+            const loaded: SecurityAlert[] = [];
+            snapshot.forEach((docSnap) => {
+              loaded.push(docSnap.data() as SecurityAlert);
+            });
+            if (loaded.length > 0) {
+              setSecurityAlerts(loaded);
+            }
+          },
+          () => {}
+        );
+      } catch {}
+    };
+
     setupFirebaseSync();
+    setupFirebaseSyncWithLogs();
 
     return () => {
       unsubscribePrograms();
       unsubscribePegawai();
       unsubscribeAdmins();
       unsubscribeMaster();
+      unsubscribeLogs();
+      unsubscribeAlerts();
     };
   }, []);
 
@@ -907,35 +1069,298 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
+  // Helper: Core Automatic Activity Logger (Asia/Kuala_Lumpur) + Security Alert Evaluator
+  const logActivity = (params: {
+    action_type: ActivityActionType | string;
+    module_name: string;
+    activity_description: string;
+    record_id?: string;
+    status?: ActivityLogStatus;
+    duration_seconds?: number;
+    userOverride?: {
+      user_id?: string;
+      user_name?: string;
+      user_email?: string;
+      user_role?: string;
+    };
+  }) => {
+    const targetUserId = (params.userOverride?.user_id || currentUser?.id || 'PELAWAT').toUpperCase();
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser?.name && p.nama?.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (targetUserId && p.id?.trim().toUpperCase() === targetUserId)
+    );
+    const resolvedName =
+      params.userOverride?.user_name || currentUser?.name || matchedPeg?.nama || 'PELAWAT (VIEWER)';
+    const resolvedEmail =
+      params.userOverride?.user_email ||
+      matchedPeg?.emel ||
+      (currentUser ? `${currentUser.id.toLowerCase()}@iab.moe.edu.my` : '-');
+    const resolvedRole =
+      params.userOverride?.user_role ||
+      (currentUser
+        ? getAdminLevelLabel(currentUser.levelId, currentUser.role)
+        : 'Pelawat (Viewer)');
+
+    const { timestamp, malaysia_date, malaysia_datetime_display } = getMalaysiaTimestampParts();
+    const logId = generateLogId();
+
+    const entry: UserActivityLog = sanitizeData({
+      log_id: logId,
+      user_id: targetUserId,
+      user_name: resolvedName,
+      user_email: resolvedEmail,
+      user_role: resolvedRole,
+      action_type: params.action_type,
+      module_name: params.module_name,
+      activity_description: params.activity_description,
+      record_id: params.record_id || '-',
+      ip_address: ipAddressRef.current,
+      device_info: getDeviceInfo(),
+      session_id: sessionId,
+      timestamp,
+      malaysia_date,
+      malaysia_datetime_display,
+      ...(params.duration_seconds !== undefined ? { duration_seconds: params.duration_seconds } : {}),
+      status: params.status || 'SUCCESS',
+    });
+
+    const prevLogs = activityLogsRef.current;
+    const nextLogs = [entry, ...prevLogs].slice(0, 2000);
+    activityLogsRef.current = nextLogs;
+    setActivityLogs(nextLogs);
+
+    setDoc(doc(db, 'user_activity_logs', logId), entry).catch(() => {});
+
+    // Evaluate deterministic security alert rules
+    const generatedAlert = evaluateSecurityAlertRules(entry, prevLogs, securityAlertsRef.current);
+    if (generatedAlert) {
+      const cleanAlert = sanitizeData(generatedAlert);
+      const nextAlerts = [cleanAlert, ...securityAlertsRef.current].slice(0, 500);
+      securityAlertsRef.current = nextAlerts;
+      setSecurityAlerts(nextAlerts);
+      setDoc(doc(db, 'security_alerts', cleanAlert.alert_id), cleanAlert).catch(() => {});
+    }
+  };
+
+  const updateAlertStatus = (
+    alertId: string,
+    newStatus: AlertStatus
+  ): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk terlebih dahulu.' };
+    }
+    const { malaysia_datetime_display } = getMalaysiaTimestampParts();
+    const reviewer = `${currentUser.name} (${currentUser.id})`;
+    let updatedAlert: SecurityAlert | null = null;
+    setSecurityAlerts((prev) =>
+      prev.map((a) => {
+        if (a.alert_id === alertId) {
+          updatedAlert = {
+            ...a,
+            status: newStatus,
+            reviewed_by: reviewer,
+            reviewed_at: malaysia_datetime_display,
+          };
+          return updatedAlert;
+        }
+        return a;
+      })
+    );
+    if (updatedAlert) {
+      setDoc(doc(db, 'security_alerts', alertId), sanitizeData(updatedAlert), { merge: true }).catch(
+        () => {}
+      );
+      logActivity({
+        action_type: 'ADMIN_ACTION',
+        module_name: 'Admin Monitoring Dashboard',
+        activity_description: `Updated security alert status to "${newStatus}"`,
+        record_id: alertId,
+        status: 'SUCCESS',
+      });
+    }
+    return { success: true };
+  };
+
+  // Wrapper for setActiveTab that logs navigation & page duration automatically
+  const setActiveTab: ProgramContextType['setActiveTab'] = (nextTab) => {
+    const prevTab = pageVisitRef.current.tab;
+    const nowMs = Date.now();
+    const elapsedSec = Math.max(0, Math.round((nowMs - pageVisitRef.current.enteredAtMs) / 1000));
+
+    if (currentUser && prevTab && prevTab !== nextTab && elapsedSec >= 2) {
+      logActivity({
+        action_type: 'PAGE_DURATION',
+        module_name: resolveModuleLabel(prevTab),
+        activity_description: `Time spent on ${resolveModuleLabel(prevTab)}: ${elapsedSec}s`,
+        record_id: prevTab,
+        duration_seconds: elapsedSec,
+        status: 'SUCCESS',
+      });
+    }
+
+    pageVisitRef.current = { tab: nextTab, enteredAtMs: nowMs };
+    setActiveTabState(nextTab);
+
+    if (currentUser && prevTab !== nextTab) {
+      const targetIsSuperOnly = nextTab === 'admin';
+      const targetUserIsSuper =
+        currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN';
+      if (targetIsSuperOnly && !targetUserIsSuper) {
+        logActivity({
+          action_type: 'UNAUTHORIZED_ACCESS',
+          module_name: resolveModuleLabel(nextTab),
+          activity_description: `Attempted unauthorized navigation to restricted module "${resolveModuleLabel(nextTab)}"`,
+          record_id: nextTab,
+          status: 'BLOCKED',
+        });
+      } else {
+        logActivity({
+          action_type: 'NAVIGATE',
+          module_name: resolveModuleLabel(nextTab),
+          activity_description: `Accessed ${resolveModuleLabel(nextTab)}`,
+          record_id: nextTab,
+          status: 'SUCCESS',
+        });
+      }
+    }
+  };
+
+  // Automatic inactivity session timeout (30 minutes while logged in)
+  useEffect(() => {
+    if (!currentUser) return;
+    let timeoutHandle: ReturnType<typeof setTimeout>;
+    const TIMEOUT_MS = 30 * 60 * 1000;
+
+    const resetInactivityTimer = () => {
+      clearTimeout(timeoutHandle);
+      timeoutHandle = setTimeout(() => {
+        logActivity({
+          action_type: 'SESSION_TIMEOUT',
+          module_name: 'Authentication',
+          activity_description: `Session timed out automatically after 30 minutes of inactivity`,
+          status: 'SUCCESS',
+        });
+        setCurrentUser(null);
+        sessionStorage.removeItem(STORAGE_SESSION);
+        setActiveTabState('admin');
+      }, TIMEOUT_MS);
+    };
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, resetInactivityTimer, { passive: true }));
+    resetInactivityTimer();
+
+    return () => {
+      clearTimeout(timeoutHandle);
+      events.forEach((ev) => window.removeEventListener(ev, resetInactivityTimer));
+    };
+  }, [currentUser]);
+
   // Auth functions
   const login = (id: string, pass: string): { success: boolean; message?: string } => {
     const cleanId = id.trim().toUpperCase();
     const cleanPass = pass.trim();
+
+    const userById = adminUsers.find((u) => u.id.toUpperCase() === cleanId);
+    if (userById && userById.isActive === false) {
+      logActivity({
+        action_type: 'FAILED_LOGIN',
+        module_name: 'Authentication',
+        activity_description: `Blocked login attempt for deactivated account "${cleanId}"`,
+        record_id: cleanId,
+        status: 'BLOCKED',
+        userOverride: {
+          user_id: userById.id,
+          user_name: userById.name,
+          user_role: getAdminLevelLabel(userById.levelId, userById.role),
+        },
+      });
+      return {
+        success: false,
+        message: 'Akaun ini telah dinyahaktifkan oleh Super Admin. Sila hubungi pentadbir.',
+      };
+    }
 
     const user = adminUsers.find(
       (u) => u.id.toUpperCase() === cleanId && u.password === cleanPass
     );
 
     if (user) {
-      setCurrentUser(user);
-      setActiveTab('selamatDatang');
+      const nextSession = generateSessionId();
+      setSessionId(nextSession);
+      const { timestamp } = getMalaysiaTimestampParts();
+      const updatedUser: AdminUser = { ...user, lastLoginAt: timestamp };
+      setAdminUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
+      setCurrentUser(updatedUser);
+      setDoc(doc(db, 'admins', user.id), sanitizeData({ lastLoginAt: timestamp }), {
+        merge: true,
+      }).catch(() => {});
+
+      pageVisitRef.current = { tab: 'selamatDatang', enteredAtMs: Date.now() };
+      setActiveTabState('selamatDatang');
+
+      logActivity({
+        action_type: 'LOGIN',
+        module_name: 'Authentication',
+        activity_description: `User "${updatedUser.name}" (${updatedUser.id}) logged in successfully`,
+        record_id: updatedUser.id,
+        status: 'SUCCESS',
+        userOverride: {
+          user_id: updatedUser.id,
+          user_name: updatedUser.name,
+          user_role: getAdminLevelLabel(updatedUser.levelId, updatedUser.role),
+        },
+      });
       return { success: true };
     }
 
     // Fallback for default AMAN
     if (cleanId === 'AMAN' && cleanPass === 'AMAN') {
+      const nextSession = generateSessionId();
+      setSessionId(nextSession);
+      const { timestamp } = getMalaysiaTimestampParts();
       const amanUser: AdminUser = {
         id: 'AMAN',
         password: 'AMAN',
         name: 'Super Admin AMAN',
         role: 'SUPER_ADMIN',
         levelId: 'SUPER_ADMIN',
+        isActive: true,
+        lastLoginAt: timestamp,
         createdAt: '2026-01-01',
       };
       setCurrentUser(amanUser);
-      setActiveTab('selamatDatang');
+      pageVisitRef.current = { tab: 'selamatDatang', enteredAtMs: Date.now() };
+      setActiveTabState('selamatDatang');
+
+      logActivity({
+        action_type: 'LOGIN',
+        module_name: 'Authentication',
+        activity_description: `Super Admin AMAN logged in successfully`,
+        record_id: 'AMAN',
+        status: 'SUCCESS',
+        userOverride: {
+          user_id: 'AMAN',
+          user_name: 'Super Admin AMAN',
+          user_role: 'Super Admin',
+        },
+      });
       return { success: true };
     }
+
+    logActivity({
+      action_type: 'FAILED_LOGIN',
+      module_name: 'Authentication',
+      activity_description: `Failed login attempt with User ID "${cleanId || 'EMPTY'}"`,
+      record_id: cleanId || '-',
+      status: 'FAILED',
+      userOverride: {
+        user_id: cleanId || 'UNKNOWN',
+        user_name: userById?.name || cleanId || 'Unknown User',
+        user_role: userById ? getAdminLevelLabel(userById.levelId, userById.role) : 'Unauthenticated',
+      },
+    });
 
     return {
       success: false,
@@ -944,9 +1369,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const logout = () => {
+    if (currentUser) {
+      logActivity({
+        action_type: 'LOGOUT',
+        module_name: 'Authentication',
+        activity_description: `User "${currentUser.name}" (${currentUser.id}) logged out`,
+        record_id: currentUser.id,
+        status: 'SUCCESS',
+      });
+    }
     setCurrentUser(null);
     sessionStorage.removeItem(STORAGE_SESSION);
-    setActiveTab('dashboard');
+    setSessionId(generateSessionId());
+    pageVisitRef.current = { tab: 'dashboard', enteredAtMs: Date.now() };
+    setActiveTabState('dashboard');
   };
 
   // Permission & Level Helpers
@@ -1135,6 +1571,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       name: userData.name.trim(),
       role: resolvedRole,
       levelId: resolvedLevelId,
+      isActive: userData.isActive !== false,
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
@@ -1143,6 +1580,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Persist to Firebase Firestore
     setDoc(doc(db, 'admins', cleanId), sanitizeData(newUser)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.CREATE, path: `admins/${cleanId}` });
+    });
+
+    logActivity({
+      action_type: 'ADMIN_ACTION',
+      module_name: 'Portal Admin',
+      activity_description: `Created new user account "${newUser.name}" (${cleanId}) with role ${getAdminLevelLabel(resolvedLevelId, resolvedRole)}`,
+      record_id: cleanId,
+      status: 'SUCCESS',
     });
 
     return { success: true };
@@ -1161,51 +1606,78 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Akaun admin tidak ditemui.' };
     }
 
-    let modifiedUser: AdminUser | null = null;
-    setAdminUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === id) {
-          const nextLevelId = updated.levelId !== undefined ? updated.levelId : u.levelId;
-          const nextRole: AdminRole =
-            id.toUpperCase() === 'AMAN'
-              ? 'SUPER_ADMIN'
-              : nextLevelId === 'SUPER_ADMIN'
-              ? 'SUPER_ADMIN'
-              : nextLevelId
-              ? 'ADMIN'
-              : updated.role || u.role;
+    const nextLevelId = updated.levelId !== undefined ? updated.levelId : target.levelId;
+    const nextRole: AdminRole =
+      id.toUpperCase() === 'AMAN'
+        ? 'SUPER_ADMIN'
+        : nextLevelId === 'SUPER_ADMIN'
+        ? 'SUPER_ADMIN'
+        : nextLevelId
+        ? 'ADMIN'
+        : updated.role || target.role;
 
-          const merged: AdminUser = {
-            ...u,
-            ...updated,
-            role: nextRole,
-            levelId: id.toUpperCase() === 'AMAN' ? 'SUPER_ADMIN' : nextLevelId,
-            name: updated.name !== undefined ? updated.name.trim() : u.name,
-            password: updated.password !== undefined ? updated.password.trim() : u.password,
-            pusat: updated.pusat !== undefined ? updated.pusat : u.pusat,
-            jabatan: updated.jabatan !== undefined ? updated.jabatan : u.jabatan,
-            allowedJabatans: updated.allowedJabatans !== undefined ? updated.allowedJabatans : u.allowedJabatans,
-            jabatanAccess: updated.jabatanAccess !== undefined ? updated.jabatanAccess : u.jabatanAccess,
-            allowedPages: updated.allowedPages !== undefined ? updated.allowedPages : u.allowedPages,
-            pageAccess: updated.pageAccess !== undefined ? updated.pageAccess : u.pageAccess,
-          };
-          modifiedUser = merged;
-          return merged;
-        }
-        return u;
-      })
-    );
+    const modifiedUser: AdminUser = {
+      ...target,
+      ...updated,
+      role: nextRole,
+      levelId: id.toUpperCase() === 'AMAN' ? 'SUPER_ADMIN' : nextLevelId,
+      name: updated.name !== undefined ? updated.name.trim() : target.name,
+      password: updated.password !== undefined ? updated.password.trim() : target.password,
+      pusat: updated.pusat !== undefined ? updated.pusat : target.pusat,
+      jabatan: updated.jabatan !== undefined ? updated.jabatan : target.jabatan,
+      allowedJabatans: updated.allowedJabatans !== undefined ? updated.allowedJabatans : target.allowedJabatans,
+      jabatanAccess: updated.jabatanAccess !== undefined ? updated.jabatanAccess : target.jabatanAccess,
+      allowedPages: updated.allowedPages !== undefined ? updated.allowedPages : target.allowedPages,
+      pageAccess: updated.pageAccess !== undefined ? updated.pageAccess : target.pageAccess,
+    };
 
-    if (currentUser.id === id && modifiedUser) {
+    setAdminUsers((prev) => prev.map((u) => (u.id === id ? modifiedUser : u)));
+
+    if (currentUser.id === id) {
       setCurrentUser(modifiedUser);
     }
 
-    if (modifiedUser) {
-      setDoc(doc(db, 'admins', id), sanitizeData(modifiedUser), { merge: true }).catch((err) => {
-        handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${id}` });
-      });
-    }
+    setDoc(doc(db, 'admins', id), sanitizeData(modifiedUser), { merge: true }).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${id}` });
+    });
+    const hasSemuaEdit = Object.entries(modifiedUser.jabatanAccess || {}).some(
+      ([k, v]) => k === 'SEMUA JABATAN' && v === 'edit'
+    );
+    logActivity({
+      action_type: 'ADMIN_ACTION',
+      module_name: 'Portal Admin',
+      activity_description: `Updated user profile & permissions for "${modifiedUser.name}" (${id}) [Role: ${modifiedUser.role}${hasSemuaEdit ? ', SEMUA JABATAN edit' : ''}]`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
 
+    return { success: true };
+  };
+
+  const toggleAdminUserActive = (userId: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Hanya Super Admin dibenarkan menukar status akaun.' };
+    }
+    if (userId.toUpperCase() === 'AMAN') {
+      return { success: false, message: 'Akaun Super Admin AMAN tidak boleh dinyahaktifkan.' };
+    }
+    const target = adminUsers.find((u) => u.id === userId);
+    if (!target) {
+      return { success: false, message: 'Akaun pengguna tidak ditemui.' };
+    }
+    const nextActive = target.isActive === false ? true : false;
+    const updatedUser: AdminUser = { ...target, isActive: nextActive };
+    setAdminUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    setDoc(doc(db, 'admins', userId), sanitizeData({ isActive: nextActive }), { merge: true }).catch(
+      () => {}
+    );
+    logActivity({
+      action_type: 'ADMIN_ACTION',
+      module_name: 'Portal Admin',
+      activity_description: `${nextActive ? 'Activated' : 'Deactivated'} user account "${target.name}" (${userId})`,
+      record_id: userId,
+      status: 'SUCCESS',
+    });
     return { success: true };
   };
 
@@ -1217,6 +1689,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Sila log masuk terlebih dahulu.' };
     }
     if (currentPassword.trim() !== currentUser.password) {
+      logActivity({
+        action_type: 'PASSWORD_CHANGE',
+        module_name: 'Selamat Datang',
+        activity_description: `Failed password change attempt (invalid current password) for "${currentUser.id}"`,
+        record_id: currentUser.id,
+        status: 'FAILED',
+      });
       return { success: false, message: 'Kata laluan semasa tidak tepat.' };
     }
     if (!newPassword.trim()) {
@@ -1233,6 +1712,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
+    });
+
+    logActivity({
+      action_type: 'PASSWORD_CHANGE',
+      module_name: 'Selamat Datang',
+      activity_description: `User "${currentUser.name}" (${currentUser.id}) changed own password`,
+      record_id: currentUser.id,
+      status: 'SUCCESS',
     });
 
     return { success: true };
@@ -1271,6 +1758,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ).catch(() => {});
     }
 
+    logActivity({
+      action_type: cleanPhoto ? 'UPLOAD' : 'DELETE',
+      module_name: 'Selamat Datang',
+      activity_description: cleanPhoto
+        ? `Uploaded/updated passport photo for "${currentUser.name}" (${currentUser.id})`
+        : `Removed passport photo for "${currentUser.name}" (${currentUser.id})`,
+      record_id: currentUser.id,
+      status: 'SUCCESS',
+    });
+
     return { success: true };
   };
 
@@ -1279,6 +1776,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     newPassword = '123'
   ): { success: boolean; message?: string } => {
     if (!currentUser || !isSuperAdmin) {
+      logActivity({
+        action_type: 'UNAUTHORIZED_ACCESS',
+        module_name: 'Portal Admin',
+        activity_description: `Unauthorized password reset attempt on "${targetUserId}"`,
+        record_id: targetUserId,
+        status: 'BLOCKED',
+      });
       return { success: false, message: 'Hanya Super Admin dibenarkan menetapkan semula kata laluan pengguna.' };
     }
     const target = adminUsers.find((u) => u.id === targetUserId);
@@ -1301,6 +1805,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${targetUserId}` });
     });
 
+    logActivity({
+      action_type: 'PASSWORD_RESET',
+      module_name: 'Portal Admin',
+      activity_description: `Reset password to default for user "${target.name}" (${targetUserId})`,
+      record_id: targetUserId,
+      status: 'SUCCESS',
+    });
+
     return { success: true };
   };
 
@@ -1312,11 +1824,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Super Admin AMAN tidak boleh dipadamkan.' };
     }
 
+    const target = adminUsers.find((u) => u.id === userId);
     setAdminUsers((prev) => prev.filter((u) => u.id !== userId));
 
     // Delete in Firestore
     deleteDoc(doc(db, 'admins', userId)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.DELETE, path: `admins/${userId}` });
+    });
+
+    logActivity({
+      action_type: 'ADMIN_ACTION',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted user account "${target?.name || userId}" (${userId})`,
+      record_id: userId,
+      status: 'SUCCESS',
     });
 
     return { success: true };
@@ -1342,6 +1863,22 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       return updated;
     });
+
+    if (key === 'searchQuery') {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      const trimmed = value.trim();
+      if (trimmed && currentUser) {
+        searchDebounceRef.current = setTimeout(() => {
+          logActivity({
+            action_type: 'SEARCH',
+            module_name: resolveModuleLabel(activeTab),
+            activity_description: `Searched query "${trimmed}"`,
+            record_id: trimmed.slice(0, 40),
+            status: 'SUCCESS',
+          });
+        }, 1200);
+      }
+    }
   };
 
   const resetFilters = () => {
@@ -1536,6 +2073,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const viewProgramDetail = (prog: ProgramItem) => {
     setSelectedProgram(prog);
     setIsDetailOpen(true);
+    if (currentUser) {
+      logActivity({
+        action_type: 'VIEW',
+        module_name: resolveModuleLabel(activeTab),
+        activity_description: `Viewed program record "${prog.namaProgram}" (${prog.kodProgram})`,
+        record_id: prog.kodProgram || prog.id,
+        status: 'SUCCESS',
+      });
+    }
   };
 
   // CRUD Program with RBAC validation & Firestore sync
@@ -1546,12 +2092,26 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (!isSuperAdmin) {
       if (!canEditPage('ADMIN') && !canEditPage('PERINCIAN PROGRAM')) {
+        logActivity({
+          action_type: 'UNAUTHORIZED_ACCESS',
+          module_name: 'Perincian Program',
+          activity_description: `Blocked attempt to create program "${data.namaProgram}" (View Only page)`,
+          record_id: data.kodProgram || '-',
+          status: 'BLOCKED',
+        });
         return {
           success: false,
           message: 'Akses View Only: Akaun anda tidak mempunyai kebenaran Edit halaman untuk menambah program.',
         };
       }
       if (!canEditJabatan(data.jabatan)) {
+        logActivity({
+          action_type: 'UNAUTHORIZED_ACCESS',
+          module_name: 'Perincian Program',
+          activity_description: `Blocked attempt to create program under unauthorized department "${data.jabatan}"`,
+          record_id: data.kodProgram || '-',
+          status: 'BLOCKED',
+        });
         return {
           success: false,
           message: `Akses View Only / Terhad: Anda hanya dibenarkan menambah atau mengedit program bagi jabatan dengan kebenaran Edit.`,
@@ -1572,6 +2132,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Firestore persistence
     setDoc(doc(db, 'programs', newId), sanitizeData(newProg)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.CREATE, path: `programs/${newId}` });
+    });
+
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Perincian Program',
+      activity_description: `Created new program "${newProg.namaProgram}" (${newProg.kodProgram}) [${newProg.jabatan}]`,
+      record_id: newProg.kodProgram || newId,
+      status: 'SUCCESS',
     });
 
     return { success: true };
@@ -1895,6 +2463,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updateDoc(doc(db, 'programs', id), sanitizeData(updatedItem)).catch((err) => {
         handleFirestoreError(err, { operation: OperationType.UPDATE, path: `programs/${id}` });
       });
+      logActivity({
+        action_type: 'UPDATE',
+        module_name: resolveModuleLabel(activeTab),
+        activity_description: `Updated program "${target.namaProgram}" (${target.kodProgram})${
+          diffItems.length > 0 ? ` [${diffItems.map((d) => d.jenisPerubahan).join(', ')}]` : ''
+        }`,
+        record_id: target.kodProgram || id,
+        status: 'SUCCESS',
+      });
     }
 
     return { success: true };
@@ -1902,12 +2479,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteProgram = (id: string): { success: boolean; message?: string } => {
     if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      logActivity({
+        action_type: 'UNAUTHORIZED_ACCESS',
+        module_name: 'Portal Admin',
+        activity_description: `Unauthorized attempt to delete program "${id}"`,
+        record_id: id,
+        status: 'BLOCKED',
+      });
       return {
         success: false,
         message: 'Akses ditolak. Super Admin sahaja yang dibenarkan memadam program.',
       };
     }
 
+    const target = programs.find((p) => p.id === id);
     setPrograms((prev) => prev.filter((p) => p.id !== id));
     if (selectedProgram?.id === id) {
       setSelectedProgram(null);
@@ -1918,11 +2503,26 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       handleFirestoreError(err, { operation: OperationType.DELETE, path: `programs/${id}` });
     });
 
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted program "${target?.namaProgram || id}" (${target?.kodProgram || id})`,
+      record_id: target?.kodProgram || id,
+      status: 'SUCCESS',
+    });
+
     return { success: true };
   };
 
   const deleteMultiplePrograms = (ids: string[]): { success: boolean; message?: string; count?: number } => {
     if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+      logActivity({
+        action_type: 'UNAUTHORIZED_ACCESS',
+        module_name: 'Portal Admin',
+        activity_description: `Unauthorized attempt to bulk delete ${ids.length} programs`,
+        record_id: `${ids.length} records`,
+        status: 'BLOCKED',
+      });
       return {
         success: false,
         message: 'Akses ditolak. Super Admin sahaja yang dibenarkan memadam program.',
@@ -1954,6 +2554,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (e) {
       console.warn('Batch delete firestore warning:', e);
     }
+
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Bulk deleted ${ids.length} programs (${ids.length === programs.length ? 'SEMUA' : 'BATCH'})`,
+      record_id: `${ids.length} records`,
+      status: 'SUCCESS',
+    });
 
     return { success: true, count: ids.length };
   };
@@ -2001,6 +2609,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (e) {
       console.warn('Batch import firestore warning:', e);
     }
+
+    logActivity({
+      action_type: mode === 'replace' ? 'REPLACE' : 'UPLOAD',
+      module_name: 'Portal Admin',
+      activity_description: `Imported ${sanitized.length} program records (Mode: ${mode === 'replace' ? 'Replace All' : 'Merge'})`,
+      record_id: `${sanitized.length} records`,
+      status: 'SUCCESS',
+    });
 
     return { success: true, count: sanitized.length };
   };
@@ -2068,6 +2684,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setKlusterList(nextList);
     setKlusterMap(nextMap);
     syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Created Kluster IAB "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const updateKluster = (oldKluster: string, newKluster: string) => {
@@ -2081,6 +2704,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setKlusterList(nextList);
     setKlusterMap(nextMap);
     syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Kluster IAB "${oldKluster}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const deleteKluster = (namaKluster: string) => {
@@ -2090,11 +2720,25 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setKlusterList(nextList);
     setKlusterMap(nextMap);
     syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Kluster IAB "${namaKluster}"`,
+      record_id: namaKluster,
+      status: 'SUCCESS',
+    });
   };
   const addPegawai = (peg: Pegawai) => {
     setPegawaiList((prev) => [...prev, peg]);
     setDoc(doc(db, 'pegawai', peg.id), sanitizeData(peg)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.CREATE, path: `pegawai/${peg.id}` });
+    });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Added Pegawai "${peg.nama}" (${peg.id})`,
+      record_id: peg.id,
+      status: 'SUCCESS',
     });
   };
 
@@ -2109,6 +2753,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         handleFirestoreError(err, { operation: OperationType.UPDATE, path: `pegawai/${id}` });
       });
     }
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Pegawai "${updated.nama || existing?.nama || id}" (${id})`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
   };
 
   const deletePegawai = (id: string) => {
@@ -2116,6 +2767,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPegawaiList((prev) => prev.filter((p) => p.id !== id));
     deleteDoc(doc(db, 'pegawai', id)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.DELETE, path: `pegawai/${id}` });
+    });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Pegawai "${pegToDelete?.nama || id}" (${id})`,
+      record_id: id,
+      status: 'SUCCESS',
     });
 
     // REQUIREMENT: Bila delete data pegawai, data dalam Pengurusan ID Admin akan dihapuskan juga sekiranya sama/berkaitan.
@@ -2157,6 +2815,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       pusatList: nextList,
       jabatanMap: nextJabMap,
       ...(targetKluster ? { klusterMap: nextKlusterMap } : {}),
+    });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Created Pusat "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
     });
   };
 
@@ -2201,6 +2866,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       jabatanMap: nextJabMap,
       klusterMap: nextKlusterMap,
     });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Pusat "${oldPusat}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
 
     if (isNameChanged) {
       setPrograms((prev) =>
@@ -2228,6 +2900,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       jabatanMap: nextMap,
       klusterMap: nextKlusterMap,
     });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Pusat "${pusat}"`,
+      record_id: pusat,
+      status: 'SUCCESS',
+    });
   };
 
   const addJabatan = (pusat: string, namaJabatan: string) => {
@@ -2238,6 +2917,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextMap = { ...jabatanMap, [pusat]: [...existing, trimmed] };
     setJabatanMap(nextMap);
     syncMasterDataToFirestore({ jabatanMap: nextMap });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Created Jabatan "${trimmed}" under "${pusat}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const updateJabatan = (pusat: string, oldJabatan: string, newJabatan: string) => {
@@ -2250,6 +2936,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     setJabatanMap(nextMap);
     syncMasterDataToFirestore({ jabatanMap: nextMap });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Jabatan "${oldJabatan}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
 
     setPrograms((prev) =>
       prev.map((p) => (p.jabatan === oldJabatan ? { ...p, jabatan: trimmed } : p))
@@ -2264,6 +2957,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     setJabatanMap(nextMap);
     syncMasterDataToFirestore({ jabatanMap: nextMap });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Jabatan "${namaJabatan}" from "${pusat}"`,
+      record_id: namaJabatan,
+      status: 'SUCCESS',
+    });
   };
 
   const addSumberKewangan = (nama: string) => {
@@ -2272,6 +2972,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = [...sumberKewanganList, trimmed];
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Added Sumber Kewangan "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const updateSumberKewangan = (oldNama: string, newNama: string) => {
@@ -2280,6 +2987,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = sumberKewanganList.map((s) => (s === oldNama ? trimmed : s));
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Sumber Kewangan "${oldNama}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
 
     setPrograms((prev) =>
       prev.map((p) => (p.sumberKewangan === oldNama ? { ...p, sumberKewangan: trimmed } : p))
@@ -2290,6 +3004,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = sumberKewanganList.filter((s) => s !== nama);
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Sumber Kewangan "${nama}"`,
+      record_id: nama,
+      status: 'SUCCESS',
+    });
   };
 
   const addStatusProgram = (nama: string) => {
@@ -2298,6 +3019,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = [...statusProgramList, trimmed];
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Added Status Program "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const updateStatusProgram = (oldNama: string, newNama: string) => {
@@ -2306,6 +3034,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = statusProgramList.map((s) => (s === oldNama ? trimmed : s));
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Status Program "${oldNama}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
 
     setPrograms((prev) =>
       prev.map((p) => (p.statusProgram === oldNama ? { ...p, statusProgram: trimmed } : p))
@@ -2316,6 +3051,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = statusProgramList.filter((s) => s !== nama);
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Status Program "${nama}"`,
+      record_id: nama,
+      status: 'SUCCESS',
+    });
   };
 
   const addJawatan = (nama: string) => {
@@ -2324,6 +3066,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = [...jawatanList, trimmed];
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Portal Admin',
+      activity_description: `Added Jawatan "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
   };
 
   const updateJawatan = (oldNama: string, newNama: string) => {
@@ -2332,6 +3081,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = jawatanList.map((j) => (j === oldNama ? trimmed : j));
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Portal Admin',
+      activity_description: `Updated Jawatan "${oldNama}" -> "${trimmed}"`,
+      record_id: trimmed,
+      status: 'SUCCESS',
+    });
 
     setPegawaiList((prev) =>
       prev.map((p) => (p.jawatan === oldNama ? { ...p, jawatan: trimmed } : p))
@@ -2342,6 +3098,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const nextList = jawatanList.filter((j) => j !== nama);
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Portal Admin',
+      activity_description: `Deleted Jawatan "${nama}"`,
+      record_id: nama,
+      status: 'SUCCESS',
+    });
   };
 
   // Bulk Import Master Data Functions (Super Admin)
@@ -2445,6 +3208,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     } catch {}
 
+    logActivity({
+      action_type: 'UPLOAD',
+      module_name: 'Portal Admin',
+      activity_description: `Bulk imported Pegawai (${added} added, ${updated} updated)`,
+      record_id: `${added + updated} records`,
+      status: 'SUCCESS',
+    });
+
     return { success: true, added, updated };
   };
 
@@ -2470,6 +3241,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setKlusterList(nextList);
       setKlusterMap(nextMap);
       syncMasterDataToFirestore({ klusterList: nextList, klusterMap: nextMap });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Kluster IAB records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2527,6 +3305,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         jabatanMap: nextMap,
         ...(klusterChanged ? { klusterList: nextKlusterList, klusterMap: nextKlusterMap } : {}),
       });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Pusat records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2578,6 +3363,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ...(klusterChanged ? { klusterList: nextKlusterList, klusterMap: nextKlusterMap } : {}),
         jabatanMap: nextMap,
       });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Jabatan records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2601,6 +3393,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (added > 0) {
       setSumberKewanganList(nextList);
       syncMasterDataToFirestore({ sumberKewanganList: nextList });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Sumber Kewangan records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2624,6 +3423,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (added > 0) {
       setStatusProgramList(nextList);
       syncMasterDataToFirestore({ statusProgramList: nextList });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Status Program records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2647,6 +3453,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (added > 0) {
       setJawatanList(nextList);
       syncMasterDataToFirestore({ jawatanList: nextList });
+      logActivity({
+        action_type: 'UPLOAD',
+        module_name: 'Portal Admin',
+        activity_description: `Bulk imported ${added} Jawatan records`,
+        record_id: `${added} records`,
+        status: 'SUCCESS',
+      });
     }
     return { success: true, added };
   };
@@ -2676,6 +3489,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const docRef = doc(db, 'master_data', 'peruntukan_fasa');
       setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
     } catch {}
+
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Peruntukan',
+      activity_description: `Updated Fasa Peruntukan allocations (${fasaId})`,
+      record_id: fasaId,
+      status: 'SUCCESS',
+    });
 
     return { success: true };
   };
@@ -2709,6 +3530,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
     } catch {}
 
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Peruntukan',
+      activity_description: `Created new Fasa Peruntukan "${newName}"`,
+      record_id: newId,
+      status: 'SUCCESS',
+    });
+
     return { success: true };
   };
 
@@ -2724,6 +3553,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const docRef = doc(db, 'master_data', 'peruntukan_fasa');
       setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
     } catch {}
+
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Peruntukan',
+      activity_description: `Deleted Fasa Peruntukan "${fasaId}"`,
+      record_id: fasaId,
+      status: 'SUCCESS',
+    });
 
     return { success: true };
   };
@@ -2761,6 +3598,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const docRef = doc(db, 'subwaran', newId);
       setDoc(docRef, sanitizeData(newRecord)).catch(() => {});
     } catch {}
+
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Subwaran',
+      activity_description: `Created subwaran "${newRecord.namaProgram}" for PTJ ${newRecord.namaPtj} (RM ${formatRM(newRecord.jumlah)})`,
+      record_id: newId,
+      status: 'SUCCESS',
+    });
 
     return { success: true };
   };
@@ -2805,6 +3650,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     } catch {}
 
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Subwaran',
+      activity_description: `Updated subwaran record (${id})`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
+
     return { success: true };
   };
 
@@ -2820,6 +3673,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const docRef = doc(db, 'subwaran', id);
       deleteDoc(docRef).catch(() => {});
     } catch {}
+
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Subwaran',
+      activity_description: `Deleted subwaran record (${id})`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
 
     return { success: true };
   };
@@ -2850,6 +3711,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     setBudgetRates(sanitizedRates);
     syncMasterDataToFirestore({ budgetRates: sanitizedRates });
+    logActivity({
+      action_type: 'ADMIN_ACTION',
+      module_name: 'Pengiraan Bajet',
+      activity_description: `Updated system unit cost rates (Makan Minum & Dobi)`,
+      record_id: 'budgetRates',
+      status: 'SUCCESS',
+    });
     return { success: true };
   };
 
@@ -2890,6 +3758,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         logout,
         createAdminUser,
         updateAdminUser,
+        toggleAdminUserActive,
         deleteAdminUser,
         changeOwnPassword,
         updateOwnPhoto,
@@ -2948,6 +3817,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteSubwaran,
         budgetRates,
         updateBudgetRates,
+        activityLogs,
+        securityAlerts,
+        sessionId,
+        logActivity,
+        updateAlertStatus,
         firebaseStatus,
       }}
     >

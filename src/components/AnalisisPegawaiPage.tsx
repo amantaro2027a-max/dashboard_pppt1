@@ -80,6 +80,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
     currentUser,
     getPageAccessMode,
     viewProgramDetail,
+    logActivity,
   } = useProgramContext();
 
   // Granular Page Permission Check
@@ -642,6 +643,13 @@ export const AnalisisPegawaiPage: React.FC = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Analisis Pegawai');
     XLSX.writeFile(wb, `Analisis_Pegawai_Program_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: 'Analisis Pegawai Mengikut Program',
+      activity_description: `Exported Analisis Pegawai (${sortedOfficers.length} officers) to Excel`,
+      record_id: `${sortedOfficers.length} records`,
+      status: 'SUCCESS',
+    });
   };
 
   if (!canAccess) {

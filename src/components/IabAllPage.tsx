@@ -52,6 +52,7 @@ export const IabAllPage: React.FC = () => {
     pegawaiList,
     programs,
     viewProgramDetail,
+    logActivity,
   } = useProgramContext();
 
   const pageMode = getPageAccessMode('IAB ALL');
@@ -405,6 +406,13 @@ export const IabAllPage: React.FC = () => {
       'Rumusan Jabatan'
     );
     XLSX.writeFile(wb, `RUMUSAN_IAB_ALL_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: 'Page IAB All',
+      activity_description: `Exported IAB All summary (${klusterMetrics.length} clusters, ${pusatMetrics.length} pusat) to Excel`,
+      record_id: 'RUMUSAN_IAB_ALL',
+      status: 'SUCCESS',
+    });
   };
 
   if (!canAccess) {

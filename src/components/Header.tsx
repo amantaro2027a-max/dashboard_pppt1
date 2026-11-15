@@ -21,6 +21,7 @@ import {
   Layers,
   UserCheck,
   KeyRound,
+  Activity,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -174,6 +175,13 @@ export const Header: React.FC = () => {
       iconBg: 'bg-sky-100 text-sky-700',
     },
     {
+      id: 'monitoring',
+      label: 'Admin Monitoring Dashboard',
+      desc: 'Log aktiviti pengguna, analitik keselamatan & laporan audit',
+      icon: Activity,
+      iconBg: 'bg-slate-900 text-white',
+    },
+    {
       id: 'admin',
       label: 'Admin',
       desc: 'Pusat kawalan pendaftaran & akaun pentadbir',
@@ -218,6 +226,7 @@ export const Header: React.FC = () => {
     if (item.id === 'perbelanjaan') return getPageAccessMode('PERBELANJAAN') !== 'none';
     if (item.id === 'subwaran') return getPageAccessMode('SUBWARAN') !== 'none';
     if (item.id === 'baki') return getPageAccessMode('BAKI PERUNTUKAN') !== 'none';
+    if (item.id === 'monitoring') return getPageAccessMode('ADMIN MONITORING DASHBOARD') !== 'none';
 
     return false;
   });

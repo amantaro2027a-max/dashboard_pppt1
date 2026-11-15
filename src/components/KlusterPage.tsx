@@ -86,6 +86,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     pegawaiList,
     programs,
     viewProgramDetail,
+    logActivity,
   } = useProgramContext();
 
   const pageMode = getPageAccessMode(targetKlusterKey);
@@ -363,6 +364,15 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       wb,
       `RUMUSAN_${resolvedKlusterName.replace(/[^A-Z0-9]/gi, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`
     );
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: targetKlusterKey.includes('PROFESIONAL')
+        ? 'Kluster Khidmat Profesional'
+        : 'Kluster Khidmat Latihan',
+      activity_description: `Exported Kluster "${resolvedKlusterName}" summary to Excel`,
+      record_id: resolvedKlusterName,
+      status: 'SUCCESS',
+    });
   };
 
   if (!canAccess) {

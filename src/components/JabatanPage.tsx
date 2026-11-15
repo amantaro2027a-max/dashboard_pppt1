@@ -50,6 +50,7 @@ export const JabatanPage: React.FC = () => {
     getAuthorizedJabatanList,
     viewProgramDetail,
     setActiveTab,
+    logActivity,
   } = useProgramContext();
 
   const pageMode = getPageAccessMode('JABATAN');
@@ -348,6 +349,13 @@ export const JabatanPage: React.FC = () => {
         .toISOString()
         .slice(0, 10)}.xlsx`
     );
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: 'Page Jabatan',
+      activity_description: `Exported Jabatan "${selectedJabatan || 'IAB'}" summary to Excel`,
+      record_id: selectedJabatan || 'IAB',
+      status: 'SUCCESS',
+    });
   };
 
   if (!canAccess) {

@@ -58,6 +58,7 @@ export const ExportModal: React.FC = () => {
     currentUser,
     isSuperAdmin,
     getAuthorizedJabatanList,
+    logActivity,
   } = useProgramContext();
 
   const authorizedJabatans = useMemo(() => getAuthorizedJabatanList(), [getAuthorizedJabatanList]);
@@ -159,6 +160,14 @@ export const ExportModal: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    logActivity({
+      action_type: 'EXPORT',
+      module_name: 'Perincian Program',
+      activity_description: `Exported ${effectivePrograms.length} program records to CSV`,
+      record_id: `${effectivePrograms.length} records`,
+      status: 'SUCCESS',
+    });
 
     setFieldModalMode(null);
   };
@@ -262,6 +271,14 @@ export const ExportModal: React.FC = () => {
       const fileName = `Laporan_Program_IAB_${pdfOrientation}_${new Date().toISOString().slice(0, 10)}.pdf`;
       doc.save(fileName);
 
+      logActivity({
+        action_type: 'DOWNLOAD',
+        module_name: 'Perincian Program',
+        activity_description: `Downloaded PDF report (${effectivePrograms.length} programs, ${pdfOrientation}): ${fileName}`,
+        record_id: fileName,
+        status: 'SUCCESS',
+      });
+
       setDownloadFeedback(`Fail PDF berjaya dijana dan dimuat turun (${fileName})!`);
       setTimeout(() => setDownloadFeedback(null), 4500);
     } catch (err) {
@@ -297,6 +314,14 @@ export const ExportModal: React.FC = () => {
 
       const fileName = `Laporan_Program_IAB_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
+
+      logActivity({
+        action_type: 'EXPORT',
+        module_name: 'Perincian Program',
+        activity_description: `Exported Excel workbook (${effectivePrograms.length} programs): ${fileName}`,
+        record_id: fileName,
+        status: 'SUCCESS',
+      });
 
       setDownloadFeedback(`Fail Excel (.xlsx) berjaya dimuat turun (${fileName})!`);
       setTimeout(() => setDownloadFeedback(null), 4500);
