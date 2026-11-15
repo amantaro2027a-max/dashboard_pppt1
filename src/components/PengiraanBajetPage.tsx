@@ -97,8 +97,7 @@ const loadImageAsDataUrl = (src: string): Promise<string | null> =>
   });
 
 export const PengiraanBajetPage: React.FC = () => {
-  const { currentUser, budgetRates, updateBudgetRates, jabatanMap } = useProgramContext();
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const { currentUser, isSuperAdmin, budgetRates, updateBudgetRates, jabatanMap } = useProgramContext();
 
   const jabatanOptions = useMemo(() => {
     const set = new Set<string>();

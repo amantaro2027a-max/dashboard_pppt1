@@ -38,6 +38,7 @@ interface BahagianSubwaranCardProps {
   onOpenCreateModal: (sumberKewangan: string) => void;
   onOpenEditModal: (item: SubwaranRecord) => void;
   onRequestDelete: (item: SubwaranRecord) => void;
+  canEdit: boolean;
 }
 
 const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
@@ -47,6 +48,7 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
   onOpenCreateModal,
   onOpenEditModal,
   onRequestDelete,
+  canEdit,
 }) => {
   // Sembunyi bahagian ini as a default
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -139,13 +141,20 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
               </p>
             </div>
 
-            <button
-              onClick={() => onOpenCreateModal(sumberKewangan)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-lg shadow-xs transition-colors cursor-pointer shrink-0 uppercase tracking-wider"
-            >
-              <Plus className="w-4 h-4" />
-              <span>DAFTAR SUB WARAN PERUNTUKAN INI</span>
-            </button>
+            {canEdit ? (
+              <button
+                onClick={() => onOpenCreateModal(sumberKewangan)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-300 rounded-lg shadow-xs transition-colors cursor-pointer shrink-0 uppercase tracking-wider"
+              >
+                <Plus className="w-4 h-4" />
+                <span>DAFTAR SUB WARAN PERUNTUKAN INI</span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg shrink-0">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Mod Paparan Sahaja (View Only)</span>
+              </span>
+            )}
           </div>
 
           {/* Table */}
@@ -153,12 +162,14 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
             <div className="text-center py-10 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 text-xs">
               <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p>Tiada rekod subwaran didaftarkan di bawah sumber kewangan <strong>{sumberKewangan}</strong> setakat ini.</p>
-              <button
-                onClick={() => onOpenCreateModal(sumberKewangan)}
-                className="mt-3 text-xs font-bold text-amber-700 hover:underline cursor-pointer"
-              >
-                + Klik di sini untuk Daftar Sub Waran Baharu
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => onOpenCreateModal(sumberKewangan)}
+                  className="mt-3 text-xs font-bold text-amber-700 hover:underline cursor-pointer"
+                >
+                  + Klik di sini untuk Daftar Sub Waran Baharu
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -176,7 +187,7 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
                     <th className="py-3 px-4 w-36 text-right bg-amber-50/70 font-bold text-amber-950">
                       JUMLAH (RM)
                     </th>
-                    <th className="py-3 px-3 w-20 text-center">TINDAKAN</th>
+                    {canEdit && <th className="py-3 px-3 w-20 text-center">TINDAKAN</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -243,24 +254,26 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
                         <td className="py-3 px-4 text-right font-mono font-bold text-amber-950 bg-amber-50/40">
                           {formatRMWithPrefix(rowSum)}
                         </td>
-                        <td className="py-3 px-3 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => onOpenEditModal(item)}
-                              title="Kemaskini Subwaran"
-                              className="p-1 text-slate-500 hover:text-amber-700 hover:bg-amber-100 rounded transition-colors cursor-pointer"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onRequestDelete(item)}
-                              title="Hapus Subwaran"
-                              className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-100 rounded transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
+                        {canEdit && (
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => onOpenEditModal(item)}
+                                title="Kemaskini Subwaran"
+                                className="p-1 text-slate-500 hover:text-amber-700 hover:bg-amber-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => onRequestDelete(item)}
+                                title="Hapus Subwaran"
+                                className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-100 rounded transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -285,7 +298,7 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
                     <td className="py-3.5 px-4 text-right font-mono text-amber-300 bg-slate-950 text-sm">
                       {formatRMWithPrefix(totals.grand)}
                     </td>
-                    <td></td>
+                    {canEdit && <td></td>}
                   </tr>
                 </tfoot>
               </table>
@@ -300,17 +313,19 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
 export const SubwaranPage: React.FC = () => {
   const {
     currentUser,
+    isSuperAdmin,
+    getPageAccessMode,
+    canEditPage,
     setActiveTab,
     sumberKewanganList,
     subwaranList,
     addSubwaran,
     updateSubwaran,
     deleteSubwaran,
-    pegawaiList,
   } = useProgramContext();
 
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const canAccess = isSuperAdmin || (currentUser?.role === 'ADMIN' && currentUser.allowedPages?.includes('SUBWARAN'));
+  const canAccess = Boolean(currentUser) && getPageAccessMode('SUBWARAN') !== 'none';
+  const canEdit = isSuperAdmin || canEditPage('SUBWARAN');
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -404,6 +419,7 @@ export const SubwaranPage: React.FC = () => {
 
   // Open Create Modal - Clear all info by default & OS as 0.00
   const handleOpenCreateModal = (sk: string) => {
+    if (!canEdit) return;
     setEditingItem(null);
     setFormSumberKewangan(sk);
     setFormNamaPtj('IABCGH');
@@ -422,6 +438,7 @@ export const SubwaranPage: React.FC = () => {
 
   // Open Edit Modal
   const handleOpenEditModal = (item: SubwaranRecord) => {
+    if (!canEdit) return;
     setEditingItem(item);
     setFormSumberKewangan(item.sumberKewangan);
     setFormNamaPtj(item.namaPtj);
@@ -441,6 +458,7 @@ export const SubwaranPage: React.FC = () => {
   // Submit Save
   const handleSaveSubwaran = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) return;
     setFormError(null);
 
     if (!formNamaPtj) {
@@ -511,14 +529,14 @@ export const SubwaranPage: React.FC = () => {
             <Lock className="w-8 h-8" />
           </div>
           <span className="text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
-            Akses Dihadkan · Super Admin Sahaja
+            Akses Dihadkan · Kebenaran Diperlukan
           </span>
           <h2 className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
             Pengurusan Subwaran Peruntukan (IAB)
           </h2>
           <p className="text-slate-600 text-sm max-w-lg mx-auto mt-2 leading-relaxed">
-            Halaman ini hanya boleh diakses oleh <strong>Super Admin (Kuasa Penuh)</strong> bagi
-            mengurus dan mendaftarkan pengagihan sub waran peruntukan ke PTJ luar dan cawangan.
+            Halaman ini hanya boleh diakses oleh pengguna yang mempunyai kebenaran{' '}
+            <strong>SUBWARAN</strong> di dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong> atau Super Admin.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -579,6 +597,12 @@ export const SubwaranPage: React.FC = () => {
               {keseluruhanStats.grandTotals.totalAgihan} Rekod
             </span>
           </div>
+          {!canEdit && (
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-400/40 rounded-lg">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Mod Paparan Sahaja (View Only)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -725,7 +749,8 @@ export const SubwaranPage: React.FC = () => {
             subwaranItems={subwaranList}
             onOpenCreateModal={handleOpenCreateModal}
             onOpenEditModal={handleOpenEditModal}
-            onRequestDelete={(item) => setDeleteTarget(item)}
+            onRequestDelete={(item) => canEdit && setDeleteTarget(item)}
+            canEdit={canEdit}
           />
         ))}
       </div>

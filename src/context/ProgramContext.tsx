@@ -11,6 +11,9 @@ import {
   RekodPindaanBK04,
   ItemPerubahanBK04,
   BudgetRatesConfig,
+  AdminLevelId,
+  AccessMode,
+  AdminRole,
 } from '../types/program';
 import { formatRM } from '../utils/formatters';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
@@ -68,8 +71,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -85,14 +88,24 @@ interface ProgramContextType {
   financialStats: FinancialSectionStats;
   viewProgramDetail: (prog: ProgramItem) => void;
 
-  // Auth & Admin Management
+  // Auth, RBAC & Admin Management
   currentUser: AdminUser | null;
+  isSuperAdmin: boolean;
   adminUsers: AdminUser[];
   login: (id: string, pass: string) => { success: boolean; message?: string };
   logout: () => void;
   createAdminUser: (user: Omit<AdminUser, 'createdAt'>) => { success: boolean; message?: string };
   updateAdminUser: (id: string, updated: Partial<AdminUser>) => { success: boolean; message?: string };
   deleteAdminUser: (id: string) => { success: boolean; message?: string };
+  changeOwnPassword: (currentPassword: string, newPassword: string) => { success: boolean; message?: string };
+  resetUserPassword: (targetUserId: string, newPassword?: string) => { success: boolean; message?: string };
+  getPageAccessMode: (pageKey: string) => 'none' | AccessMode;
+  getJabatanAccessMode: (jabatanName?: string) => 'none' | AccessMode;
+  canEditPage: (pageKey: string) => boolean;
+  canEditJabatan: (jabatanName?: string) => boolean;
+  getEditableJabatans: () => string[];
+  getAuthorizedPusatList: () => string[];
+  getAuthorizedJabatanList: () => string[];
 
   // Master Data
   pusatList: string[];
@@ -280,15 +293,28 @@ const INITIAL_ADMIN_USERS: AdminUser[] = [
     password: 'AMAN',
     name: 'Super Admin AMAN',
     role: 'SUPER_ADMIN',
+    levelId: 'SUPER_ADMIN',
     createdAt: '2026-01-01',
   },
   {
     id: 'ADMIN_JPSM',
-    password: 'AMAN',
+    password: '123',
     name: 'Admin Sistem Maklumat',
     role: 'ADMIN',
+    levelId: 'KETUA_JABATAN',
     pusat: 'PUSAT PEMBANGUNAN DAN PENGURUSAN TEKNOLOGI',
     jabatan: 'JABATAN PENGURUSAN SISTEM MAKLUMAT',
+    allowedJabatans: ['JABATAN PENGURUSAN SISTEM MAKLUMAT'],
+    jabatanAccess: {
+      'JABATAN PENGURUSAN SISTEM MAKLUMAT': 'view',
+    },
+    allowedPages: ['DASHBOARD BERSEPADU', 'PERINCIAN PROGRAM', 'PUSAT', 'JABATAN'],
+    pageAccess: {
+      'DASHBOARD BERSEPADU': 'view',
+      'PERINCIAN PROGRAM': 'view',
+      'PUSAT': 'view',
+      'JABATAN': 'view',
+    },
     createdAt: '2026-01-15',
   },
 ];
@@ -547,7 +573,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -850,10 +876,163 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveTab('dashboard');
   };
 
+  // Permission & Level Helpers
+  const isSuperAdmin = useMemo(
+    () => Boolean(currentUser && (currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN')),
+    [currentUser]
+  );
+
+  const getPageAccessMode = (pageKey: string): 'none' | AccessMode => {
+    const key = pageKey.trim().toUpperCase();
+    // Default view-only unless logged in
+    if (!currentUser) {
+      if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET') {
+        return 'view';
+      }
+      return 'none';
+    }
+
+    if (currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN') {
+      return 'edit';
+    }
+
+    // Check new granular pageAccess map first
+    if (currentUser.pageAccess && Object.prototype.hasOwnProperty.call(currentUser.pageAccess, key)) {
+      return currentUser.pageAccess[key] === 'edit' ? 'edit' : 'view';
+    }
+
+    // Legacy allowedPages array fallback -> view only by default
+    if (currentUser.allowedPages && currentUser.allowedPages.includes(key)) {
+      return 'view';
+    }
+
+    // Always allow viewing Dashboard Program, Pengiraan Bajet, and Admin overview (as view-only unless edit configured)
+    if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET' || key === 'ADMIN') {
+      return 'view';
+    }
+
+    return 'none';
+  };
+
+  const getJabatanAccessMode = (jabatanName?: string): 'none' | AccessMode => {
+    if (!currentUser) return 'none';
+    if (currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN') {
+      return 'edit';
+    }
+
+    const jab = (jabatanName || '').trim();
+    if (currentUser.jabatanAccess && Object.keys(currentUser.jabatanAccess).length > 0) {
+      if (jab && currentUser.jabatanAccess[jab]) {
+        return currentUser.jabatanAccess[jab] === 'edit' ? 'edit' : 'view';
+      }
+      if (currentUser.jabatanAccess['SEMUA JABATAN']) {
+        return currentUser.jabatanAccess['SEMUA JABATAN'] === 'edit' ? 'edit' : 'view';
+      }
+      return 'none';
+    }
+
+    // Legacy fallback -> view only by default
+    const legacy = currentUser.allowedJabatans || (currentUser.jabatan ? [currentUser.jabatan] : []);
+    if (legacy.includes('SEMUA JABATAN') || (jab && legacy.includes(jab))) {
+      return 'view';
+    }
+    return 'none';
+  };
+
+  const canEditPage = (pageKey: string): boolean => {
+    return getPageAccessMode(pageKey) === 'edit';
+  };
+
+  const canEditJabatan = (jabatanName?: string): boolean => {
+    if (!currentUser) return false;
+    if (isSuperAdmin) return true;
+    return getJabatanAccessMode(jabatanName) === 'edit';
+  };
+
+  const getEditableJabatans = (): string[] => {
+    const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
+      (j) => j && j !== 'SEMUA JABATAN'
+    );
+    if (!currentUser) return [];
+    if (isSuperAdmin) return allJabs;
+    if (currentUser.jabatanAccess) {
+      if (currentUser.jabatanAccess['SEMUA JABATAN'] === 'edit') return allJabs;
+      return Object.entries(currentUser.jabatanAccess)
+        .filter(([, mode]) => mode === 'edit')
+        .map(([j]) => j);
+    }
+    return [];
+  };
+
+  const getAuthorizedJabatanList = (): string[] => {
+    const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
+      (j) => j && j !== 'SEMUA JABATAN'
+    );
+    if (!currentUser) return [];
+    if (isSuperAdmin) return allJabs;
+
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser.name && p.nama.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+
+    const set = new Set<string>();
+    if (currentUser.jabatanAccess) {
+      Object.keys(currentUser.jabatanAccess).forEach((j) => {
+        if (j === 'SEMUA JABATAN') allJabs.forEach((aj) => set.add(aj));
+        else if (j && j !== 'TIDAK BERKENAAN') set.add(j);
+      });
+    }
+    if (set.size === 0 && currentUser.allowedJabatans) {
+      currentUser.allowedJabatans.forEach((j) => {
+        if (j === 'SEMUA JABATAN') allJabs.forEach((aj) => set.add(aj));
+        else if (j && j !== 'TIDAK BERKENAAN') set.add(j);
+      });
+    }
+    if (set.size === 0 && currentUser.jabatan && currentUser.jabatan !== 'TIDAK BERKENAAN') {
+      currentUser.jabatan.split(',').map((s) => s.trim()).forEach((j) => {
+        if (j === 'SEMUA JABATAN') allJabs.forEach((aj) => set.add(aj));
+        else if (j && j !== 'TIDAK BERKENAAN') set.add(j);
+      });
+    }
+    if (set.size === 0 && matchedPeg?.jabatan && matchedPeg.jabatan !== 'TIDAK BERKENAAN') {
+      set.add(matchedPeg.jabatan);
+    }
+    return Array.from(set);
+  };
+
+  const getAuthorizedPusatList = (): string[] => {
+    if (!currentUser) return [];
+    if (isSuperAdmin) return pusatList;
+
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser.name && p.nama.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+
+    const set = new Set<string>();
+    if (currentUser.pusat && currentUser.pusat !== 'TIDAK BERKENAAN') {
+      set.add(currentUser.pusat);
+    }
+    if (matchedPeg?.pusat && matchedPeg.pusat !== 'TIDAK BERKENAAN') {
+      set.add(matchedPeg.pusat);
+    }
+    const authJabs = getAuthorizedJabatanList();
+    pusatList.forEach((pus) => {
+      const jabs = jabatanMap[pus] || [];
+      if (authJabs.some((aj) => jabs.includes(aj))) {
+        set.add(pus);
+      }
+    });
+    return Array.from(set);
+  };
+
   const createAdminUser = (
     userData: Omit<AdminUser, 'createdAt'>
   ): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+    if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Hanya Super Admin dibenarkan mencipta ID Admin.' };
     }
 
@@ -862,11 +1041,18 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: `ID Admin "${cleanId}" telah wujud. Sila pilih ID lain.` };
     }
 
+    const resolvedLevelId: AdminLevelId =
+      userData.levelId || (userData.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'URUS_SETIA');
+    const resolvedRole: AdminRole = resolvedLevelId === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+    const resolvedPassword = (userData.password || '123').trim() || '123';
+
     const newUser: AdminUser = {
       ...userData,
       id: cleanId,
+      password: resolvedPassword,
       name: userData.name.trim(),
-      role: 'ADMIN',
+      role: resolvedRole,
+      levelId: resolvedLevelId,
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
@@ -884,7 +1070,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     id: string,
     updated: Partial<AdminUser>
   ): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+    if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Hanya Super Admin dibenarkan mengemaskini ID Admin.' };
     }
 
@@ -897,15 +1083,29 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAdminUsers((prev) =>
       prev.map((u) => {
         if (u.id === id) {
+          const nextLevelId = updated.levelId !== undefined ? updated.levelId : u.levelId;
+          const nextRole: AdminRole =
+            id.toUpperCase() === 'AMAN'
+              ? 'SUPER_ADMIN'
+              : nextLevelId === 'SUPER_ADMIN'
+              ? 'SUPER_ADMIN'
+              : nextLevelId
+              ? 'ADMIN'
+              : updated.role || u.role;
+
           const merged: AdminUser = {
             ...u,
             ...updated,
+            role: nextRole,
+            levelId: id.toUpperCase() === 'AMAN' ? 'SUPER_ADMIN' : nextLevelId,
             name: updated.name !== undefined ? updated.name.trim() : u.name,
             password: updated.password !== undefined ? updated.password.trim() : u.password,
             pusat: updated.pusat !== undefined ? updated.pusat : u.pusat,
             jabatan: updated.jabatan !== undefined ? updated.jabatan : u.jabatan,
             allowedJabatans: updated.allowedJabatans !== undefined ? updated.allowedJabatans : u.allowedJabatans,
+            jabatanAccess: updated.jabatanAccess !== undefined ? updated.jabatanAccess : u.jabatanAccess,
             allowedPages: updated.allowedPages !== undefined ? updated.allowedPages : u.allowedPages,
+            pageAccess: updated.pageAccess !== undefined ? updated.pageAccess : u.pageAccess,
           };
           modifiedUser = merged;
           return merged;
@@ -927,8 +1127,67 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
+  const changeOwnPassword = (
+    currentPassword: string,
+    newPassword: string
+  ): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk terlebih dahulu.' };
+    }
+    if (currentPassword.trim() !== currentUser.password) {
+      return { success: false, message: 'Kata laluan semasa tidak tepat.' };
+    }
+    if (!newPassword.trim()) {
+      return { success: false, message: 'Kata laluan baharu tidak boleh kosong.' };
+    }
+
+    const cleanNewPass = newPassword.trim();
+    const updatedUser: AdminUser = { ...currentUser, password: cleanNewPass };
+
+    setAdminUsers((prev) =>
+      prev.map((u) => (u.id === currentUser.id ? { ...u, password: cleanNewPass } : u))
+    );
+    setCurrentUser(updatedUser);
+
+    setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
+    });
+
+    return { success: true };
+  };
+
+  const resetUserPassword = (
+    targetUserId: string,
+    newPassword = '123'
+  ): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Hanya Super Admin dibenarkan menetapkan semula kata laluan pengguna.' };
+    }
+    const target = adminUsers.find((u) => u.id === targetUserId);
+    if (!target) {
+      return { success: false, message: 'Akaun pengguna tidak ditemui.' };
+    }
+
+    const cleanResetPass = (newPassword || '123').trim() || '123';
+    const updatedUser: AdminUser = { ...target, password: cleanResetPass };
+
+    setAdminUsers((prev) =>
+      prev.map((u) => (u.id === targetUserId ? updatedUser : u))
+    );
+
+    if (currentUser.id === targetUserId) {
+      setCurrentUser(updatedUser);
+    }
+
+    setDoc(doc(db, 'admins', targetUserId), sanitizeData(updatedUser), { merge: true }).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${targetUserId}` });
+    });
+
+    return { success: true };
+  };
+
   const deleteAdminUser = (userId: string): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+    if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Hanya Super Admin dibenarkan memadam ID Admin.' };
     }
     if (userId.toUpperCase() === 'AMAN') {
@@ -1167,11 +1426,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Sila log masuk ke akaun Admin untuk menambah program.' };
     }
 
-    if (currentUser.role === 'ADMIN' && currentUser.jabatan) {
-      if (data.jabatan !== currentUser.jabatan) {
+    if (!isSuperAdmin) {
+      if (!canEditPage('ADMIN') && !canEditPage('PERINCIAN PROGRAM')) {
         return {
           success: false,
-          message: `Anda hanya dibenarkan menambah program di bawah jabatan anda: ${currentUser.jabatan}`,
+          message: 'Akses View Only: Akaun anda tidak mempunyai kebenaran Edit halaman untuk menambah program.',
+        };
+      }
+      if (!canEditJabatan(data.jabatan)) {
+        return {
+          success: false,
+          message: `Akses View Only / Terhad: Anda hanya dibenarkan menambah atau mengedit program bagi jabatan dengan kebenaran Edit.`,
         };
       }
     }
@@ -1209,24 +1474,24 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // REQUIREMENT: Super admin sahaja boleh edit semua program dengan STATUS PROGRAM: SELESAI DAN TANGGUNG
     const targetStatus = (target.statusProgram || '').trim().toUpperCase();
-    if ((targetStatus === 'SELESAI' || targetStatus === 'TANGGUNG') && currentUser.role !== 'SUPER_ADMIN') {
+    if ((targetStatus === 'SELESAI' || targetStatus === 'TANGGUNG') && !isSuperAdmin) {
       return {
         success: false,
         message: 'Akses ditolak. Program berstatus SELESAI dan TANGGUNG hanya boleh dikemaskini oleh Super Admin sahaja.',
       };
     }
 
-    if (currentUser.role === 'ADMIN') {
-      const allowed = currentUser.allowedJabatans || (currentUser.jabatan ? [currentUser.jabatan] : []);
-      const hasPermission =
-        allowed.length === 0 ||
-        allowed.includes('SEMUA JABATAN') ||
-        allowed.includes(target.jabatan);
-
-      if (!hasPermission) {
+    if (!isSuperAdmin) {
+      if (!canEditPage('ADMIN') && !canEditPage('PERINCIAN PROGRAM')) {
         return {
           success: false,
-          message: `Anda hanya boleh mengemaskini program di bawah jabatan yang diberi akses kepada anda: ${allowed.join(', ')}`,
+          message: 'Akses View Only: Akaun anda tidak mempunyai kebenaran Edit halaman untuk mengemaskini program.',
+        };
+      }
+      if (!canEditJabatan(target.jabatan)) {
+        return {
+          success: false,
+          message: `Akses View Only / Terhad: Anda hanya mempunyai akses paparan (View Only) atau tidak diberi kebenaran Edit bagi jabatan "${target.jabatan}".`,
         };
       }
     }
@@ -2088,13 +2353,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true, added };
   };
 
-  // Peruntukan Fasa CRUD Functions (Super Admin Only)
+  // Peruntukan Fasa CRUD Functions (Super Admin or Page Peruntukan Edit Permission)
   const updateFasaPeruntukan = (
     fasaId: string,
     allocations: Record<string, OsAllocation>
   ): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan mengemaskini peruntukan fasa.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('PERUNTUKAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk mengemaskini peruntukan fasa.' };
     }
 
     const nextList = fasaPeruntukanList.map((f) =>
@@ -2118,8 +2383,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addFasaPeruntukan = (namaFasa?: string): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan menambah fasa peruntukan.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('PERUNTUKAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk menambah fasa peruntukan.' };
     }
 
     const nextNum = fasaPeruntukanList.length + 1;
@@ -2150,8 +2415,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteFasaPeruntukan = (fasaId: string): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan memadam fasa peruntukan.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('PERUNTUKAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk memadam fasa peruntukan.' };
     }
 
     const nextList = fasaPeruntukanList.filter((f) => f.id !== fasaId);
@@ -2165,12 +2430,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
-  // Subwaran CRUD Functions (Super Admin Only)
+  // Subwaran CRUD Functions (Super Admin or Page Subwaran Edit Permission)
   const addSubwaran = (
     record: Omit<SubwaranRecord, 'id'>
   ): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan mendaftar subwaran.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('SUBWARAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk mendaftar subwaran.' };
     }
 
     const newId = `sub-${Date.now()}`;
@@ -2206,8 +2471,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     id: string,
     updated: Partial<SubwaranRecord>
   ): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan mengemaskini subwaran.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('SUBWARAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk mengemaskini subwaran.' };
     }
 
     let modified: SubwaranRecord | null = null;
@@ -2246,8 +2511,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteSubwaran = (id: string): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
-      return { success: false, message: 'Hanya Super Admin dibenarkan memadam subwaran.' };
+    if (!currentUser || (!isSuperAdmin && !canEditPage('SUBWARAN'))) {
+      return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk memadam subwaran.' };
     }
 
     const nextList = subwaranList.filter((s) => s.id !== id);
@@ -2263,7 +2528,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Update Budget Rates (Super Admin Only)
   const updateBudgetRates = (newRates: BudgetRatesConfig): { success: boolean; message?: string } => {
-    if (!currentUser || currentUser.role !== 'SUPER_ADMIN') {
+    if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Hanya Super Admin dibenarkan mengubah kadar RM seunit.' };
     }
     const sanitizedRates: BudgetRatesConfig = {
@@ -2321,12 +2586,22 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         financialStats,
         viewProgramDetail,
         currentUser,
+        isSuperAdmin,
         adminUsers,
         login,
         logout,
         createAdminUser,
         updateAdminUser,
         deleteAdminUser,
+        changeOwnPassword,
+        resetUserPassword,
+        getPageAccessMode,
+        getJabatanAccessMode,
+        canEditPage,
+        canEditJabatan,
+        getEditableJabatans,
+        getAuthorizedPusatList,
+        getAuthorizedJabatanList,
         pusatList,
         jabatanMap,
         pegawaiList,

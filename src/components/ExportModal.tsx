@@ -51,7 +51,20 @@ const ALL_EXPORT_FIELDS: ExportFieldDef[] = [
 ];
 
 export const ExportModal: React.FC = () => {
-  const { isExportOpen, setIsExportOpen, filteredPrograms, currentUser } = useProgramContext();
+  const {
+    isExportOpen,
+    setIsExportOpen,
+    filteredPrograms,
+    currentUser,
+    isSuperAdmin,
+    getAuthorizedJabatanList,
+  } = useProgramContext();
+
+  const authorizedJabatans = useMemo(() => getAuthorizedJabatanList(), [getAuthorizedJabatanList]);
+  const authorizedJabatanSummary = useMemo(
+    () => (authorizedJabatans.length > 0 ? authorizedJabatans.join(', ') : ''),
+    [authorizedJabatans]
+  );
 
   // State: Filter by ID / Kod Program (Text Search)
   const [filterId, setFilterId] = useState('');
@@ -81,13 +94,14 @@ export const ExportModal: React.FC = () => {
     'statusProgram',
   ]);
 
-  // REQUIREMENT: Bila klik butang Eksport & Cetakan Laporan Rasmi, paparan program hanya paparkan program berdasarkan Jabatan admin sahaja (log in)
+  // REQUIREMENT: Bila klik butang Eksport & Cetakan Laporan Rasmi, paparan program hanya paparkan program berdasarkan Jabatan diberi akses (log in)
   const baseProgramsForExport = useMemo(() => {
-    if (currentUser && currentUser.role === 'ADMIN' && currentUser.jabatan) {
-      return filteredPrograms.filter((p) => p.jabatan === currentUser.jabatan);
+    if (currentUser && !isSuperAdmin) {
+      if (authorizedJabatans.length === 0) return [];
+      return filteredPrograms.filter((p) => authorizedJabatans.includes(p.jabatan));
     }
     return filteredPrograms;
-  }, [filteredPrograms, currentUser]);
+  }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans]);
 
   // Filtered dataset by ID / Kod Program
   const effectivePrograms = useMemo(() => {
@@ -183,7 +197,7 @@ export const ExportModal: React.FC = () => {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       const tarikhStr = new Date().toLocaleDateString('ms-MY', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const deptStr = currentUser?.role === 'ADMIN' && currentUser.jabatan ? `Jabatan: ${currentUser.jabatan} | ` : '';
+      const deptStr = currentUser && !isSuperAdmin && authorizedJabatanSummary ? `Jabatan: ${authorizedJabatanSummary} | ` : '';
       doc.text(`${deptStr}Jumlah Program: ${effectivePrograms.length} | Tarikh Dijana: ${tarikhStr} | Format: A4 ${pdfOrientation === 'landscape' ? 'Lanskap' : 'Potret'}`, margin, 26);
 
       // Table Data
@@ -310,10 +324,10 @@ export const ExportModal: React.FC = () => {
                 </span>
                 <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                   <span>Laporan Senarai Program Pusat IAB ({effectivePrograms.length} Rekod)</span>
-                  {currentUser?.role === 'ADMIN' && currentUser.jabatan && (
-                    <span className="text-[10px] bg-blue-800 text-blue-200 px-2 py-0.5 rounded font-normal flex items-center gap-1">
-                      <Briefcase className="w-3 h-3" />
-                      <span>{currentUser.jabatan}</span>
+                  {currentUser && !isSuperAdmin && authorizedJabatanSummary && (
+                    <span className="text-[10px] bg-blue-800 text-blue-200 px-2 py-0.5 rounded font-normal flex items-center gap-1 max-w-xs truncate">
+                      <Briefcase className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{authorizedJabatanSummary}</span>
                     </span>
                   )}
                 </h3>
@@ -365,8 +379,10 @@ export const ExportModal: React.FC = () => {
                     </span>
                   ) : (
                     <span>
-                      {currentUser?.role === 'ADMIN' && currentUser.jabatan
-                        ? `Memaparkan program di bawah jabatan: ${currentUser.jabatan}.`
+                      {currentUser && !isSuperAdmin
+                        ? authorizedJabatanSummary
+                          ? `Memaparkan program di bawah jabatan diberi akses: ${authorizedJabatanSummary}.`
+                          : 'Tiada jabatan diberi akses ditetapkan untuk akaun ini.'
                         : 'Memaparkan semua program hasil penapis induk.'}
                     </span>
                   )}
@@ -656,7 +672,7 @@ export const ExportModal: React.FC = () => {
                   </span>
                 </h4>
                 <p className="text-[11px] text-slate-400">
-                  {currentUser?.role === 'ADMIN' && currentUser.jabatan ? `Jabatan: ${currentUser.jabatan} · ` : ''}
+                  {currentUser && !isSuperAdmin && authorizedJabatanSummary ? `Jabatan: ${authorizedJabatanSummary} · ` : ''}
                   {filterId ? `Ditapis ID: ${filterId.toUpperCase()} · ` : ''}
                   Jumlah: {effectivePrograms.length} rekod program
                 </p>
@@ -754,9 +770,9 @@ export const ExportModal: React.FC = () => {
                   </h1>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 font-mono">
                     <span>
-                      {currentUser?.role === 'ADMIN' && currentUser.jabatan ? (
+                      {currentUser && !isSuperAdmin && authorizedJabatanSummary ? (
                         <span>
-                          Jabatan: <strong>{currentUser.jabatan}</strong> ·{' '}
+                          Jabatan: <strong>{authorizedJabatanSummary}</strong> ·{' '}
                         </span>
                       ) : null}
                       {filterId ? (

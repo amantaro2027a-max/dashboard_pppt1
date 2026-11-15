@@ -24,6 +24,8 @@ import { WelcomePage } from './components/WelcomePage';
 import { DashboardBersepaduPage } from './components/DashboardBersepaduPage';
 import { PengiraanBajetPage } from './components/PengiraanBajetPage';
 import { AnalisisPegawaiPage } from './components/AnalisisPegawaiPage';
+import { PusatPage } from './components/PusatPage';
+import { JabatanPage } from './components/JabatanPage';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
@@ -55,25 +57,29 @@ const DashboardContent: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
               <div className="w-full">
-                {/* Baris 1: Pengguna: NAMA PEGAWAI | Jawatan: JAWATAN PEGAWAI */}
+                {/* Baris 1: Pengguna: ... */}
                 <div className="text-xs sm:text-sm tracking-wide leading-relaxed">
                   <span className="text-black font-black">Pengguna: </span>
                   <span className="text-blue-600 font-black">{bannerInfo.nama}</span>
-                  <span className="text-black font-black"> | Jawatan: </span>
+                </div>
+
+                {/* Baris 2: Jawatan: ... */}
+                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                  <span className="text-black font-black">Jawatan: </span>
                   <span className="text-blue-600 font-black">{bannerInfo.jawatan}</span>
                 </div>
 
-                {/* Baris 2: PUSAT: */}
+                {/* Baris 3: Pusat: ... */}
                 <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">PUSAT:</span>
+                  <span className="text-black font-black">Pusat:</span>
                   {bannerInfo.pusat ? (
                     <span className="text-blue-600 font-black"> {bannerInfo.pusat}</span>
                   ) : null}
                 </div>
 
-                {/* Baris 3: JABATAN: */}
+                {/* Baris 4: Jabatan: ... */}
                 <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">JABATAN:</span>
+                  <span className="text-black font-black">Jabatan:</span>
                   {bannerInfo.jabatan ? (
                     <span className="text-blue-600 font-black"> {bannerInfo.jabatan}</span>
                   ) : null}
@@ -89,6 +95,10 @@ const DashboardContent: React.FC = () => {
                       ? 'Perincian & Katalog Program Pusat'
                       : activeTab === 'analisisPegawai'
                       ? 'Analisis Pegawai Mengikut Program'
+                      : activeTab === 'pusat'
+                      ? 'Profil, Perbandingan & Rumusan Pusat'
+                      : activeTab === 'jabatan'
+                      ? 'Profil, Perbandingan & Rumusan Jabatan'
                       : activeTab === 'pengiraan'
                       ? 'Pengiraan Bajet Program & Pakej Hotel'
                       : activeTab === 'peruntukan'
@@ -110,6 +120,10 @@ const DashboardContent: React.FC = () => {
                     ? 'Katalog terperinci maklumat program, agihan peruntukan objek sebagai (OS21, OS24, OS27, OS29), dan profil pegawai pengurus (Mod Paparan Sahaja).'
                     : activeTab === 'analisisPegawai'
                     ? 'Analisis terperinci beban tugas, visualisasi data, dan pencapaian pelaksanaan program bagi setiap pegawai mengikut Pusat, Jabatan, Jawatan & Status.'
+                    : activeTab === 'pusat'
+                    ? 'Paparan terperinci Pusat, senarai jabatan & pegawai di bawah pusat, visualisasi infografik, perbandingan antara jabatan, dan rumusan keseluruhan.'
+                    : activeTab === 'jabatan'
+                    ? 'Paparan terperinci Jabatan, senarai pegawai di bawah jabatan, visualisasi infografik setiap pegawai, perbandingan & rumusan mengikut status program.'
                     : activeTab === 'pengiraan'
                     ? 'Kalkulator pengiraan bajet Makan Minum, Dobi, dan Pakej Hotel (beserta SST 6% & 8%). Pengguna boleh mengisi sel kuning; kadar kos seunit (RM) dikawal oleh Super Admin.'
                     : activeTab === 'peruntukan'
@@ -157,6 +171,12 @@ const DashboardContent: React.FC = () => {
           ) : activeTab === 'analisisPegawai' ? (
             /* PAGE BARU – ANALISIS PEGAWAI MENGIKUT PROGRAM */
             <AnalisisPegawaiPage />
+          ) : activeTab === 'pusat' ? (
+            /* PAGE BARU – PAGE PUSAT */
+            <PusatPage />
+          ) : activeTab === 'jabatan' ? (
+            /* PAGE BARU – PAGE JABATAN */
+            <JabatanPage />
           ) : activeTab === 'pengiraan' ? (
             /* PAGE BARU – PENGIRAAN BAJET (AKSES PELAWAT) */
             <PengiraanBajetPage />

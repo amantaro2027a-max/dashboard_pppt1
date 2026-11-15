@@ -78,17 +78,13 @@ export const AnalisisPegawaiPage: React.FC = () => {
     jawatanList,
     statusProgramList,
     currentUser,
+    getPageAccessMode,
     viewProgramDetail,
   } = useProgramContext();
 
-  // Access check: Super Admin or Admin with ANALISIS PEGAWAI permission
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  // Granular Page Permission Check
   const canAccess =
-    isSuperAdmin ||
-    (currentUser?.role === 'ADMIN' &&
-      (currentUser.allowedPages?.includes('ANALISIS PEGAWAI') ||
-        !currentUser.allowedPages ||
-        currentUser.allowedPages.length === 0));
+    Boolean(currentUser) && getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
 
   // 6 Slicer States + Search + Display Mode
   const [slicerPusat, setSlicerPusat] = useState<string>('');

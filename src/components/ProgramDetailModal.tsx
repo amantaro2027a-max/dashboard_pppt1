@@ -24,6 +24,9 @@ export const ProgramDetailModal: React.FC = () => {
     setIsFormOpen,
     setProgramToEdit,
     currentUser,
+    isSuperAdmin,
+    canEditPage,
+    canEditJabatan,
     programs,
   } = useProgramContext();
 
@@ -33,15 +36,17 @@ export const ProgramDetailModal: React.FC = () => {
   const currentProg = programs.find((p) => p.id === selectedProgram.id) || selectedProgram;
   const statusConfig = getStatusConfig(currentProg.statusProgram);
 
-  // View-only unless authenticated as Super Admin or Admin of matching Jabatan
-  const canEdit =
+  // View-only unless Super Admin or user has Edit permission for ADMIN/PERINCIAN PROGRAM and for this program's Jabatan (and not SELESAI/TANGGUNG)
+  const isLockedStatus = ['SELESAI', 'TANGGUNG'].includes(
+    (currentProg.statusProgram || '').trim().toUpperCase()
+  );
+  const canEdit = Boolean(
     currentUser &&
-    (currentUser.role === 'SUPER_ADMIN' ||
-      !currentUser.jabatan ||
-      currentUser.jabatan === currentProg.jabatan ||
-      (currentUser.allowedJabatans &&
-        (currentUser.allowedJabatans.includes('SEMUA JABATAN') ||
-          currentUser.allowedJabatans.includes(currentProg.jabatan))));
+      (isSuperAdmin ||
+        (!isLockedStatus &&
+          (canEditPage('ADMIN') || canEditPage('PERINCIAN PROGRAM')) &&
+          canEditJabatan(currentProg.jabatan)))
+  );
 
   const handleEdit = () => {
     if (!canEdit) return;

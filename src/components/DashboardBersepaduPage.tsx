@@ -39,16 +39,12 @@ export const DashboardBersepaduPage: React.FC = () => {
     fasaPeruntukanList,
     viewProgramDetail,
     currentUser,
+    getPageAccessMode,
   } = useProgramContext();
 
-  // Super Admin Check & Page Permission Check
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  // Granular Page Permission Check
   const canAccess =
-    isSuperAdmin ||
-    (currentUser?.role === 'ADMIN' &&
-      (currentUser.allowedPages?.includes('DASHBOARD BERSEPADU') ||
-        !currentUser.allowedPages ||
-        currentUser.allowedPages.length === 0));
+    Boolean(currentUser) && getPageAccessMode('DASHBOARD BERSEPADU') !== 'none';
 
   // Kawalan Paparan / Collapse Modul:
   // Secara lalai:

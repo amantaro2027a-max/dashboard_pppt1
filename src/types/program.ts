@@ -126,15 +126,91 @@ export interface FinancialSectionStats {
 
 export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
 
+export type AdminLevelId =
+  | 'SUPER_ADMIN'
+  | 'KETUA_PUSAT'
+  | 'KETUA_JABATAN'
+  | 'PENGARAH'
+  | 'TPP_TPL'
+  | 'P_PB'
+  | 'URUS_SETIA';
+
+export type AccessMode = 'view' | 'edit';
+
+export const ADMIN_LEVEL_OPTIONS: Array<{
+  value: AdminLevelId;
+  label: string;
+  desc: string;
+}> = [
+  {
+    value: 'SUPER_ADMIN',
+    label: '1. Super Admin',
+    desc: 'Boleh view dan edit semua termasuk ubah kata laluan sendiri dan reset kata laluan pengguna lain',
+  },
+  {
+    value: 'KETUA_PUSAT',
+    label: '2. Ketua Pusat',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+  {
+    value: 'KETUA_JABATAN',
+    label: '3. Ketua Jabatan',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+  {
+    value: 'PENGARAH',
+    label: '4. Pengarah',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+  {
+    value: 'TPP_TPL',
+    label: '5. TPP/TPL',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+  {
+    value: 'P_PB',
+    label: '6. P/PB',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+  {
+    value: 'URUS_SETIA',
+    label: '7. Urus setia',
+    desc: 'View only secara lalai (default); tertakluk kepada Jabatan & Page Diberi Akses',
+  },
+];
+
+export const getAdminLevelLabel = (levelId?: AdminLevelId | string, role?: AdminRole): string => {
+  if (role === 'SUPER_ADMIN' || levelId === 'SUPER_ADMIN') return 'Super Admin';
+  switch (levelId) {
+    case 'KETUA_PUSAT':
+      return 'Ketua Pusat';
+    case 'KETUA_JABATAN':
+      return 'Ketua Jabatan';
+    case 'PENGARAH':
+      return 'Pengarah';
+    case 'TPP_TPL':
+      return 'TPP/TPL';
+    case 'P_PB':
+      return 'P/PB';
+    case 'URUS_SETIA':
+      return 'Urus setia';
+    default:
+      return 'Admin Jabatan';
+  }
+};
+
 export interface AdminUser {
   id: string; // Login ID, e.g. 'AMAN'
-  password: string; // e.g. 'AMAN'
+  password: string; // Default '123' when created or reset
   name: string; // Display name
   role: AdminRole;
+  levelId?: AdminLevelId; // Level ID 1..7
   pusat?: string;
-  jabatan?: string; // Authorized primary department for regular admin
-  allowedJabatans?: string[]; // Multiple authorized departments
-  allowedPages?: string[]; // e.g. ['PERUNTUKAN', 'PERBELANJAAN', 'SUBWARAN', 'BAKI PERUNTUKAN']
+  jabatan?: string; // Authorized primary department for non-super user
+  allowedJabatans?: string[]; // Legacy & convenience list of authorized departments
+  jabatanAccess?: Record<string, AccessMode>; // Per-department 'view' | 'edit' permission
+  allowedPages?: string[]; // Legacy & convenience list of authorized pages
+  pageAccess?: Record<string, AccessMode>; // Per-page 'view' | 'edit' permission
   createdAt: string;
 }
 

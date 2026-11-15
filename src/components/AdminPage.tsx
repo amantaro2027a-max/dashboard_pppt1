@@ -3,7 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { AdminLogin } from './AdminLogin';
 import { FilterBar } from './FilterBar';
 import { getStatusConfig, formatRM } from '../utils/formatters';
-import { AdminUser, Pegawai, ProgramItem } from '../types/program';
+import { AdminLevelId, AccessMode, ADMIN_LEVEL_OPTIONS, getAdminLevelLabel, AdminUser, Pegawai, ProgramItem } from '../types/program';
 import * as XLSX from 'xlsx';
 import {
   ShieldCheck,
@@ -43,11 +43,13 @@ import {
   RefreshCw,
   Key,
   FileDown,
+  RotateCcw,
 } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
   const {
     currentUser,
+    isSuperAdmin,
     logout,
     setActiveTab,
     filteredPrograms,
@@ -62,6 +64,13 @@ export const AdminPage: React.FC = () => {
     createAdminUser,
     updateAdminUser,
     deleteAdminUser,
+    changeOwnPassword,
+    resetUserPassword,
+    getPageAccessMode,
+    canEditPage,
+    canEditJabatan,
+    getEditableJabatans,
+    getAuthorizedJabatanList,
     pusatList,
     jabatanMap,
     pegawaiList,
@@ -95,11 +104,11 @@ export const AdminPage: React.FC = () => {
   } = useProgramContext();
 
   // Active sub-tab inside Admin portal
-  const [adminTab, setAdminTab] = useState<'programs' | 'users' | 'master'>('programs');
+  const [adminTab, setAdminTab] = useState<'programs' | 'master'>('programs');
 
-  // Master Data active subcategory (including Tabs 7, 8, 9)
+  // Master Data active subcategory (Pengurusan ID Admin placed after 1. Pegawai)
   const [masterCategory, setMasterCategory] = useState<
-    'pegawai' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan' | 'muat_turun_naik' | 'notifikasi' | 'padam_data'
+    'pegawai' | 'users' | 'pusat' | 'jabatan' | 'sumber' | 'status' | 'jawatan' | 'muat_turun_naik' | 'notifikasi' | 'padam_data'
   >('pegawai');
 
   // Tab 7: Muat Naik / Muat Turun Data states
@@ -158,24 +167,43 @@ export const AdminPage: React.FC = () => {
 
   // Form states for creating new admin user
   const [selectedPegawaiIdForAdmin, setSelectedPegawaiIdForAdmin] = useState('');
+  const [newAdminLevelId, setNewAdminLevelId] = useState<AdminLevelId>('URUS_SETIA');
   const [newAdminId, setNewAdminId] = useState('');
-  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('123');
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminPusat, setNewAdminPusat] = useState('');
   const [newAdminJabatan, setNewAdminJabatan] = useState('');
-  const [newAdminSelectedJabatans, setNewAdminSelectedJabatans] = useState<string[]>([]);
-  const [newAdminAllowedPages, setNewAdminAllowedPages] = useState<string[]>([]);
+  const [newAdminJabatanAccess, setNewAdminJabatanAccess] = useState<Record<string, AccessMode>>({});
+  const [newAdminPageAccess, setNewAdminPageAccess] = useState<Record<string, AccessMode>>({});
   const [userActionMsg, setUserActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Derived arrays for convenient length & selection checks
+  const newAdminSelectedJabatans = useMemo(() => Object.keys(newAdminJabatanAccess), [newAdminJabatanAccess]);
+  const newAdminAllowedPages = useMemo(() => Object.keys(newAdminPageAccess), [newAdminPageAccess]);
+
+  // Self password change modal for Super Admin
+  const [isChangeOwnPassOpen, setIsChangeOwnPassOpen] = useState(false);
+  const [ownCurrentPass, setOwnCurrentPass] = useState('');
+  const [ownNewPass, setOwnNewPass] = useState('');
+  const [ownConfirmPass, setOwnConfirmPass] = useState('');
+  const [ownPassMsg, setOwnPassMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Notice banner for program tab (replaces window.alert)
+  const [programBannerMsg, setProgramBannerMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // States for Editing Admin User
   const [editingAdminUser, setEditingAdminUser] = useState<AdminUser | null>(null);
+  const [editAdminLevelId, setEditAdminLevelId] = useState<AdminLevelId>('URUS_SETIA');
   const [editAdminName, setEditAdminName] = useState('');
   const [editAdminPassword, setEditAdminPassword] = useState('');
   const [editAdminPusat, setEditAdminPusat] = useState('');
   const [editAdminJabatan, setEditAdminJabatan] = useState('');
-  const [editAdminSelectedJabatans, setEditAdminSelectedJabatans] = useState<string[]>([]);
-  const [editAdminAllowedPages, setEditAdminAllowedPages] = useState<string[]>([]);
+  const [editAdminJabatanAccess, setEditAdminJabatanAccess] = useState<Record<string, AccessMode>>({});
+  const [editAdminPageAccess, setEditAdminPageAccess] = useState<Record<string, AccessMode>>({});
   const [editAdminMsg, setEditAdminMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const editAdminSelectedJabatans = useMemo(() => Object.keys(editAdminJabatanAccess), [editAdminJabatanAccess]);
+  const editAdminAllowedPages = useMemo(() => Object.keys(editAdminPageAccess), [editAdminPageAccess]);
 
   // Form states for Master Data: Pegawai (6 fields requirement)
   const [isPegawaiFormOpen, setIsPegawaiFormOpen] = useState(false);
@@ -288,8 +316,6 @@ export const AdminPage: React.FC = () => {
 
   const [jawatanInput, setJawatanInput] = useState('');
   const [editingJawatan, setEditingJawatan] = useState<string | null>(null);
-
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   // Master Data Tabs 1-6 Export & Import Helpers
   const handleExportMasterData = (
@@ -523,11 +549,18 @@ export const AdminPage: React.FC = () => {
     { key: 'DASHBOARD BERSEPADU', label: 'DASHBOARD BERSEPADU' },
     { key: 'PERINCIAN PROGRAM', label: 'PERINCIAN PROGRAM' },
     { key: 'ANALISIS PEGAWAI', label: 'ANALISIS PEGAWAI MENGIKUT PROGRAM' },
+    { key: 'PUSAT', label: 'PAGE PUSAT' },
+    { key: 'JABATAN', label: 'PAGE JABATAN' },
     { key: 'PERUNTUKAN', label: 'PERUNTUKAN' },
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },
     { key: 'BAKI PERUNTUKAN', label: 'BAKI PERUNTUKAN' },
+    { key: 'ADMIN', label: 'PORTAL ADMIN (TAMBAH / EDIT PROGRAM)' },
   ];
+
+  const authorizedJabatans = useMemo(() => getAuthorizedJabatanList(), [getAuthorizedJabatanList]);
+  const editableJabatans = useMemo(() => getEditableJabatans(), [getEditableJabatans]);
+  const canEditAdminPortal = isSuperAdmin || (canEditPage('ADMIN') && editableJabatans.length > 0);
 
   // Sorting & Display count for Program List
   const handleSortProgram = (key: 'pusat' | 'jabatan' | 'kodProgram' | 'namaProgram' | 'statusProgram') => {
@@ -539,17 +572,14 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  // REQUIREMENT 1 & User Request:
-  // "Untuk paparan admin jabatan, apabila mana-mana admin log in sahaja, hanya dipaparkan program di bawah jabatan mereka sahaja (filtered)."
+  // Tapiskan senarai program mengikut JABATAN DIBERI AKSES pengguna
   const adminProgramList = useMemo(() => {
     if (!currentUser) return [];
     let list = isSuperAdmin
       ? filteredPrograms
-      : filteredPrograms.filter((p) => {
-          const allowed = currentUser.allowedJabatans || (currentUser.jabatan ? [currentUser.jabatan] : []);
-          if (allowed.length === 0 || allowed.includes('SEMUA JABATAN')) return true;
-          return allowed.includes(p.jabatan);
-        });
+      : authorizedJabatans.length === 0
+      ? []
+      : filteredPrograms.filter((p) => authorizedJabatans.includes(p.jabatan));
 
     if (programSortKey) {
       list = [...list].sort((a, b) => {
@@ -561,7 +591,7 @@ export const AdminPage: React.FC = () => {
     }
 
     return list;
-  }, [isSuperAdmin, filteredPrograms, currentUser, programSortKey, programSortDirection]);
+  }, [isSuperAdmin, filteredPrograms, currentUser, authorizedJabatans, programSortKey, programSortDirection]);
 
   const displayedAdminPrograms = useMemo(() => {
     if (programDisplayLimit === 'Semua') return adminProgramList;
@@ -571,10 +601,9 @@ export const AdminPage: React.FC = () => {
   const totalProgramsForUser = useMemo(() => {
     if (!currentUser) return 0;
     if (isSuperAdmin) return programs.length;
-    const allowed = currentUser.allowedJabatans || (currentUser.jabatan ? [currentUser.jabatan] : []);
-    if (allowed.length === 0 || allowed.includes('SEMUA JABATAN')) return programs.length;
-    return programs.filter((p) => allowed.includes(p.jabatan)).length;
-  }, [isSuperAdmin, programs, currentUser]);
+    if (authorizedJabatans.length === 0) return 0;
+    return programs.filter((p) => authorizedJabatans.includes(p.jabatan)).length;
+  }, [isSuperAdmin, programs, currentUser, authorizedJabatans]);
 
   const allJabatansList = useMemo(() => {
     const list: string[] = [];
@@ -591,16 +620,22 @@ export const AdminPage: React.FC = () => {
     return <AdminLogin />;
   }
 
-  // Handling Program Edit (LOCKED for SELESAI programs)
+  // Handling Program Edit (LOCKED for SELESAI & TANGGUNG programs + requires Edit permission)
   const handleEditProgram = (prog: ProgramItem) => {
-    if (prog.statusProgram.toUpperCase() === 'SELESAI') {
-      alert('Program berstatus SELESAI telah dikunci (LOCKED) dan tidak boleh diedit oleh mana-mana Admin.');
+    setProgramBannerMsg(null);
+    if (['SELESAI', 'TANGGUNG'].includes(prog.statusProgram.toUpperCase()) && !isSuperAdmin) {
+      setProgramBannerMsg({
+        type: 'error',
+        text: 'Program berstatus SELESAI / TANGGUNG telah dikunci (LOCKED) dan hanya boleh diedit oleh Super Admin.',
+      });
       return;
     }
-    const allowed = currentUser.allowedJabatans || (currentUser.jabatan ? [currentUser.jabatan] : []);
-    const hasDeptAccess = isSuperAdmin || allowed.length === 0 || allowed.includes('SEMUA JABATAN') || allowed.includes(prog.jabatan);
-    if (!hasDeptAccess) {
-      alert(`Akses Ditolak: Anda hanya boleh mengemaskini program di bawah jabatan yang diberi akses kepada anda.`);
+    const hasEditPerm = isSuperAdmin || (canEditPage('ADMIN') && canEditJabatan(prog.jabatan));
+    if (!hasEditPerm) {
+      setProgramBannerMsg({
+        type: 'error',
+        text: `Mod Paparan Sahaja (View Only): Anda tidak mempunyai kebenaran Edit bagi halaman Admin dan jabatan "${prog.jabatan}".`,
+      });
       return;
     }
     setProgramToEdit(prog);
@@ -610,7 +645,10 @@ export const AdminPage: React.FC = () => {
   // Handling Program Delete (Super Admin only - using custom confirmation modal)
   const handleDeleteProgram = (prog: ProgramItem) => {
     if (!isSuperAdmin) {
-      alert('Akses Ditolak: Hanya Super Admin dibenarkan memadam program.');
+      setProgramBannerMsg({
+        type: 'error',
+        text: 'Akses Ditolak: Hanya Super Admin dibenarkan memadam program.',
+      });
       return;
     }
     requestDeleteConfirm(
@@ -1038,9 +1076,8 @@ export const AdminPage: React.FC = () => {
     );
   };
 
-  // REQUIREMENT 4 & 8:
-  // When Super Admin selects Pegawai from Dropdown in "Daftar ID Admin Jabatan Baru",
-  // autofill ID Pengguna Admin (suggestion 15 chars), and by default tick only matching Jabatan
+  // When Super Admin selects Pegawai from Dropdown in "Pengurusan ID Admin",
+  // autofill ID Pengguna Admin, default password '123', and tick matching Jabatan as 'view' only by default
   const handleSelectPegawaiForAdmin = (pegId: string) => {
     setSelectedPegawaiIdForAdmin(pegId);
     setUserActionMsg(null);
@@ -1050,8 +1087,8 @@ export const AdminPage: React.FC = () => {
       setNewAdminName(peg.nama);
       setNewAdminPusat(peg.pusat || pusatList[0] || '');
       setNewAdminJabatan(peg.jabatan || '');
+      setNewAdminPassword((prev) => prev || '123');
 
-      // Suggestion capped to 15 characters
       const cleanName = peg.nama.replace(/^(DR\.|ENCIK|PUAN|CIK|HAJI|HAJAH)\s+/i, '');
       const initials = cleanName
         .replace(/[^a-zA-Z0-9\s]/g, '')
@@ -1063,23 +1100,41 @@ export const AdminPage: React.FC = () => {
       const suggested = `ADMIN_${initials}`.slice(0, 15);
       setNewAdminId(suggested);
 
-      // By default selected/tick only Jabatan under same name with selected from Nama Penuh Pegawai Admin
-      if (peg.jabatan) {
+      // Map Jawatan to suggested Level ID
+      const jw = (peg.jawatan || '').toUpperCase();
+      if (jw.includes('PENGARAH')) setNewAdminLevelId('PENGARAH');
+      else if (jw.includes('KETUA PUSAT')) setNewAdminLevelId('KETUA_PUSAT');
+      else if (jw.includes('KETUA JABATAN')) setNewAdminLevelId('KETUA_JABATAN');
+      else if (jw.includes('TPP') || jw.includes('TPL')) setNewAdminLevelId('TPP_TPL');
+
+      // Default ticked Jabatan(s) set to 'view' (View Only by default)
+      if (peg.jabatan && peg.jabatan !== 'TIDAK BERKENAAN') {
         if (peg.jabatan === 'SEMUA JABATAN') {
           const allJabs = Object.values(jabatanMap).flat();
-          setNewAdminSelectedJabatans(allJabs);
+          const map: Record<string, AccessMode> = {};
+          allJabs.forEach((j) => {
+            map[j] = 'view';
+          });
+          setNewAdminJabatanAccess(map);
         } else {
-          setNewAdminSelectedJabatans([peg.jabatan]);
+          setNewAdminJabatanAccess({ [peg.jabatan]: 'view' });
         }
+      } else if (jw.includes('KETUA PUSAT') && peg.pusat && jabatanMap[peg.pusat]) {
+        const map: Record<string, AccessMode> = {};
+        (jabatanMap[peg.pusat] || []).forEach((j) => {
+          map[j] = 'view';
+        });
+        setNewAdminJabatanAccess(map);
       } else {
-        setNewAdminSelectedJabatans([]);
+        setNewAdminJabatanAccess({});
       }
     } else {
       setNewAdminName('');
       setNewAdminPusat('');
       setNewAdminJabatan('');
       setNewAdminId('');
-      setNewAdminSelectedJabatans([]);
+      setNewAdminPassword('123');
+      setNewAdminJabatanAccess({});
     }
   };
 
@@ -1096,12 +1151,14 @@ export const AdminPage: React.FC = () => {
       return;
     }
 
-    if (!newAdminId.trim() || !newAdminPassword.trim()) {
-      setUserActionMsg({ type: 'error', text: 'Sila masukkan ID Pengguna dan Kata Laluan admin.' });
+    if (!newAdminId.trim()) {
+      setUserActionMsg({ type: 'error', text: 'Sila masukkan ID Pengguna.' });
       return;
     }
 
-    if (newAdminSelectedJabatans.length === 0) {
+    const effectivePass = newAdminPassword.trim() || '123';
+
+    if (newAdminLevelId !== 'SUPER_ADMIN' && newAdminSelectedJabatans.length === 0) {
       setUserActionMsg({
         type: 'error',
         text: 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.',
@@ -1109,36 +1166,60 @@ export const AdminPage: React.FC = () => {
       return;
     }
 
-    const allJabsCount = Object.values(jabatanMap).flat().length;
-    const primaryJabatan =
+    const allJabs = Object.values(jabatanMap).flat();
+    const allJabsCount = allJabs.length;
+
+    let finalJabatanAccess: Record<string, AccessMode> = { ...newAdminJabatanAccess };
+    let finalPageAccess: Record<string, AccessMode> = { ...newAdminPageAccess };
+    let finalAllowedJabatans = [...newAdminSelectedJabatans];
+    let finalAllowedPages = [...newAdminAllowedPages];
+    let primaryJabatan =
       newAdminSelectedJabatans.length === allJabsCount
         ? 'SEMUA JABATAN'
         : newAdminSelectedJabatans.join(', ');
 
+    if (newAdminLevelId === 'SUPER_ADMIN') {
+      finalJabatanAccess = {};
+      allJabs.forEach((j) => {
+        finalJabatanAccess[j] = 'edit';
+      });
+      finalPageAccess = {};
+      AVAILABLE_PAGES.forEach((pg) => {
+        finalPageAccess[pg.key] = 'edit';
+      });
+      finalAllowedJabatans = ['SEMUA JABATAN'];
+      finalAllowedPages = AVAILABLE_PAGES.map((pg) => pg.key);
+      primaryJabatan = 'SEMUA JABATAN';
+    }
+
     const res = createAdminUser({
       id: newAdminId.trim().toUpperCase(),
-      password: newAdminPassword.trim(),
+      password: effectivePass,
       name: newAdminName.trim(),
-      role: 'ADMIN',
-      pusat: newAdminPusat || pusatList[0] || '',
-      jabatan: primaryJabatan,
-      allowedJabatans: newAdminSelectedJabatans,
-      allowedPages: newAdminAllowedPages,
+      role: newAdminLevelId === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN',
+      levelId: newAdminLevelId,
+      pusat: newAdminLevelId === 'SUPER_ADMIN' ? '' : (newAdminPusat || pusatList[0] || ''),
+      jabatan: newAdminLevelId === 'SUPER_ADMIN' ? '' : primaryJabatan,
+      allowedJabatans: finalAllowedJabatans,
+      jabatanAccess: finalJabatanAccess,
+      allowedPages: finalAllowedPages,
+      pageAccess: finalPageAccess,
     });
 
     if (res.success) {
       setUserActionMsg({
         type: 'success',
-        text: `ID Admin "${newAdminId.toUpperCase()}" untuk pegawai "${newAdminName}" berjaya didaftarkan!`,
+        text: `ID "${newAdminId.toUpperCase()}" (${getAdminLevelLabel(newAdminLevelId)}) untuk "${newAdminName}" berjaya didaftarkan! (Kata laluan: ${effectivePass})`,
       });
       setSelectedPegawaiIdForAdmin('');
+      setNewAdminLevelId('URUS_SETIA');
       setNewAdminId('');
-      setNewAdminPassword('');
+      setNewAdminPassword('123');
       setNewAdminName('');
       setNewAdminPusat('');
       setNewAdminJabatan('');
-      setNewAdminSelectedJabatans([]);
-      setNewAdminAllowedPages([]);
+      setNewAdminJabatanAccess({});
+      setNewAdminPageAccess({});
     } else {
       setUserActionMsg({ type: 'error', text: res.message || 'Gagal mendaftar admin.' });
     }
@@ -1147,12 +1228,52 @@ export const AdminPage: React.FC = () => {
   // Handlers for Editing Admin User
   const handleOpenEditAdmin = (user: AdminUser) => {
     setEditingAdminUser(user);
+    const resolvedLevel: AdminLevelId =
+      user.levelId || (user.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'KETUA_JABATAN');
+    setEditAdminLevelId(resolvedLevel);
     setEditAdminName(user.name);
     setEditAdminPassword(user.password);
     setEditAdminPusat(user.pusat || pusatList[0] || '');
     setEditAdminJabatan(user.jabatan || '');
-    setEditAdminSelectedJabatans(user.allowedJabatans || (user.jabatan ? [user.jabatan] : []));
-    setEditAdminAllowedPages(user.allowedPages || []);
+
+    // Build editAdminJabatanAccess preserving stored 'view' | 'edit' modes (defaulting legacy entries to 'view')
+    const jMap: Record<string, AccessMode> = {};
+    if (user.jabatanAccess && Object.keys(user.jabatanAccess).length > 0) {
+      Object.entries(user.jabatanAccess).forEach(([k, v]) => {
+        if (k === 'SEMUA JABATAN') {
+          Object.values(jabatanMap).flat().forEach((aj) => {
+            jMap[aj] = v === 'edit' ? 'edit' : 'view';
+          });
+        } else {
+          jMap[k] = v === 'edit' ? 'edit' : 'view';
+        }
+      });
+    } else {
+      const legacyJabs = user.allowedJabatans || (user.jabatan ? [user.jabatan] : []);
+      legacyJabs.forEach((j) => {
+        if (j === 'SEMUA JABATAN') {
+          Object.values(jabatanMap).flat().forEach((aj) => {
+            jMap[aj] = 'view';
+          });
+        } else if (j && j !== 'TIDAK BERKENAAN') {
+          jMap[j] = 'view';
+        }
+      });
+    }
+    setEditAdminJabatanAccess(jMap);
+
+    // Build editAdminPageAccess preserving stored 'view' | 'edit' modes (defaulting legacy entries to 'view')
+    const pMap: Record<string, AccessMode> = {};
+    if (user.pageAccess && Object.keys(user.pageAccess).length > 0) {
+      Object.entries(user.pageAccess).forEach(([k, v]) => {
+        pMap[k] = v === 'edit' ? 'edit' : 'view';
+      });
+    } else if (user.allowedPages && user.allowedPages.length > 0) {
+      user.allowedPages.forEach((pg) => {
+        pMap[pg] = 'view';
+      });
+    }
+    setEditAdminPageAccess(pMap);
     setEditAdminMsg(null);
   };
 
@@ -1160,24 +1281,84 @@ export const AdminPage: React.FC = () => {
     e.preventDefault();
     if (!editingAdminUser) return;
 
-    const allJabsCount = Object.values(jabatanMap).flat().length;
-    const primaryJabatan =
+    const allJabs = Object.values(jabatanMap).flat();
+    const allJabsCount = allJabs.length;
+    const isEditingAman = editingAdminUser.id.toUpperCase() === 'AMAN';
+    const finalLevel: AdminLevelId = isEditingAman ? 'SUPER_ADMIN' : editAdminLevelId;
+
+    if (finalLevel !== 'SUPER_ADMIN' && editAdminSelectedJabatans.length === 0) {
+      setEditAdminMsg({
+        type: 'error',
+        text: 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.',
+      });
+      return;
+    }
+
+    let finalJabAccess = { ...editAdminJabatanAccess };
+    let finalPageAccess = { ...editAdminPageAccess };
+    let finalAllowedJabs = [...editAdminSelectedJabatans];
+    let finalAllowedPages = [...editAdminAllowedPages];
+    let primaryJabatan =
       editAdminSelectedJabatans.length === allJabsCount
         ? 'SEMUA JABATAN'
         : editAdminSelectedJabatans.join(', ');
 
+    if (finalLevel === 'SUPER_ADMIN') {
+      finalJabAccess = {};
+      allJabs.forEach((j) => {
+        finalJabAccess[j] = 'edit';
+      });
+      finalPageAccess = {};
+      AVAILABLE_PAGES.forEach((pg) => {
+        finalPageAccess[pg.key] = 'edit';
+      });
+      finalAllowedJabs = ['SEMUA JABATAN'];
+      finalAllowedPages = AVAILABLE_PAGES.map((pg) => pg.key);
+      primaryJabatan = '';
+    }
+
     const res = updateAdminUser(editingAdminUser.id, {
       name: editAdminName.trim(),
-      password: editAdminPassword.trim(),
-      pusat: editAdminPusat,
+      password: editAdminPassword.trim() || '123',
+      role: finalLevel === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN',
+      levelId: finalLevel,
+      pusat: finalLevel === 'SUPER_ADMIN' ? '' : editAdminPusat,
       jabatan: primaryJabatan,
-      allowedJabatans: editAdminSelectedJabatans,
-      allowedPages: editAdminAllowedPages,
+      allowedJabatans: finalAllowedJabs,
+      jabatanAccess: finalJabAccess,
+      allowedPages: finalAllowedPages,
+      pageAccess: finalPageAccess,
     });
     if (res.success) {
       setEditingAdminUser(null);
+      setUserActionMsg({
+        type: 'success',
+        text: `Kemaskini ID "${editingAdminUser.id}" berjaya disimpan.`,
+      });
     } else {
       setEditAdminMsg({ type: 'error', text: res.message || 'Gagal mengemaskini maklumat admin.' });
+    }
+  };
+
+  const handleChangeOwnPasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setOwnPassMsg(null);
+    if (ownNewPass !== ownConfirmPass) {
+      setOwnPassMsg({ type: 'error', text: 'Kata laluan baharu dan pengesahan tidak sepadan.' });
+      return;
+    }
+    const res = changeOwnPassword(ownCurrentPass, ownNewPass);
+    if (res.success) {
+      setOwnPassMsg({ type: 'success', text: 'Kata laluan anda berjaya dikemaskini.' });
+      setOwnCurrentPass('');
+      setOwnNewPass('');
+      setOwnConfirmPass('');
+      setTimeout(() => {
+        setIsChangeOwnPassOpen(false);
+        setOwnPassMsg(null);
+      }, 1500);
+    } else {
+      setOwnPassMsg({ type: 'error', text: res.message || 'Gagal menukar kata laluan.' });
     }
   };
 
@@ -1317,17 +1498,20 @@ export const AdminPage: React.FC = () => {
                   isSuperAdmin ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
                 }`}
               >
-                {isSuperAdmin ? 'Super Admin (Kuasa Penuh)' : 'Admin Jabatan'}
+                {isSuperAdmin ? 'Super Admin (Kuasa Penuh)' : getAdminLevelLabel(currentUser.levelId, currentUser.role)}
               </span>
             </div>
             <h2 className="text-lg font-bold text-white tracking-tight mt-0.5">
               {currentUser.name} ({currentUser.id})
             </h2>
-            {!isSuperAdmin && currentUser.jabatan && (
+            {!isSuperAdmin && authorizedJabatans.length > 0 && (
               <p className="text-xs text-blue-200 mt-0.5 flex items-center gap-1.5">
                 <Briefcase className="w-3.5 h-3.5 text-blue-400" />
                 <span>
-                  Paparan Khusus Jabatan: <strong>{currentUser.jabatan}</strong>
+                  Paparan Jabatan: <strong>{authorizedJabatans.join(', ')}</strong> ·{' '}
+                  <strong className={canEditAdminPortal ? 'text-emerald-300' : 'text-amber-300'}>
+                    {canEditAdminPortal ? 'Mod Suntingan Aktif' : 'Mod Paparan Sahaja (View Only)'}
+                  </strong>
                 </span>
               </p>
             )}
@@ -1335,6 +1519,20 @@ export const AdminPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setOwnPassMsg(null);
+                setIsChangeOwnPassOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 rounded-md transition-colors cursor-pointer"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Ubah Kata Laluan Sendiri</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsExportOpen(true)}
             title="Eksport data ke fail CSV atau cetak format rasmi"
@@ -1344,16 +1542,18 @@ export const AdminPage: React.FC = () => {
             <span>Eksport & Cetak</span>
           </button>
 
-          <button
-            onClick={() => {
-              setProgramToEdit(null);
-              setIsFormOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-900 bg-white rounded-md hover:bg-slate-100 transition-colors shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Tambah Program Baru</span>
-          </button>
+          {canEditAdminPortal && (
+            <button
+              onClick={() => {
+                setProgramToEdit(null);
+                setIsFormOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-900 bg-white rounded-md hover:bg-slate-100 transition-colors shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tambah Program Baru</span>
+            </button>
+          )}
 
           <button
             onClick={() => {
@@ -1368,7 +1568,7 @@ export const AdminPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Admin Tab Switcher */}
+      {/* Main Admin Tab Switcher (Pengurusan ID Admin dipindahkan ke dalam Master Data) */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => setAdminTab('programs')}
@@ -1386,52 +1586,68 @@ export const AdminPage: React.FC = () => {
         </button>
 
         {isSuperAdmin && (
-          <>
-            <button
-              onClick={() => setAdminTab('users')}
-              className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                adminTab === 'users'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Pengurusan ID Admin ({adminUsers.length})</span>
-            </button>
-
-            <button
-              onClick={() => setAdminTab('master')}
-              className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                adminTab === 'master'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              <span>Pengurusan Data Induk (Master Data)</span>
-            </button>
-          </>
+          <button
+            onClick={() => setAdminTab('master')}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              adminTab === 'master'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Pengurusan Data Induk (Master Data)</span>
+          </button>
         )}
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* TAB 1: SENARAI RINGKAS PROGRAM & PENAPIS (HIDE PUSAT & JABATAN)*/}
+      {/* TAB 1: SENARAI RINGKAS PROGRAM & PENAPIS                      */}
       {/* ------------------------------------------------------------- */}
       {adminTab === 'programs' && (
         <div className="space-y-4">
           {/* Penapis Data Program Admin (Sama seperti Dashboard Program) */}
           <FilterBar showTahunBulan={true} showStatusFilter={true} />
 
+          {programBannerMsg && (
+            <div
+              className={`p-3.5 rounded-lg text-xs flex items-center justify-between border ${
+                programBannerMsg.type === 'error'
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              }`}
+            >
+              <span>{programBannerMsg.text}</span>
+              <button
+                type="button"
+                onClick={() => setProgramBannerMsg(null)}
+                className="font-bold underline ml-3 cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
           {/* Sub-admin notice if applicable */}
-          {!isSuperAdmin && currentUser.jabatan && (
-            <div className="p-3.5 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded-lg flex items-center justify-between">
+          {!isSuperAdmin && (
+            <div
+              className={`p-3.5 text-xs rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 border ${
+                canEditAdminPortal
+                  ? 'bg-blue-50 border-blue-200 text-blue-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}
+            >
               <div className="flex items-center gap-2.5">
-                <Briefcase className="w-4 h-4 text-blue-600 shrink-0" />
+                <Briefcase className="w-4 h-4 shrink-0" />
                 <span>
-                  Log Masuk: <strong>{currentUser.name}</strong> · Hanya memaparkan program di bawah jabatan anda:{' '}
-                  <strong>{currentUser.jabatan}</strong> ({adminProgramList.length} rekod).
+                  Log Masuk ({getAdminLevelLabel(currentUser.levelId, currentUser.role)}):{' '}
+                  <strong>{currentUser.name}</strong> · Memaparkan program di bawah jabatan:{' '}
+                  <strong>{authorizedJabatans.length > 0 ? authorizedJabatans.join(', ') : 'Tiada Jabatan Diberi Akses'}</strong>{' '}
+                  ({adminProgramList.length} rekod).
                 </span>
               </div>
+              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/80 border border-current shrink-0">
+                {canEditAdminPortal ? 'Boleh Edit (Mengikut Jabatan)' : 'Mod Paparan Sahaja (View Only)'}
+              </span>
             </div>
           )}
 
@@ -1547,12 +1763,8 @@ export const AdminPage: React.FC = () => {
                   ) : (
                     displayedAdminPrograms.map((prog) => {
                       const statusCfg = getStatusConfig(prog.statusProgram);
-                      const isOwnerDept =
-                        isSuperAdmin ||
-                        (currentUser.allowedJabatans
-                          ? currentUser.allowedJabatans.includes('SEMUA JABATAN') ||
-                            currentUser.allowedJabatans.includes(prog.jabatan)
-                          : !currentUser.jabatan || currentUser.jabatan === prog.jabatan);
+                      const canEditRow =
+                        isSuperAdmin || (canEditPage('ADMIN') && canEditJabatan(prog.jabatan));
 
                       return (
                         <tr
@@ -1594,7 +1806,7 @@ export const AdminPage: React.FC = () => {
                                   <Lock className="w-3 h-3 text-slate-400" />
                                   <span>LOCKED</span>
                                 </span>
-                              ) : isOwnerDept ? (
+                              ) : canEditRow ? (
                                 <button
                                   onClick={() => handleEditProgram(prog)}
                                   title={
@@ -1640,658 +1852,7 @@ export const AdminPage: React.FC = () => {
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* TAB 2: PENGURUSAN ID ADMIN (SUPER ADMIN ONLY)                 */}
-      {/* ------------------------------------------------------------- */}
-      {adminTab === 'users' && isSuperAdmin && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* REQUIREMENT 4: Create Sub-Admin Form with Pegawai Dropdown + Autofill */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-              <UserCheck className="w-4 h-4 text-slate-700" />
-              <h3 className="text-sm font-bold text-slate-900">
-                Daftar ID Admin Jabatan Baru
-              </h3>
-            </div>
-
-            {userActionMsg && (
-              <div
-                className={`mb-4 p-3 rounded-lg text-xs flex items-center gap-2 ${
-                  userActionMsg.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                    : 'bg-rose-50 text-rose-800 border border-rose-200'
-                }`}
-              >
-                {userActionMsg.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                )}
-                <span>{userActionMsg.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
-              {/* 1. NAMA PENUH PEGAWAI ADMIN (DROPDOWN MENU DARI DATA INDUK) */}
-              <div>
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Nama Penuh Pegawai Admin (Pilih Pegawai) *
-                </label>
-                <select
-                  required
-                  value={selectedPegawaiIdForAdmin}
-                  onChange={(e) => handleSelectPegawaiForAdmin(e.target.value)}
-                  className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-slate-900"
-                >
-                  <option value="">-- Pilih Pegawai daripada Data Induk --</option>
-                  {pegawaiList.map((peg) => (
-                    <option key={peg.id} value={peg.id}>
-                      {peg.nama} ({peg.jabatan || 'Tiada Jabatan Ditugaskan'})
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Pilih pegawai berdaftar. Pusat dan Jabatan akan diisi secara automatik mengikut profil pegawai.
-                </p>
-              </div>
-
-              {/* 2. ID PENGGUNA ADMIN (HAD LIMIT 20 AKSARA, SUGGESTION 15 AKSARA) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                    ID Pengguna Admin (Log Masuk) *
-                  </label>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    {newAdminId.length}/20 aksara
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  required
-                  maxLength={20}
-                  value={newAdminId}
-                  onChange={(e) => setNewAdminId(e.target.value.toUpperCase().slice(0, 20))}
-                  placeholder="CTH: ADMIN_WAN_AZROI"
-                  className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-mono"
-                />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Cadangan autofill dihadkan kepada 15 aksara. Had limit aksara dibenarkan ialah 20.
-                </p>
-              </div>
-
-              {/* 3. KATA LALUAN */}
-              <div>
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Kata Laluan *
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={newAdminPassword}
-                  onChange={(e) => setNewAdminPassword(e.target.value)}
-                  placeholder="Masukkan kata laluan"
-                  className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
-                />
-              </div>
-
-              {/* 4. PUSAT DITUGASKAN (AUTOFILL) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                    Pusat Ditugaskan (Autofill) *
-                  </label>
-                  <span className="text-[10px] text-slate-500 font-medium bg-slate-100 px-1.5 py-0.2 rounded">
-                    Ditarik dari Pegawai
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  disabled
-                  value={newAdminPusat || 'Sila pilih Pegawai dahulu'}
-                  className="w-full py-2 px-3 bg-slate-100 border border-slate-200 rounded-md text-slate-700 font-medium cursor-not-allowed"
-                />
-              </div>
-
-              {/* 5. JABATAN DIBERI AKSES (SKOP KEMASKINI DAN PAPARAN - CHECKBOXES) */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                    Jabatan Diberi Akses (Skop Kemaskini dan Paparan) *
-                  </label>
-                  <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {newAdminSelectedJabatans.length} Jabatan Dipilih
-                  </span>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-3 max-h-64 overflow-y-auto">
-                  {/* Master Checkbox: Pilih Semua */}
-                  {(() => {
-                    const allJabs = Object.values(jabatanMap).flat();
-                    const isAllSelected =
-                      allJabs.length > 0 &&
-                      allJabs.every((j) => newAdminSelectedJabatans.includes(j));
-
-                    return (
-                      <label className="flex items-center gap-2 pb-2 border-b border-slate-200 font-bold text-xs text-slate-900 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isAllSelected}
-                          onChange={() => {
-                            if (isAllSelected) {
-                              setNewAdminSelectedJabatans([]);
-                            } else {
-                              setNewAdminSelectedJabatans(allJabs);
-                            }
-                          }}
-                          className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                        />
-                        <span>PILIH SEMUA (Semua Pusat & Jabatan)</span>
-                      </label>
-                    );
-                  })()}
-
-                  {/* Hierarchical list grouped by Pusat and Jabatan */}
-                  {pusatList.map((pusatName) => {
-                    const jList = jabatanMap[pusatName] || [];
-                    const isPusatFullySelected =
-                      jList.length > 0 &&
-                      jList.every((j) => newAdminSelectedJabatans.includes(j));
-                    const isPusatPartiallySelected =
-                      jList.some((j) => newAdminSelectedJabatans.includes(j)) &&
-                      !isPusatFullySelected;
-
-                    return (
-                      <div key={pusatName} className="space-y-1.5 pt-1">
-                        <label className="flex items-start gap-2 font-bold text-[11px] text-slate-800 uppercase tracking-tight cursor-pointer hover:text-slate-950">
-                          <input
-                            type="checkbox"
-                            checked={isPusatFullySelected}
-                            ref={(el) => {
-                              if (el) el.indeterminate = isPusatPartiallySelected;
-                            }}
-                            onChange={() => {
-                              if (isPusatFullySelected) {
-                                setNewAdminSelectedJabatans((prev) =>
-                                  prev.filter((j) => !jList.includes(j))
-                                );
-                              } else {
-                                setNewAdminSelectedJabatans((prev) =>
-                                  Array.from(new Set([...prev, ...jList]))
-                                );
-                              }
-                            }}
-                            className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-slate-900 border-slate-300 mt-0.5 shrink-0"
-                          />
-                          <span className="leading-snug">{pusatName}</span>
-                        </label>
-
-                        {/* Indented list of Jabatan under selected Pusat */}
-                        <div className="ml-5 space-y-1 border-l-2 border-slate-200 pl-2.5">
-                          {jList.map((jName) => {
-                            const isChecked = newAdminSelectedJabatans.includes(jName);
-                            return (
-                              <label
-                                key={jName}
-                                className="flex items-center gap-2 text-[11px] font-medium text-slate-700 cursor-pointer hover:text-slate-900 py-0.5"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => {
-                                    setNewAdminSelectedJabatans((prev) =>
-                                      prev.includes(jName)
-                                        ? prev.filter((j) => j !== jName)
-                                        : [...prev, jName]
-                                    );
-                                  }}
-                                  className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                                />
-                                <span>{jName}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Secara default, jabatan yang terpilih merujuk kepada jabatan pegawai admin yang dipilih. Anda boleh menambah atau memilih pusat/jabatan lain.
-                </p>
-              </div>
-
-              {/* 6. KEBENARAN VIEW/PAPAR PAGE */}
-              <div className="pt-2 border-t border-slate-200">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                    KEBENARAN VIEW/PAPAR PAGE:
-                  </label>
-                  <span className="text-[10px] text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                    {newAdminAllowedPages.length} Modul Dibenarkan
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mb-2">
-                  Tandakan halaman/modul yang dibenarkan untuk diakses/dilihat oleh akaun admin ini:
-                </p>
-                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  {AVAILABLE_PAGES.map((pg) => {
-                    const isChecked = newAdminAllowedPages.includes(pg.key);
-                    return (
-                      <label
-                        key={pg.key}
-                        className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer p-1.5 rounded hover:bg-white transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setNewAdminAllowedPages((prev) =>
-                              prev.includes(pg.key)
-                                ? prev.filter((k) => k !== pg.key)
-                                : [...prev, pg.key]
-                            );
-                          }}
-                          className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                        />
-                        <span>{pg.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={!selectedPegawaiIdForAdmin || newAdminSelectedJabatans.length === 0}
-                className="w-full mt-3 py-2 px-4 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                Cipta ID Admin Sekarang
-              </button>
-            </form>
-          </div>
-
-          {/* Admin Accounts Table */}
-          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Senarai Akaun Pentadbir Berdaftar
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Super Admin boleh memadam ID admin (Super Admin AMAN tidak boleh dipadam)
-                </p>
-              </div>
-              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-800">
-                {adminUsers.length} akaun
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                    <th className="py-2.5 px-3">ID PENGGUNA</th>
-                    <th className="py-2.5 px-3">NAMA PEGAWAI</th>
-                    <th className="py-2.5 px-3">PERANAN</th>
-                    <th className="py-2.5 px-3 min-w-[200px]">JABATAN DIBERI AKSES</th>
-                    <th className="py-2.5 px-3 min-w-[170px]">KEBENARAN VIEW PAGE</th>
-                    <th className="py-2.5 px-3 text-center">TINDAKAN</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-800">
-                  {adminUsers.map((user) => {
-                    const allJabs = Object.values(jabatanMap).flat();
-                    const isAllJabs =
-                      user.role === 'SUPER_ADMIN' ||
-                      (user.allowedJabatans &&
-                        user.allowedJabatans.length === allJabs.length);
-
-                    return (
-                      <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                          {user.id}
-                        </td>
-                        <td className="py-3 px-3 font-medium text-slate-900">
-                          {user.name}
-                        </td>
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                              user.role === 'SUPER_ADMIN'
-                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                                : 'bg-blue-100 text-blue-800 border border-blue-200'
-                            }`}
-                          >
-                            {user.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : 'ADMIN JABATAN'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-[11px] text-slate-700">
-                          {user.role === 'SUPER_ADMIN' ? (
-                            <span className="text-slate-500 italic">Semua Jabatan (Kuasa Penuh)</span>
-                          ) : isAllJabs ? (
-                            <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
-                              SEMUA JABATAN ({allJabs.length})
-                            </span>
-                          ) : user.allowedJabatans && user.allowedJabatans.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {user.allowedJabatans.map((j) => (
-                                <span
-                                  key={j}
-                                  className="text-[10px] px-1.5 py-0.2 bg-blue-50 text-blue-800 rounded border border-blue-200 font-medium"
-                                >
-                                  {j}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <strong className="text-slate-800">{user.jabatan}</strong>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-[11px]">
-                          {user.role === 'SUPER_ADMIN' ? (
-                            <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-800 rounded border border-purple-200 font-bold">
-                              SEMUA MODUL (Penuh)
-                            </span>
-                          ) : user.allowedPages && user.allowedPages.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {user.allowedPages.map((pg) => (
-                                <span
-                                  key={pg}
-                                  className="text-[10px] px-1.5 py-0.2 bg-emerald-50 text-emerald-800 rounded border border-emerald-200 font-semibold uppercase"
-                                >
-                                  {pg}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400 italic text-[11px]">Tiada Modul Khas</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Butang EDIT Maklumat Admin */}
-                            <button
-                              onClick={() => handleOpenEditAdmin(user)}
-                              className="p-1.5 text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 rounded transition-colors cursor-pointer"
-                              title={`Edit maklumat akaun ${user.id}`}
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-
-                            {user.id.toUpperCase() === 'AMAN' ? (
-                              <span className="text-[10px] text-slate-400 italic px-1">Kekal</span>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  requestDeleteConfirm(
-                                    'Padam Akaun Admin',
-                                    `Adakah anda pasti ingin memadamkan ID Admin "${user.id}" (${user.name})? Tindakan ini tidak boleh diundur.`,
-                                    () => {
-                                      deleteAdminUser(user.id);
-                                    }
-                                  );
-                                }}
-                                className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                title="Padam akaun admin"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Modal Edit Maklumat Admin */}
-          {editingAdminUser && (
-            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-amber-400" />
-                    <h4 className="text-sm font-bold">
-                      Kemaskini ID Admin: {editingAdminUser.id}
-                    </h4>
-                  </div>
-                  <button
-                    onClick={() => setEditingAdminUser(null)}
-                    className="p-1 text-slate-400 hover:text-white rounded"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveEditAdmin} className="p-5 space-y-3.5 text-xs">
-                  {editAdminMsg && (
-                    <div className="p-2.5 rounded bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                      <span>{editAdminMsg.text}</span>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      ID Pengguna (Kunci Kekal)
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      value={editingAdminUser.id}
-                      className="w-full py-2 px-3 bg-slate-100 border border-slate-200 rounded-md font-mono text-slate-700 font-bold cursor-not-allowed"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Nama Penuh Pegawai Admin *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={editAdminName}
-                      onChange={(e) => setEditAdminName(e.target.value)}
-                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                      Kata Laluan Baharu *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={editAdminPassword}
-                      onChange={(e) => setEditAdminPassword(e.target.value)}
-                      placeholder="Masukkan kata laluan"
-                      className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
-                    />
-                  </div>
-
-                  {editingAdminUser.role !== 'SUPER_ADMIN' && (
-                    <>
-                      <div>
-                        <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                          Pusat Ditugaskan *
-                        </label>
-                        <select
-                          required
-                          value={editAdminPusat}
-                          onChange={(e) => {
-                            const newP = e.target.value;
-                            setEditAdminPusat(newP);
-                            const jabs = jabatanMap[newP] || [];
-                            setEditAdminJabatan(jabs[0] || '');
-                          }}
-                          className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
-                        >
-                          {pusatList.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Jabatan Diberi Akses Checkboxes */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                            Jabatan Diberi Akses (Skop Kemaskini & Paparan) *
-                          </label>
-                          <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            {editAdminSelectedJabatans.length} Jabatan Dipilih
-                          </span>
-                        </div>
-
-                        <div className="bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-2.5 max-h-48 overflow-y-auto">
-                          {/* Master Checkbox: Pilih Semua */}
-                          {(() => {
-                            const allJabs = Object.values(jabatanMap).flat();
-                            const isAllSelected =
-                              allJabs.length > 0 &&
-                              allJabs.every((j) => editAdminSelectedJabatans.includes(j));
-
-                            return (
-                              <label className="flex items-center gap-2 pb-2 border-b border-slate-200 font-bold text-xs text-slate-900 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isAllSelected}
-                                  onChange={() => {
-                                    if (isAllSelected) {
-                                      setEditAdminSelectedJabatans([]);
-                                    } else {
-                                      setEditAdminSelectedJabatans(allJabs);
-                                    }
-                                  }}
-                                  className="w-4 h-4 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                                />
-                                <span>PILIH SEMUA (Semua Pusat & Jabatan)</span>
-                              </label>
-                            );
-                          })()}
-
-                          {pusatList.map((pusatName) => {
-                            const jList = jabatanMap[pusatName] || [];
-                            const isPusatFullySelected =
-                              jList.length > 0 &&
-                              jList.every((j) => editAdminSelectedJabatans.includes(j));
-                            const isPusatPartiallySelected =
-                              jList.some((j) => editAdminSelectedJabatans.includes(j)) &&
-                              !isPusatFullySelected;
-
-                            return (
-                              <div key={pusatName} className="space-y-1 pt-1">
-                                <label className="flex items-start gap-2 font-bold text-[11px] text-slate-800 uppercase tracking-tight cursor-pointer hover:text-slate-950">
-                                  <input
-                                    type="checkbox"
-                                    checked={isPusatFullySelected}
-                                    ref={(el) => {
-                                      if (el) el.indeterminate = isPusatPartiallySelected;
-                                    }}
-                                    onChange={() => {
-                                      if (isPusatFullySelected) {
-                                        setEditAdminSelectedJabatans((prev) =>
-                                          prev.filter((j) => !jList.includes(j))
-                                        );
-                                      } else {
-                                        setEditAdminSelectedJabatans((prev) =>
-                                          Array.from(new Set([...prev, ...jList]))
-                                        );
-                                      }
-                                    }}
-                                    className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-slate-900 border-slate-300 mt-0.5 shrink-0"
-                                  />
-                                  <span className="leading-snug">{pusatName}</span>
-                                </label>
-
-                                <div className="ml-5 space-y-1 border-l-2 border-slate-200 pl-2">
-                                  {jList.map((jName) => (
-                                    <label
-                                      key={jName}
-                                      className="flex items-center gap-2 text-[11px] font-medium text-slate-700 cursor-pointer hover:text-slate-900 py-0.5"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={editAdminSelectedJabatans.includes(jName)}
-                                        onChange={() => {
-                                          setEditAdminSelectedJabatans((prev) =>
-                                            prev.includes(jName)
-                                              ? prev.filter((j) => j !== jName)
-                                              : [...prev, jName]
-                                          );
-                                        }}
-                                        className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                                      />
-                                      <span>{jName}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Kebenaran View Page */}
-                      <div className="pt-2 border-t border-slate-200">
-                        <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                          KEBENARAN VIEW/PAPAR PAGE:
-                        </label>
-                        <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2 rounded border border-slate-200">
-                          {AVAILABLE_PAGES.map((pg) => (
-                            <label
-                              key={pg.key}
-                              className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer p-1"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={editAdminAllowedPages.includes(pg.key)}
-                                onChange={() => {
-                                  setEditAdminAllowedPages((prev) =>
-                                    prev.includes(pg.key)
-                                      ? prev.filter((k) => k !== pg.key)
-                                      : [...prev, pg.key]
-                                  );
-                                }}
-                                className="w-3.5 h-3.5 rounded text-slate-900 focus:ring-slate-900 border-slate-300"
-                              />
-                              <span>{pg.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setEditingAdminUser(null)}
-                      className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
-                    >
-                      Simpan Kemaskini
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* TAB 3: PENGURUSAN DATA INDUK / MASTER DATA (SUPER ADMIN ONLY) */}
+      {/* TAB 2: PENGURUSAN DATA INDUK / MASTER DATA (SUPER ADMIN ONLY) */}
       {/* ------------------------------------------------------------- */}
       {adminTab === 'master' && isSuperAdmin && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
@@ -2313,6 +1874,18 @@ export const AdminPage: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setMasterCategory('users')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                masterCategory === 'users'
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>2. Pengurusan ID Admin ({adminUsers.length})</span>
+            </button>
+
+            <button
               onClick={() => setMasterCategory('pusat')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                 masterCategory === 'pusat'
@@ -2320,7 +1893,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              2. Pusat
+              3. Pusat
             </button>
 
             <button
@@ -2331,7 +1904,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              3. Jabatan
+              4. Jabatan
             </button>
 
             <button
@@ -2342,7 +1915,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              4. Sumber Kewangan
+              5. Sumber Kewangan
             </button>
 
             <button
@@ -2353,7 +1926,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              5. Status Program
+              6. Status Program
             </button>
 
             <button
@@ -2364,7 +1937,7 @@ export const AdminPage: React.FC = () => {
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
               }`}
             >
-              6. Jawatan
+              7. Jawatan
             </button>
 
             <button
@@ -2376,7 +1949,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>7. Muat Naik/Muat Turun Data</span>
+              <span>8. Muat Naik/Muat Turun Data</span>
             </button>
 
             <button
@@ -2388,7 +1961,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Bell className="w-3.5 h-3.5" />
-              <span>8. Notifikasi</span>
+              <span>9. Notifikasi</span>
             </button>
 
             <button
@@ -2400,7 +1973,7 @@ export const AdminPage: React.FC = () => {
               }`}
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-              <span>9. PADAM DATA</span>
+              <span>10. PADAM DATA</span>
             </button>
           </div>
 
@@ -3004,7 +2577,888 @@ export const AdminPage: React.FC = () => {
               </div>
             )}
 
-            {/* SUB-CATEGORY 2: PUSAT */}
+            {/* SUB-CATEGORY 2: PENGURUSAN ID ADMIN (DIPINDAHKAN KE DALAM DATA INDUK SELEPAS PEGAWAI) */}
+            {masterCategory === 'users' && (
+              <div className="space-y-6">
+                {/* Header & Self Password Change */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Pengurusan ID Admin &amp; Tahap Kebenaran (Level ID 1–7)
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Wujudkan akaun mengikut Level ID, tentukan akses View Only / Edit bagi setiap Jabatan dan Halaman, serta reset kata laluan (default: <strong>123</strong>).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOwnPassMsg(null);
+                      setIsChangeOwnPassOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors cursor-pointer self-start sm:self-auto"
+                  >
+                    <Key className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Ubah Kata Laluan Sendiri ({currentUser.id})</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  {/* Left: Create Admin Form */}
+                  <div className="xl:col-span-5 bg-slate-50/70 border border-slate-200 rounded-xl p-5">
+                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-200">
+                      <UserCheck className="w-4 h-4 text-slate-800" />
+                      <h3 className="text-sm font-bold text-slate-900">
+                        Daftar ID Pengguna Baharu
+                      </h3>
+                    </div>
+
+                    {userActionMsg && (
+                      <div
+                        className={`mb-4 p-3 rounded-lg text-xs flex items-center gap-2 ${
+                          userActionMsg.type === 'success'
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : 'bg-rose-50 text-rose-800 border border-rose-200'
+                        }`}
+                      >
+                        {userActionMsg.type === 'success' ? (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                        )}
+                        <span>{userActionMsg.text}</span>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs">
+                      {/* 0. LEVEL ID (1-7) */}
+                      <div>
+                        <label className="block font-bold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                          Level ID Pengguna (1–7) *
+                        </label>
+                        <select
+                          value={newAdminLevelId}
+                          onChange={(e) => setNewAdminLevelId(e.target.value as AdminLevelId)}
+                          className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold text-slate-900"
+                        >
+                          {ADMIN_LEVEL_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {ADMIN_LEVEL_OPTIONS.find((o) => o.value === newAdminLevelId)?.desc}
+                        </p>
+                      </div>
+
+                      {/* 1. NAMA PENUH PEGAWAI (DROPDOWN) */}
+                      <div>
+                        <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                          Nama Penuh Pegawai (Pilih Pegawai) *
+                        </label>
+                        <select
+                          required
+                          value={selectedPegawaiIdForAdmin}
+                          onChange={(e) => handleSelectPegawaiForAdmin(e.target.value)}
+                          className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-slate-900"
+                        >
+                          <option value="">-- Pilih Pegawai daripada Data Induk --</option>
+                          {pegawaiList.map((peg) => (
+                            <option key={peg.id} value={peg.id}>
+                              {peg.nama} ({peg.jabatan || 'Tiada Jabatan'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 2. ID PENGGUNA & KATA LALUAN LALAI (123) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
+                              ID Pengguna *
+                            </label>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {newAdminId.length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            required
+                            maxLength={20}
+                            value={newAdminId}
+                            onChange={(e) => setNewAdminId(e.target.value.toUpperCase().slice(0, 20))}
+                            placeholder="CTH: ADMIN_WAN"
+                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                            Kata Laluan (Default: 123) *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={newAdminPassword}
+                            onChange={(e) => setNewAdminPassword(e.target.value)}
+                            placeholder="123"
+                            className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {newAdminLevelId === 'SUPER_ADMIN' ? (
+                        <div className="p-3.5 bg-purple-50 border border-purple-200 rounded-lg text-purple-900 text-xs leading-relaxed">
+                          <strong>Akses Super Admin (Level 1):</strong> Akaun ini dibenarkan melihat dan menyunting semua halaman, semua jabatan, menukar kata laluan sendiri, serta menetapkan semula kata laluan pengguna lain.
+                        </div>
+                      ) : (
+                        <>
+                          {/* 3. PUSAT DITUGASKAN */}
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              Pusat Ditugaskan (Autofill)
+                            </label>
+                            <select
+                              value={newAdminPusat}
+                              onChange={(e) => setNewAdminPusat(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md text-slate-800 font-medium"
+                            >
+                              <option value="">-- Pilih Pusat --</option>
+                              {pusatList.map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 4. JABATAN DIBERI AKSES (PILIH VIEW ONLY ATAU EDIT) */}
+                          <div>
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                              <label className="block font-bold text-slate-700 uppercase tracking-wider text-[11px]">
+                                1. JABATAN DIBERI AKSES (View Only / Edit) *
+                              </label>
+                              <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                {newAdminSelectedJabatans.length} Dipilih
+                              </span>
+                            </div>
+
+                            <div className="bg-white border border-slate-300 rounded-lg p-3 space-y-2.5 max-h-64 overflow-y-auto">
+                              {(() => {
+                                const allJabs = Object.values(jabatanMap).flat();
+                                const isAllSelected =
+                                  allJabs.length > 0 &&
+                                  allJabs.every((j) => Boolean(newAdminJabatanAccess[j]));
+
+                                return (
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                                    <label className="flex items-center gap-2 font-bold text-xs text-slate-900 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={isAllSelected}
+                                        onChange={() => {
+                                          if (isAllSelected) {
+                                            setNewAdminJabatanAccess({});
+                                          } else {
+                                            const map: Record<string, AccessMode> = {};
+                                            allJabs.forEach((j) => {
+                                              map[j] = newAdminJabatanAccess[j] || 'view';
+                                            });
+                                            setNewAdminJabatanAccess(map);
+                                          }
+                                        }}
+                                        className="w-4 h-4 rounded text-slate-900 border-slate-300"
+                                      />
+                                      <span>PILIH SEMUA</span>
+                                    </label>
+                                    {newAdminSelectedJabatans.length > 0 && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const next: Record<string, AccessMode> = {};
+                                            newAdminSelectedJabatans.forEach((j) => { next[j] = 'view'; });
+                                            setNewAdminJabatanAccess(next);
+                                          }}
+                                          className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-slate-200 rounded border border-slate-300 cursor-pointer"
+                                        >
+                                          Semua View
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const next: Record<string, AccessMode> = {};
+                                            newAdminSelectedJabatans.forEach((j) => { next[j] = 'edit'; });
+                                            setNewAdminJabatanAccess(next);
+                                          }}
+                                          className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded border border-emerald-300 cursor-pointer"
+                                        >
+                                          Semua Edit
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              {pusatList.map((pusatName) => {
+                                const jList = jabatanMap[pusatName] || [];
+                                const isPusatFullySelected =
+                                  jList.length > 0 && jList.every((j) => Boolean(newAdminJabatanAccess[j]));
+
+                                return (
+                                  <div key={pusatName} className="space-y-1.5 pt-1">
+                                    <label className="flex items-start gap-2 font-bold text-[11px] text-slate-800 uppercase tracking-tight cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={isPusatFullySelected}
+                                        onChange={() => {
+                                          setNewAdminJabatanAccess((prev) => {
+                                            const next = { ...prev };
+                                            if (isPusatFullySelected) {
+                                              jList.forEach((j) => delete next[j]);
+                                            } else {
+                                              jList.forEach((j) => {
+                                                if (!next[j]) next[j] = 'view';
+                                              });
+                                            }
+                                            return next;
+                                          });
+                                        }}
+                                        className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 mt-0.5 shrink-0"
+                                      />
+                                      <span className="leading-snug">{pusatName}</span>
+                                    </label>
+
+                                    <div className="ml-4 space-y-1.5 border-l-2 border-slate-200 pl-2.5">
+                                      {jList.map((jName) => {
+                                        const mode = newAdminJabatanAccess[jName];
+                                        const isChecked = Boolean(mode);
+                                        return (
+                                          <div
+                                            key={jName}
+                                            className="flex items-center justify-between gap-2 py-0.5"
+                                          >
+                                            <label className="flex items-center gap-2 text-[11px] font-medium text-slate-700 cursor-pointer min-w-0">
+                                              <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={() => {
+                                                  setNewAdminJabatanAccess((prev) => {
+                                                    const next = { ...prev };
+                                                    if (next[jName]) delete next[jName];
+                                                    else next[jName] = 'view';
+                                                    return next;
+                                                  });
+                                                }}
+                                                className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 shrink-0"
+                                              />
+                                              <span className="truncate" title={jName}>{jName}</span>
+                                            </label>
+                                            {isChecked && (
+                                              <div className="inline-flex rounded border border-slate-300 overflow-hidden shrink-0">
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setNewAdminJabatanAccess((prev) => ({ ...prev, [jName]: 'view' }))
+                                                  }
+                                                  className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                                    mode === 'view'
+                                                      ? 'bg-slate-800 text-white'
+                                                      : 'bg-white text-slate-600 hover:bg-slate-100'
+                                                  }`}
+                                                >
+                                                  View Only
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setNewAdminJabatanAccess((prev) => ({ ...prev, [jName]: 'edit' }))
+                                                  }
+                                                  className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                                    mode === 'edit'
+                                                      ? 'bg-emerald-600 text-white'
+                                                      : 'bg-white text-slate-600 hover:bg-slate-100'
+                                                  }`}
+                                                >
+                                                  Edit
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* 5. KEBENARAN VIEW/PAPAR PAGE (PILIH VIEW ONLY ATAU EDIT) */}
+                          <div className="pt-2 border-t border-slate-200">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="block font-bold text-slate-700 uppercase tracking-wider text-[11px]">
+                                2. KEBENARAN VIEW/PAPAR PAGE (View Only / Edit):
+                              </label>
+                              <span className="text-[10px] text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                                {newAdminAllowedPages.length} Modul
+                              </span>
+                            </div>
+
+                            <div className="space-y-1.5 bg-white p-2.5 rounded-lg border border-slate-300 max-h-64 overflow-y-auto">
+                              {AVAILABLE_PAGES.map((pg) => {
+                                const mode = newAdminPageAccess[pg.key];
+                                const isChecked = Boolean(mode);
+                                return (
+                                  <div
+                                    key={pg.key}
+                                    className="flex items-center justify-between gap-2 p-1.5 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200"
+                                  >
+                                    <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-800 cursor-pointer min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => {
+                                          setNewAdminPageAccess((prev) => {
+                                            const next = { ...prev };
+                                            if (next[pg.key]) delete next[pg.key];
+                                            else next[pg.key] = 'view';
+                                            return next;
+                                          });
+                                        }}
+                                        className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 shrink-0"
+                                      />
+                                      <span className="truncate">{pg.label}</span>
+                                    </label>
+                                    {isChecked && (
+                                      <div className="inline-flex rounded border border-slate-300 overflow-hidden shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setNewAdminPageAccess((prev) => ({ ...prev, [pg.key]: 'view' }))
+                                          }
+                                          className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                            mode === 'view'
+                                              ? 'bg-slate-800 text-white'
+                                              : 'bg-white text-slate-600 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          View Only
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setNewAdminPageAccess((prev) => ({ ...prev, [pg.key]: 'edit' }))
+                                          }
+                                          className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                            mode === 'edit'
+                                              ? 'bg-emerald-600 text-white'
+                                              : 'bg-white text-slate-600 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          Edit
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={
+                          !selectedPegawaiIdForAdmin ||
+                          (newAdminLevelId !== 'SUPER_ADMIN' && newAdminSelectedJabatans.length === 0)
+                        }
+                        className="w-full mt-3 py-2.5 px-4 text-xs font-bold text-white bg-slate-900 rounded-md hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      >
+                        Cipta ID Pengguna Sekarang
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right: Admin Accounts Table */}
+                  <div className="xl:col-span-7 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">
+                          Senarai Akaun Berdaftar Mengikut Level ID
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Super Admin boleh sunting tahap akses (View Only/Edit), reset kata laluan ke <strong>123</strong>, atau padam akaun.
+                        </p>
+                      </div>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 bg-slate-100 rounded text-slate-800">
+                        {adminUsers.length} akaun
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                            <th className="py-2.5 px-3">ID PENGGUNA</th>
+                            <th className="py-2.5 px-3">NAMA PEGAWAI</th>
+                            <th className="py-2.5 px-3">LEVEL ID</th>
+                            <th className="py-2.5 px-3 min-w-[180px]">JABATAN DIBERI AKSES</th>
+                            <th className="py-2.5 px-3 min-w-[180px]">KEBENARAN PAGE</th>
+                            <th className="py-2.5 px-3 text-center">TINDAKAN</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800">
+                          {adminUsers.map((user) => {
+                            const isUserSuper = user.role === 'SUPER_ADMIN' || user.levelId === 'SUPER_ADMIN';
+                            const levelLabel = getAdminLevelLabel(user.levelId, user.role);
+                            const jabEntries: Array<[string, AccessMode]> =
+                              user.jabatanAccess && Object.keys(user.jabatanAccess).length > 0
+                                ? Object.entries(user.jabatanAccess)
+                                : (user.allowedJabatans || (user.jabatan ? [user.jabatan] : [])).map((j) => [j, 'view']);
+                            const pageEntries: Array<[string, AccessMode]> =
+                              user.pageAccess && Object.keys(user.pageAccess).length > 0
+                                ? Object.entries(user.pageAccess)
+                                : (user.allowedPages || []).map((pg) => [pg, 'view']);
+
+                            return (
+                              <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="py-3 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {user.id}
+                                </td>
+                                <td className="py-3 px-3 font-medium text-slate-900">
+                                  {user.name}
+                                </td>
+                                <td className="py-3 px-3 whitespace-nowrap">
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                                      isUserSuper
+                                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                        : 'bg-blue-100 text-blue-800 border border-blue-200'
+                                    }`}
+                                  >
+                                    {levelLabel}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-[11px] text-slate-700">
+                                  {isUserSuper ? (
+                                    <span className="text-slate-500 italic">Semua Jabatan (View &amp; Edit)</span>
+                                  ) : jabEntries.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {jabEntries.map(([j, mode]) => (
+                                        <span
+                                          key={j}
+                                          className={`text-[10px] px-1.5 py-0.2 rounded border font-medium ${
+                                            mode === 'edit'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                                          }`}
+                                        >
+                                          {j} ({mode === 'edit' ? 'Edit' : 'View'})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic">Tiada Jabatan</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-[11px]">
+                                  {isUserSuper ? (
+                                    <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-800 rounded border border-purple-200 font-bold">
+                                      SEMUA MODUL (View &amp; Edit)
+                                    </span>
+                                  ) : pageEntries.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {pageEntries.map(([pg, mode]) => (
+                                        <span
+                                          key={pg}
+                                          className={`text-[10px] px-1.5 py-0.2 rounded border font-semibold uppercase ${
+                                            mode === 'edit'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : 'bg-slate-100 text-slate-700 border-slate-300'
+                                          }`}
+                                        >
+                                          {pg} ({mode === 'edit' ? 'Edit' : 'View'})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic text-[11px]">Tiada Modul Khas</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-center whitespace-nowrap">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {/* Edit */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditAdmin(user)}
+                                      className="p-1.5 text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 rounded transition-colors cursor-pointer"
+                                      title={`Edit akaun ${user.id}`}
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Reset Password ke 123 */}
+                                    {user.id.toUpperCase() !== currentUser.id.toUpperCase() && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          requestDeleteConfirm(
+                                            'Reset Kata Laluan Pengguna',
+                                            `Tetapkan semula kata laluan bagi "${user.id}" (${user.name}) kepada kata laluan lalai "123"?`,
+                                            () => {
+                                              const res = resetUserPassword(user.id, '123');
+                                              if (res.success) {
+                                                setUserActionMsg({
+                                                  type: 'success',
+                                                  text: `Kata laluan bagi "${user.id}" berjaya ditetapkan semula kepada "123".`,
+                                                });
+                                              }
+                                            }
+                                          );
+                                        }}
+                                        className="p-1.5 text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded transition-colors cursor-pointer"
+                                        title={`Reset kata laluan ${user.id} kepada 123`}
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    {user.id.toUpperCase() === 'AMAN' ? (
+                                      <span className="text-[10px] text-slate-400 italic px-1">Kekal</span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          requestDeleteConfirm(
+                                            'Padam Akaun Admin',
+                                            `Adakah anda pasti ingin memadamkan ID "${user.id}" (${user.name})? Tindakan ini tidak boleh diundur.`,
+                                            () => {
+                                              deleteAdminUser(user.id);
+                                            }
+                                          );
+                                        }}
+                                        className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                        title="Padam akaun admin"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Edit Maklumat Admin */}
+                {editingAdminUser && (
+                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150 my-8">
+                      <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-amber-400" />
+                          <h4 className="text-sm font-bold">
+                            Kemaskini ID Pengguna: {editingAdminUser.id}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingAdminUser(null)}
+                          className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleSaveEditAdmin} className="p-5 space-y-3.5 text-xs max-h-[80vh] overflow-y-auto">
+                        {editAdminMsg && (
+                          <div className="p-2.5 rounded bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                            <span>{editAdminMsg.text}</span>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              ID Pengguna (Kunci Kekal)
+                            </label>
+                            <input
+                              type="text"
+                              disabled
+                              value={editingAdminUser.id}
+                              className="w-full py-2 px-3 bg-slate-100 border border-slate-200 rounded-md font-mono text-slate-700 font-bold cursor-not-allowed"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              Level ID *
+                            </label>
+                            <select
+                              disabled={editingAdminUser.id.toUpperCase() === 'AMAN'}
+                              value={editAdminLevelId}
+                              onChange={(e) => setEditAdminLevelId(e.target.value as AdminLevelId)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-bold disabled:bg-slate-100"
+                            >
+                              {ADMIN_LEVEL_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              Nama Penuh *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={editAdminName}
+                              onChange={(e) => setEditAdminName(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                              Kata Laluan *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={editAdminPassword}
+                              onChange={(e) => setEditAdminPassword(e.target.value)}
+                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        {editAdminLevelId !== 'SUPER_ADMIN' && editingAdminUser.id.toUpperCase() !== 'AMAN' && (
+                          <>
+                            <div>
+                              <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                                Pusat Ditugaskan *
+                              </label>
+                              <select
+                                required
+                                value={editAdminPusat}
+                                onChange={(e) => {
+                                  const newP = e.target.value;
+                                  setEditAdminPusat(newP);
+                                  const jabs = jabatanMap[newP] || [];
+                                  setEditAdminJabatan(jabs[0] || '');
+                                }}
+                                className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium"
+                              >
+                                {pusatList.map((p) => (
+                                  <option key={p} value={p}>{p}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Jabatan Diberi Akses Checkboxes + View/Edit toggle */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="block font-bold text-slate-700 uppercase tracking-wider text-[11px]">
+                                  1. JABATAN DIBERI AKSES (View Only / Edit) *
+                                </label>
+                                <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  {editAdminSelectedJabatans.length} Dipilih
+                                </span>
+                              </div>
+
+                              <div className="bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-2.5 max-h-48 overflow-y-auto">
+                                {pusatList.map((pusatName) => {
+                                  const jList = jabatanMap[pusatName] || [];
+                                  const isPusatFullySelected =
+                                    jList.length > 0 && jList.every((j) => Boolean(editAdminJabatanAccess[j]));
+
+                                  return (
+                                    <div key={pusatName} className="space-y-1 pt-1">
+                                      <label className="flex items-start gap-2 font-bold text-[11px] text-slate-800 uppercase tracking-tight cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={isPusatFullySelected}
+                                          onChange={() => {
+                                            setEditAdminJabatanAccess((prev) => {
+                                              const next = { ...prev };
+                                              if (isPusatFullySelected) {
+                                                jList.forEach((j) => delete next[j]);
+                                              } else {
+                                                jList.forEach((j) => {
+                                                  if (!next[j]) next[j] = 'view';
+                                                });
+                                              }
+                                              return next;
+                                            });
+                                          }}
+                                          className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 mt-0.5 shrink-0"
+                                        />
+                                        <span className="leading-snug">{pusatName}</span>
+                                      </label>
+
+                                      <div className="ml-4 space-y-1 border-l-2 border-slate-200 pl-2">
+                                        {jList.map((jName) => {
+                                          const mode = editAdminJabatanAccess[jName];
+                                          const isChecked = Boolean(mode);
+                                          return (
+                                            <div key={jName} className="flex items-center justify-between gap-2 py-0.5">
+                                              <label className="flex items-center gap-2 text-[11px] font-medium text-slate-700 cursor-pointer min-w-0">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked}
+                                                  onChange={() => {
+                                                    setEditAdminJabatanAccess((prev) => {
+                                                      const next = { ...prev };
+                                                      if (next[jName]) delete next[jName];
+                                                      else next[jName] = 'view';
+                                                      return next;
+                                                    });
+                                                  }}
+                                                  className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 shrink-0"
+                                                />
+                                                <span className="truncate">{jName}</span>
+                                              </label>
+                                              {isChecked && (
+                                                <div className="inline-flex rounded border border-slate-300 overflow-hidden shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setEditAdminJabatanAccess((prev) => ({ ...prev, [jName]: 'view' }))
+                                                    }
+                                                    className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                                      mode === 'view'
+                                                        ? 'bg-slate-800 text-white'
+                                                        : 'bg-white text-slate-600 hover:bg-slate-100'
+                                                    }`}
+                                                  >
+                                                    View Only
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setEditAdminJabatanAccess((prev) => ({ ...prev, [jName]: 'edit' }))
+                                                    }
+                                                    className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                                      mode === 'edit'
+                                                        ? 'bg-emerald-600 text-white'
+                                                        : 'bg-white text-slate-600 hover:bg-slate-100'
+                                                    }`}
+                                                  >
+                                                    Edit
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* KEBENARAN VIEW/PAPAR PAGE + View/Edit toggle */}
+                            <div className="pt-2 border-t border-slate-200">
+                              <label className="block font-bold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                                2. KEBENARAN VIEW/PAPAR PAGE (View Only / Edit):
+                              </label>
+                              <div className="space-y-1 bg-slate-50 p-2.5 rounded border border-slate-200 max-h-48 overflow-y-auto">
+                                {AVAILABLE_PAGES.map((pg) => {
+                                  const mode = editAdminPageAccess[pg.key];
+                                  const isChecked = Boolean(mode);
+                                  return (
+                                    <div key={pg.key} className="flex items-center justify-between gap-2 p-1 rounded hover:bg-white">
+                                      <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-800 cursor-pointer min-w-0">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            setEditAdminPageAccess((prev) => {
+                                              const next = { ...prev };
+                                              if (next[pg.key]) delete next[pg.key];
+                                              else next[pg.key] = 'view';
+                                              return next;
+                                            });
+                                          }}
+                                          className="w-3.5 h-3.5 rounded text-slate-900 border-slate-300 shrink-0"
+                                        />
+                                        <span className="truncate">{pg.label}</span>
+                                      </label>
+                                      {isChecked && (
+                                        <div className="inline-flex rounded border border-slate-300 overflow-hidden shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setEditAdminPageAccess((prev) => ({ ...prev, [pg.key]: 'view' }))
+                                            }
+                                            className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                              mode === 'view'
+                                                ? 'bg-slate-800 text-white'
+                                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                                            }`}
+                                          >
+                                            View Only
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setEditAdminPageAccess((prev) => ({ ...prev, [pg.key]: 'edit' }))
+                                            }
+                                            className={`px-1.5 py-0.5 text-[10px] font-bold cursor-pointer ${
+                                              mode === 'edit'
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-white text-slate-600 hover:bg-slate-100'
+                                            }`}
+                                          >
+                                            Edit
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setEditingAdminUser(null)}
+                            className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-1.5 text-xs font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 transition-colors shadow-xs cursor-pointer"
+                          >
+                            Simpan Kemaskini
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SUB-CATEGORY 3: PUSAT */}
             {masterCategory === 'pusat' && (
               <div className="space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
@@ -4376,6 +4830,91 @@ export const AdminPage: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL UBAH KATA LALUAN SENDIRI (SUPER ADMIN) */}
+      {isChangeOwnPassOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-5 py-3.5 bg-slate-900 text-white">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-400" />
+                <h4 className="text-sm font-bold">Ubah Kata Laluan Sendiri ({currentUser.id})</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsChangeOwnPassOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleChangeOwnPasswordSubmit} className="p-5 space-y-3.5 text-xs">
+              {ownPassMsg && (
+                <div
+                  className={`p-2.5 rounded border flex items-center gap-2 ${
+                    ownPassMsg.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                  }`}
+                >
+                  <span>{ownPassMsg.text}</span>
+                </div>
+              )}
+              <div>
+                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                  Kata Laluan Semasa *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={ownCurrentPass}
+                  onChange={(e) => setOwnCurrentPass(e.target.value)}
+                  className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                  Kata Laluan Baharu *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={ownNewPass}
+                  onChange={(e) => setOwnNewPass(e.target.value)}
+                  className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                  Sahkan Kata Laluan Baharu *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={ownConfirmPass}
+                  onChange={(e) => setOwnConfirmPass(e.target.value)}
+                  className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsChangeOwnPassOpen(false)}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-bold text-white bg-slate-900 rounded-md hover:bg-slate-800 cursor-pointer"
+                >
+                  Simpan Kata Laluan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL PENGESAHAN PADAM UNIVERSAL (CUSTOM REACT MODAL - MENGGANTIKAN WINDOW.CONFIRM) */}
       {deleteConfirm.isOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -4408,7 +4947,7 @@ export const AdminPage: React.FC = () => {
                 className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-md transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Ya, Sahkan Padam</span>
+                <span>Ya, Sahkan</span>
               </button>
             </div>
           </div>

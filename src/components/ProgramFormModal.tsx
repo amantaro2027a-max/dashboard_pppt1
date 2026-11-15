@@ -22,6 +22,10 @@ export const ProgramFormModal: React.FC = () => {
     addProgram,
     updateProgram,
     currentUser,
+    isSuperAdmin,
+    canEditPage,
+    canEditJabatan,
+    getEditableJabatans,
     pusatList,
     jabatanMap,
     pegawaiList,
@@ -57,8 +61,32 @@ export const ProgramFormModal: React.FC = () => {
   const [catatan, setCatatan] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Whether user has restricted Jabatan permissions
-  const isSubAdminLocked = currentUser?.role === 'ADMIN' && !!currentUser.jabatan;
+  // Granular Jabatan edit permissions
+  const editableJabatans = useMemo(() => getEditableJabatans(), [getEditableJabatans]);
+  const canEditFormByPage = isSuperAdmin || canEditPage('ADMIN') || canEditPage('PERINCIAN PROGRAM');
+  const isJabatanLocked = !isSuperAdmin && editableJabatans.length <= 1;
+
+  const allowedPusatList = useMemo(() => {
+    if (isSuperAdmin) return pusatList;
+    const filtered = pusatList.filter((p) =>
+      (jabatanMap[p] || []).some((j) => editableJabatans.includes(j))
+    );
+    if (programToEdit?.pusat && !filtered.includes(programToEdit.pusat)) {
+      return [...filtered, programToEdit.pusat];
+    }
+    return filtered;
+  }, [isSuperAdmin, pusatList, jabatanMap, editableJabatans, programToEdit]);
+
+  const allowedJabatanOptions = useMemo(() => {
+    const allInPusat = jabatanMap[pusat] || [];
+    const base = isSuperAdmin
+      ? allInPusat
+      : allInPusat.filter((j) => editableJabatans.includes(j));
+    if (programToEdit?.jabatan && programToEdit.pusat === pusat && !base.includes(programToEdit.jabatan)) {
+      return [...base, programToEdit.jabatan];
+    }
+    return base;
+  }, [isSuperAdmin, jabatanMap, pusat, editableJabatans, programToEdit]);
 
   // Prepopulate form when editing or initialize when adding
   useEffect(() => {
@@ -100,8 +128,21 @@ export const ProgramFormModal: React.FC = () => {
       setBilanganPeserta(0);
       setPengurusId('');
       setPengurusBersamaId('');
-      setPusat(isSubAdminLocked && currentUser?.pusat ? currentUser.pusat : '');
-      setJabatan(isSubAdminLocked && currentUser?.jabatan ? currentUser.jabatan : '');
+      if (!isSuperAdmin && editableJabatans.length === 1) {
+        const singleJab = editableJabatans[0];
+        const foundPusat =
+          Object.keys(jabatanMap).find((p) => (jabatanMap[p] || []).includes(singleJab)) ||
+          currentUser?.pusat ||
+          '';
+        setPusat(foundPusat);
+        setJabatan(singleJab);
+      } else if (!isSuperAdmin && allowedPusatList.length === 1) {
+        setPusat(allowedPusatList[0]);
+        setJabatan('');
+      } else {
+        setPusat('');
+        setJabatan('');
+      }
       setSumberKewangan('');
       setOs21000(0);
       setOs24000(0);
@@ -115,13 +156,15 @@ export const ProgramFormModal: React.FC = () => {
       setCatatan('');
     }
     setErrorMsg('');
-  }, [programToEdit, isFormOpen, isSubAdminLocked, currentUser, pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList]);
+  }, [programToEdit, isFormOpen, isSuperAdmin, editableJabatans, allowedPusatList, currentUser, pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList]);
 
   // When Pusat changes, ensure Jabatan matches the available options
   const handlePusatChange = (newPusat: string) => {
-    if (isSubAdminLocked) return;
+    if (isJabatanLocked) return;
     setPusat(newPusat);
-    const available = jabatanMap[newPusat] || [];
+    const available = (jabatanMap[newPusat] || []).filter((j) =>
+      isSuperAdmin ? true : editableJabatans.includes(j)
+    );
     if (available.length > 0) {
       setJabatan(available[0]);
     } else {
@@ -222,15 +265,19 @@ export const ProgramFormModal: React.FC = () => {
     // Guard: Hanya Super Admin boleh edit program berstatus SELESAI dan TANGGUNG
     if (programToEdit) {
       const editStatus = programToEdit.statusProgram.toUpperCase();
-      if (
-        (editStatus === 'SELESAI' || editStatus === 'TANGGUNG') &&
-        currentUser?.role !== 'SUPER_ADMIN'
-      ) {
+      if ((editStatus === 'SELESAI' || editStatus === 'TANGGUNG') && !isSuperAdmin) {
         setErrorMsg(
           'Program berstatus SELESAI dan TANGGUNG telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.'
         );
         return;
       }
+    }
+
+    if (!isSuperAdmin && (!canEditFormByPage || !canEditJabatan(jabatan))) {
+      setErrorMsg(
+        `Mod Paparan Sahaja (View Only): Akaun anda tidak mempunyai kebenaran Edit bagi jabatan "${jabatan || '-'}".`
+      );
+      return;
     }
 
     if (!namaProgram.trim()) {
@@ -433,20 +480,20 @@ export const ProgramFormModal: React.FC = () => {
                   <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
                     Pusat (Main Tree Selection) *
                   </label>
-                  {isSubAdminLocked && (
+                  {isJabatanLocked && (
                     <span className="text-[10px] text-amber-700 font-medium">Dikunci</span>
                   )}
                 </div>
                 <select
                   value={pusat}
-                  disabled={isSubAdminLocked}
+                  disabled={isJabatanLocked}
                   onChange={(e) => handlePusatChange(e.target.value)}
                   className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
-                    isSubAdminLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
+                    isJabatanLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
                   }`}
                 >
                   <option value="">-- Sila Pilih Pusat --</option>
-                  {pusatList.map((p) => (
+                  {allowedPusatList.map((p) => (
                     <option key={p} value={p}>
                       {p}
                     </option>
@@ -459,20 +506,20 @@ export const ProgramFormModal: React.FC = () => {
                   <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
                     Jabatan *
                   </label>
-                  {isSubAdminLocked && (
+                  {isJabatanLocked && (
                     <span className="text-[10px] text-blue-700 font-semibold">Tugasan Anda</span>
                   )}
                 </div>
                 <select
                   value={jabatan}
-                  disabled={isSubAdminLocked}
+                  disabled={isJabatanLocked}
                   onChange={(e) => setJabatan(e.target.value)}
                   className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
-                    isSubAdminLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
+                    isJabatanLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
                   }`}
                 >
                   <option value="">-- Sila Pilih Jabatan --</option>
-                  {(jabatanMap[pusat] || []).map((j) => (
+                  {allowedJabatanOptions.map((j) => (
                     <option key={j} value={j}>
                       {j}
                     </option>

@@ -27,6 +27,7 @@ interface FasaCardProps {
   onSave: (fasaId: string, allocations: Record<string, OsAllocation>) => void;
   onRequestDelete?: (fasa: FasaPeruntukanRecord) => void;
   canDelete: boolean;
+  canEdit: boolean;
 }
 
 const FasaCard: React.FC<FasaCardProps> = ({
@@ -35,6 +36,7 @@ const FasaCard: React.FC<FasaCardProps> = ({
   onSave,
   onRequestDelete,
   canDelete,
+  canEdit,
 }) => {
   // Local state for edits
   const [localAllocations, setLocalAllocations] = useState<Record<string, OsAllocation>>(() => {
@@ -116,6 +118,7 @@ const FasaCard: React.FC<FasaCardProps> = ({
   // Handle Button Click:
   // "Apabila dah simpan, data akan dim/tak boleh edit kecuali tekan semula butang tersebut sekali lagi."
   const handleButtonClick = () => {
+    if (!canEdit) return;
     if (isEditing) {
       // Save data and lock / dim fields
       onSave(fasa.id, localAllocations);
@@ -150,18 +153,26 @@ const FasaCard: React.FC<FasaCardProps> = ({
               </h3>
               <span
                 className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${
-                  isEditing
-                    ? 'bg-amber-400 text-slate-950 border border-amber-300'
-                    : 'bg-emerald-600/30 border border-emerald-400/40 text-emerald-300'
+                  !canEdit
+                    ? 'bg-amber-500/20 border border-amber-400/40 text-amber-300'
+                    : isEditing
+                      ? 'bg-amber-400 text-slate-950 border border-amber-300'
+                      : 'bg-emerald-600/30 border border-emerald-400/40 text-emerald-300'
                 }`}
               >
-                {isEditing ? 'Mod Suntingan Aktif' : 'Disimpan / Terkunci (Dim)'}
+                {!canEdit
+                  ? 'Mod Paparan Sahaja (View Only)'
+                  : isEditing
+                    ? 'Mod Suntingan Aktif'
+                    : 'Disimpan / Terkunci (Dim)'}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              {isEditing
-                ? 'Sila masukkan atau kemaskini amaun agihan pecahan OS bagi setiap Sumber Kewangan.'
-                : 'Data agihan fasa ini dikunci. Tekan butang di bawah untuk membuka semula mod suntingan.'}
+              {!canEdit
+                ? 'Akses View Only: Anda hanya dibenarkan melihat pecahan agihan fasa ini.'
+                : isEditing
+                  ? 'Sila masukkan atau kemaskini amaun agihan pecahan OS bagi setiap Sumber Kewangan.'
+                  : 'Data agihan fasa ini dikunci. Tekan butang di bawah untuk membuka semula mod suntingan.'}
             </p>
           </div>
         </div>
@@ -176,7 +187,7 @@ const FasaCard: React.FC<FasaCardProps> = ({
             </span>
           </div>
 
-          {canDelete && onRequestDelete && (
+          {canEdit && canDelete && onRequestDelete && (
             <button
               onClick={() => onRequestDelete(fasa)}
               className="p-2 text-rose-300 hover:text-white bg-rose-950/50 hover:bg-rose-900 border border-rose-800 rounded-lg transition-colors cursor-pointer"
@@ -341,7 +352,12 @@ const FasaCard: React.FC<FasaCardProps> = ({
           {/* Footer with Action Button */}
           <div className="bg-slate-50 border-t border-slate-200 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {savedSuccess ? (
+              {!canEdit ? (
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-md">
+                  <Lock className="w-3.5 h-3.5 text-amber-600" />
+                  Mod Paparan Sahaja (View Only): Suntingan dan penyimpanan dikunci untuk akaun ini.
+                </span>
+              ) : savedSuccess ? (
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-md border border-emerald-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                   Peruntukan {fasa.nama} berjaya disimpan! Data kini dikunci (dim). Tekan butang di sebelah jika ingin menyunting semula.
@@ -357,26 +373,28 @@ const FasaCard: React.FC<FasaCardProps> = ({
               )}
             </div>
 
-            <button
-              onClick={handleButtonClick}
-              className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer ${
-                isEditing
-                  ? 'text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 ring-2 ring-emerald-500/40'
-                  : 'text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950'
-              }`}
-            >
-              {isEditing ? (
-                <>
-                  <Save className="w-4 h-4 text-emerald-300" />
-                  <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="w-4 h-4 text-amber-400" />
-                  <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
-                </>
-              )}
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleButtonClick}
+                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer ${
+                  isEditing
+                    ? 'text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 ring-2 ring-emerald-500/40'
+                    : 'text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950'
+                }`}
+              >
+                {isEditing ? (
+                  <>
+                    <Save className="w-4 h-4 text-emerald-300" />
+                    <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-4 h-4 text-amber-400" />
+                    <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -387,7 +405,9 @@ const FasaCard: React.FC<FasaCardProps> = ({
 export const PeruntukanPage: React.FC = () => {
   const {
     currentUser,
-    pegawaiList,
+    isSuperAdmin,
+    getPageAccessMode,
+    canEditPage,
     setActiveTab,
     sumberKewanganList,
     fasaPeruntukanList,
@@ -401,9 +421,9 @@ export const PeruntukanPage: React.FC = () => {
   // State for in-app deletion confirmation modal (Reliable in iFrame)
   const [fasaToDelete, setFasaToDelete] = useState<FasaPeruntukanRecord | null>(null);
 
-  // Super Admin Check & Page Permission Check
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const canAccess = isSuperAdmin || (currentUser?.role === 'ADMIN' && currentUser.allowedPages?.includes('PERUNTUKAN'));
+  // Granular Page Permission Check (View Only vs Edit)
+  const canAccess = Boolean(currentUser) && getPageAccessMode('PERUNTUKAN') !== 'none';
+  const canEdit = isSuperAdmin || canEditPage('PERUNTUKAN');
 
   // Calculate PERUNTUKAN KESELURUHAN (Autofill across all active phases)
   const peruntukanKeseluruhan = useMemo(() => {
@@ -462,6 +482,7 @@ export const PeruntukanPage: React.FC = () => {
 
   // Handle Save specific Fasa
   const handleSaveFasa = (fasaId: string, allocations: Record<string, OsAllocation>) => {
+    if (!canEdit) return;
     const res = updateFasaPeruntukan(fasaId, allocations);
     if (res.success) {
       setNotification({
@@ -479,6 +500,7 @@ export const PeruntukanPage: React.FC = () => {
 
   // Handle Add New Fasa
   const handleAddNewFasa = () => {
+    if (!canEdit) return;
     const newFasaNum = fasaPeruntukanList.length + 1;
     const res = addFasaPeruntukan(`PERUNTUKAN FASA ${newFasaNum}`);
     if (res.success) {
@@ -497,7 +519,7 @@ export const PeruntukanPage: React.FC = () => {
 
   // Confirmed Delete Fasa Action (Triggered from modal)
   const handleConfirmDeleteFasa = () => {
-    if (!fasaToDelete) return;
+    if (!canEdit || !fasaToDelete) return;
     const res = deleteFasaPeruntukan(fasaToDelete.id);
     if (res.success) {
       setNotification({
@@ -524,14 +546,14 @@ export const PeruntukanPage: React.FC = () => {
             <Lock className="w-8 h-8" />
           </div>
           <span className="text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
-            Akses Dihadkan · Super Admin Sahaja
+            Akses Dihadkan · Kebenaran Diperlukan
           </span>
           <h2 className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
             Pengurusan Peruntukan Fasa (IAB)
           </h2>
           <p className="text-slate-600 text-sm max-w-lg mx-auto mt-2 leading-relaxed">
-            Halaman ini hanya boleh diakses oleh <strong>Super Admin (Kuasa Penuh)</strong> bagi
-            menetapkan agihan peruntukan fasa dan sumber kewangan Institut Aminuddin Baki.
+            Halaman ini hanya boleh diakses oleh pengguna yang mempunyai kebenaran{' '}
+            <strong>PERUNTUKAN</strong> di dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong> atau Super Admin.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -584,13 +606,20 @@ export const PeruntukanPage: React.FC = () => {
             </span>
           </div>
 
-          <button
-            onClick={handleAddNewFasa}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-slate-900" />
-            <span>Tambah Fasa Baharu</span>
-          </button>
+          {canEdit ? (
+            <button
+              onClick={handleAddNewFasa}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4 text-slate-900" />
+              <span>Tambah Fasa Baharu</span>
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-400/40 rounded-lg">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Mod Paparan Sahaja (View Only)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -749,13 +778,15 @@ export const PeruntukanPage: React.FC = () => {
             </p>
           </div>
 
-          <button
-            onClick={handleAddNewFasa}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-md transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tambah Fasa Baharu</span>
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleAddNewFasa}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 rounded-md transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Fasa Baharu</span>
+            </button>
+          )}
         </div>
 
         {fasaPeruntukanList.map((fasa) => (
@@ -765,33 +796,36 @@ export const PeruntukanPage: React.FC = () => {
             sumberKewanganList={sumberKewanganList}
             onSave={handleSaveFasa}
             onRequestDelete={(targetFasa) => setFasaToDelete(targetFasa)}
-            canDelete={fasa.id !== 'fasa_1' && fasa.id !== 'fasa_2'}
+            canDelete={canEdit && fasa.id !== 'fasa_1' && fasa.id !== 'fasa_2'}
+            canEdit={canEdit}
           />
         ))}
 
         {/* Prominent Add Next Phase Button */}
-        <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50/60 hover:bg-slate-50 transition-colors">
-          <div className="max-w-md mx-auto space-y-3">
-            <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center mx-auto">
-              <Plus className="w-5 h-5" />
+        {canEdit && (
+          <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50/60 hover:bg-slate-50 transition-colors">
+            <div className="max-w-md mx-auto space-y-3">
+              <div className="w-10 h-10 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center mx-auto">
+                <Plus className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                  Perlukan Fasa Tambahan?
+                </h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Anda boleh menambah FASA 3, FASA 4 atau fasa seterusnya mengikut keperluan agihan peruntukan tahun semasa.
+                </p>
+              </div>
+              <button
+                onClick={handleAddNewFasa}
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Tambah Fasa Baharu Seterusnya Secara Manual</span>
+              </button>
             </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                Perlukan Fasa Tambahan?
-              </h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Anda boleh menambah FASA 3, FASA 4 atau fasa seterusnya mengikut keperluan agihan peruntukan tahun semasa.
-              </p>
-            </div>
-            <button
-              onClick={handleAddNewFasa}
-              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Tambah Fasa Baharu Seterusnya Secara Manual</span>
-            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* =========================================================================

@@ -51,12 +51,19 @@
       "description": "Akaun pentadbir sistem dan jabatan",
       "type": "object",
       "properties": {
+        "id": { "type": "string" },
         "idAdmin": { "type": "string" },
         "password": { "type": "string" },
+        "name": { "type": "string" },
         "namaPegawai": { "type": "string" },
         "pusat": { "type": "string" },
         "jabatan": { "type": "string" },
-        "role": { "type": "string" }
+        "role": { "type": "string" },
+        "levelId": { "type": "string" },
+        "allowedJabatans": { "type": "array" },
+        "jabatanAccess": { "type": "object" },
+        "allowedPages": { "type": "array" },
+        "pageAccess": { "type": "object" }
       },
       "rules": {
         "read": "true",

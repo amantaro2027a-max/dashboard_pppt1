@@ -15,6 +15,8 @@ import {
   BarChart2,
   Calculator,
   Users,
+  Landmark,
+  Briefcase,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -24,6 +26,8 @@ export const Header: React.FC = () => {
     setActiveTab,
     filteredPrograms,
     currentUser,
+    isSuperAdmin,
+    getPageAccessMode,
     logout,
     firebaseStatus,
   } = useProgramContext();
@@ -57,9 +61,6 @@ export const Header: React.FC = () => {
 
   // Dashboard pages list & Permissions Filter
   const isDashboardActive = activeTab !== 'welcome';
-  const isSuper = currentUser?.role === 'SUPER_ADMIN';
-  const isAdmin = currentUser?.role === 'ADMIN';
-  const allowedPages = currentUser?.allowedPages || [];
 
   const allMenuItems = [
     {
@@ -90,6 +91,20 @@ export const Header: React.FC = () => {
       desc: 'Slicer, senarai pegawai, visualisasi & analisis program',
       icon: Users,
       iconBg: 'bg-cyan-100 text-cyan-700',
+    },
+    {
+      id: 'pusat',
+      label: 'Page Pusat',
+      desc: 'Jabatan, pegawai, infografik, perbandingan & rumusan pusat',
+      icon: Landmark,
+      iconBg: 'bg-blue-100 text-blue-700',
+    },
+    {
+      id: 'jabatan',
+      label: 'Page Jabatan',
+      desc: 'Pegawai, infografik, perbandingan & rumusan jabatan',
+      icon: Briefcase,
+      iconBg: 'bg-teal-100 text-teal-700',
     },
     {
       id: 'pengiraan',
@@ -142,27 +157,27 @@ export const Header: React.FC = () => {
       return true;
     }
 
-    // 2. Super Admin mempunyai kebenaran capaian semua modul
-    if (isSuper) {
-      return true;
-    }
-
-    // 3. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program & Pengiraan Bajet sahaja
+    // 2. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program & Pengiraan Bajet sahaja
     if (!currentUser) {
       return false;
     }
 
-    // 4. Untuk Admin biasa, tapis mengikut halaman yang dipilih dalam KEBENARAN VIEW/PAPAR PAGE
-    if (isAdmin) {
-      if (item.id === 'admin') return true;
-      if (item.id === 'bersepadu') return allowedPages.includes('DASHBOARD BERSEPADU');
-      if (item.id === 'perincian') return allowedPages.includes('PERINCIAN PROGRAM');
-      if (item.id === 'analisisPegawai') return allowedPages.includes('ANALISIS PEGAWAI');
-      if (item.id === 'peruntukan') return allowedPages.includes('PERUNTUKAN');
-      if (item.id === 'perbelanjaan') return allowedPages.includes('PERBELANJAAN');
-      if (item.id === 'subwaran') return allowedPages.includes('SUBWARAN');
-      if (item.id === 'baki') return allowedPages.includes('BAKI PERUNTUKAN');
+    // 3. Super Admin mempunyai kebenaran capaian semua modul
+    if (isSuperAdmin) {
+      return true;
     }
+
+    // 4. Pengguna yang telah log masuk (Level 2–7): tapis mengikut KEBENARAN VIEW/PAPAR PAGE
+    if (item.id === 'admin') return getPageAccessMode('ADMIN') !== 'none';
+    if (item.id === 'bersepadu') return getPageAccessMode('DASHBOARD BERSEPADU') !== 'none';
+    if (item.id === 'perincian') return getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
+    if (item.id === 'analisisPegawai') return getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
+    if (item.id === 'pusat') return getPageAccessMode('PUSAT') !== 'none';
+    if (item.id === 'jabatan') return getPageAccessMode('JABATAN') !== 'none';
+    if (item.id === 'peruntukan') return getPageAccessMode('PERUNTUKAN') !== 'none';
+    if (item.id === 'perbelanjaan') return getPageAccessMode('PERBELANJAAN') !== 'none';
+    if (item.id === 'subwaran') return getPageAccessMode('SUBWARAN') !== 'none';
+    if (item.id === 'baki') return getPageAccessMode('BAKI PERUNTUKAN') !== 'none';
 
     return false;
   });

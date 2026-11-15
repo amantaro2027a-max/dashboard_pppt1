@@ -839,12 +839,12 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
         </div>
       </div>
 
-      {/* 10. Analisis Matriks Risiko (Dipindahkan ke Modul 1) */}
+      {/* 5.0.Analisis Matriks Risiko (Dipindahkan ke Modul 1) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
           <div>
             <h3 className="text-base font-bold text-slate-900">
-              10. Analisis Matriks Risiko
+              5.0.Analisis Matriks Risiko
             </h3>
             <p className="text-xs text-slate-500">
               Pengelasan risiko kewangan dan risiko tempoh pelaksanaan program
@@ -854,11 +854,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 10.1: Analisis Matriks Risiko Kewangan */}
+          {/* 5.1: Analisis Matriks Risiko Kewangan */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                10.1: Analisis Matriks Risiko Kewangan
+                5.1: Analisis Matriks Risiko Kewangan
               </span>
               <span className="text-[10px] text-slate-400 font-medium">Berdasarkan kadar penggunaan bajet</span>
             </div>
@@ -940,11 +940,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
             </div>
           </div>
 
-          {/* 10.2: Analisis Matriks Risiko Tempoh */}
+          {/* 5.2: Analisis Matriks Risiko Tempoh */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                10.2: Analisis Matriks Risiko Tempoh
+                5.2: Analisis Matriks Risiko Tempoh
               </span>
               <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-bold border border-purple-200">
                 Selain Status SELESAI ({tempohRisk.totalNonCompleted})

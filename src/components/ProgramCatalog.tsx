@@ -19,18 +19,16 @@ export const ProgramCatalog: React.FC = () => {
     filteredPrograms,
     viewProgramDetail,
     currentUser,
+    isSuperAdmin,
+    getPageAccessMode,
+    getAuthorizedJabatanList,
     pegawaiList,
     setActiveTab,
   } = useProgramContext();
 
-  // Super Admin Check & Page Permission Check
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  // Granular Page Permission Check
   const canAccess =
-    isSuperAdmin ||
-    (currentUser?.role === 'ADMIN' &&
-      (currentUser.allowedPages?.includes('PERINCIAN PROGRAM') ||
-        !currentUser.allowedPages ||
-        currentUser.allowedPages.length === 0));
+    Boolean(currentUser) && getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
 
   // Bilangan paparan katalog dibenarkan: default 6
   const [displayLimit, setDisplayLimit] = useState<string>('6');
@@ -39,29 +37,23 @@ export const ProgramCatalog: React.FC = () => {
   // Filter sorting by STATUS PROGRAM
   const [statusSort, setStatusSort] = useState<string>('default');
 
+  const authorizedJabatans = useMemo(
+    () => getAuthorizedJabatanList(),
+    [getAuthorizedJabatanList]
+  );
+
   // User/Admin Access Filter:
   // Selepas log masuk, hanya memaparkan Katalog program di bawah JABATAN DIBERI AKSES,
   // atau di mana user/admin sebagai pengurus atau pengurus bersama.
-  // Jika JABATAN DIBERI AKSES tiada maklumat, kosong atau NULL, paparkan semua katalog program sebagai VIEWER user sahaja.
   const accessiblePrograms = useMemo(() => {
-    // 1. Jika belum log masuk, paparkan semua sebagai Viewer
-    if (!currentUser) return filteredPrograms;
+    if (!currentUser) return [];
 
-    // 2. Super Admin mempunyai akses penuh
-    if (currentUser.role === 'SUPER_ADMIN') {
+    // Super Admin mempunyai akses penuh
+    if (isSuperAdmin) {
       return filteredPrograms;
     }
 
-    // Dapatkan JABATAN DIBERI AKSES
-    const allowed = (currentUser.allowedJabatans && currentUser.allowedJabatans.length > 0)
-      ? currentUser.allowedJabatans.filter(Boolean)
-      : (currentUser.jabatan ? [currentUser.jabatan] : []);
-
-    // 3. Jika JABATAN DIBERI AKSES tiada maklumat, kosong atau NULL:
-    // hanya paparkan semua katalog program sebagai VIEWER user sahaja
-    if (allowed.length === 0 || allowed.includes('SEMUA JABATAN')) {
-      return filteredPrograms;
-    }
+    const allowed = authorizedJabatans;
 
     const userNameNorm = (currentUser.name || '').trim().toUpperCase();
     const userIdNorm = (currentUser.id || '').trim().toUpperCase();
@@ -97,7 +89,7 @@ export const ProgramCatalog: React.FC = () => {
 
       return false;
     });
-  }, [filteredPrograms, currentUser, pegawaiList]);
+  }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, pegawaiList]);
 
   const sortedPrograms = useMemo(() => {
     const list = [...accessiblePrograms];

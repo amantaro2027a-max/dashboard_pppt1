@@ -295,15 +295,14 @@ const BahagianPerbelanjaanCard: React.FC<BahagianPerbelanjaanProps> = ({
 export const PerbelanjaanPage: React.FC = () => {
   const {
     currentUser,
-    pegawaiList,
+    getPageAccessMode,
     setActiveTab,
     sumberKewanganList,
     programs,
     viewProgramDetail,
   } = useProgramContext();
 
-  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
-  const canAccess = isSuperAdmin || (currentUser?.role === 'ADMIN' && currentUser.allowedPages?.includes('PERBELANJAAN'));
+  const canAccess = Boolean(currentUser) && getPageAccessMode('PERBELANJAAN') !== 'none';
 
   // Compute PERUNTUKAN DIBELANJAKAN KESELURUHAN (STATUS PROGRAM: TANGGUNG DAN SELESAI)
   const keseluruhanStats = useMemo(() => {
@@ -383,14 +382,14 @@ export const PerbelanjaanPage: React.FC = () => {
             <Lock className="w-8 h-8" />
           </div>
           <span className="text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
-            Akses Dihadkan · Super Admin Sahaja
+            Akses Dihadkan · Kebenaran Diperlukan
           </span>
           <h2 className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
             Pengurusan Perbelanjaan Sebenar (IAB)
           </h2>
           <p className="text-slate-600 text-sm max-w-lg mx-auto mt-2 leading-relaxed">
-            Halaman ini hanya boleh diakses oleh <strong>Super Admin (Kuasa Penuh)</strong> bagi
-            memantau rekod perbelanjaan sebenar dan agihan peruntukan Institut Aminuddin Baki.
+            Halaman ini hanya boleh diakses oleh pengguna yang mempunyai kebenaran{' '}
+            <strong>PERBELANJAAN</strong> di dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong> atau Super Admin.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">

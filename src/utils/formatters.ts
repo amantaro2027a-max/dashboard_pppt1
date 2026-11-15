@@ -1,4 +1,4 @@
-import { StatusProgram } from '../types/program';
+import { StatusProgram, AdminLevelId, getAdminLevelLabel } from '../types/program';
 
 export const formatRM = (amount: number | undefined | null): string => {
   const val = Number(amount) || 0;
@@ -138,7 +138,15 @@ export interface UserBannerInfo {
  * - pusatJabatan: "PUSAT & JABATAN: PELAWAT (VIEW SAHAJA)"
  */
 export const getUserBannerInfo = (
-  currentUser?: { id: string; name: string; role: string; pusat?: string; jabatan?: string; allowedJabatans?: string[] } | null,
+  currentUser?: {
+    id: string;
+    name: string;
+    role: string;
+    levelId?: AdminLevelId | string;
+    pusat?: string;
+    jabatan?: string;
+    allowedJabatans?: string[];
+  } | null,
   pegawaiList?: Array<{ id: string; nama: string; jawatan?: string; pusat?: string; jabatan?: string }>
 ): UserBannerInfo => {
   const instansi = 'Institut Aminuddin Baki · Kementerian Pendidikan';
@@ -147,7 +155,7 @@ export const getUserBannerInfo = (
     return {
       instansi,
       penggunaJawatan: 'Pengguna: PELAWAT (VIEW SAHAJA) | Jawatan: PELAWAT (VIEW SAHAJA)',
-      pusatJabatan: 'PUSAT: PELAWAT (VIEW SAHAJA) | JABATAN: PELAWAT (VIEW SAHAJA)',
+      pusatJabatan: 'Pusat: PELAWAT (VIEW SAHAJA) | Jabatan: PELAWAT (VIEW SAHAJA)',
       nama: 'PELAWAT (VIEW SAHAJA)',
       jawatan: 'PELAWAT (VIEW SAHAJA)',
       pusat: 'PELAWAT (VIEW SAHAJA)',
@@ -163,19 +171,21 @@ export const getUserBannerInfo = (
       (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
   );
 
-  const isSuper = currentUser.role === 'SUPER_ADMIN';
+  const isSuper = currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN';
   const rawName = (matched?.nama || currentUser.name || currentUser.id || 'PENGGUNA').toUpperCase();
-  const nama = isSuper && (rawName === 'SUPER ADMIN AMAN' || currentUser.id.toUpperCase() === 'AMAN')
-    ? 'SUPER ADMIN'
-    : rawName;
-  const jawatan = (
-    matched?.jawatan ||
-    (isSuper ? 'SUPER ADMIN' : 'ADMIN JABATAN')
+  const nama =
+    isSuper && (rawName === 'SUPER ADMIN AMAN' || currentUser.id.toUpperCase() === 'AMAN')
+      ? 'SUPER ADMIN'
+      : rawName;
+
+  const levelFallback = getAdminLevelLabel(
+    currentUser.levelId,
+    isSuper ? 'SUPER_ADMIN' : 'ADMIN'
   ).toUpperCase();
 
-  const pusat = isSuper
-    ? (matched?.pusat || currentUser.pusat || '').toUpperCase()
-    : (matched?.pusat || currentUser.pusat || '').toUpperCase();
+  const jawatan = (matched?.jawatan || levelFallback).toUpperCase();
+
+  const pusat = (matched?.pusat || currentUser.pusat || '').toUpperCase();
 
   const jabatan = isSuper
     ? (matched?.jabatan || currentUser.jabatan || '').toUpperCase()
@@ -184,7 +194,7 @@ export const getUserBannerInfo = (
         currentUser.jabatan ||
         (currentUser.allowedJabatans && currentUser.allowedJabatans.length > 0
           ? currentUser.allowedJabatans.join(', ')
-          : 'SEMUA JABATAN')
+          : '')
       ).toUpperCase();
 
   const pusatDanJabatan = [pusat, jabatan].filter(Boolean).join(' dan ');
@@ -192,7 +202,7 @@ export const getUserBannerInfo = (
   return {
     instansi,
     penggunaJawatan: `Pengguna: ${nama} | Jawatan: ${jawatan}`,
-    pusatJabatan: `PUSAT: ${pusat} | JABATAN: ${jabatan}`,
+    pusatJabatan: `Pusat: ${pusat} | Jabatan: ${jabatan}`,
     nama,
     jawatan,
     pusat,
@@ -203,7 +213,15 @@ export const getUserBannerInfo = (
 };
 
 export const getUserBannerText = (
-  currentUser?: { id: string; name: string; role: string; pusat?: string; jabatan?: string; allowedJabatans?: string[] } | null,
+  currentUser?: {
+    id: string;
+    name: string;
+    role: string;
+    levelId?: AdminLevelId | string;
+    pusat?: string;
+    jabatan?: string;
+    allowedJabatans?: string[];
+  } | null,
   pegawaiList?: Array<{ id: string; nama: string; jawatan?: string; pusat?: string; jabatan?: string }>
 ): string => {
   const info = getUserBannerInfo(currentUser, pegawaiList);
