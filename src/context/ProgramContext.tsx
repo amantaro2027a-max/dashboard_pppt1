@@ -73,8 +73,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -100,6 +100,7 @@ interface ProgramContextType {
   updateAdminUser: (id: string, updated: Partial<AdminUser>) => { success: boolean; message?: string };
   deleteAdminUser: (id: string) => { success: boolean; message?: string };
   changeOwnPassword: (currentPassword: string, newPassword: string) => { success: boolean; message?: string };
+  updateOwnPhoto: (photoUrl: string) => { success: boolean; message?: string };
   resetUserPassword: (targetUserId: string, newPassword?: string) => { success: boolean; message?: string };
   getPageAccessMode: (pageKey: string) => 'none' | AccessMode;
   getJabatanAccessMode: (jabatanName?: string) => 'none' | AccessMode;
@@ -623,7 +624,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'welcome' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTab] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -917,6 +918,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (user) {
       setCurrentUser(user);
+      setActiveTab('selamatDatang');
       return { success: true };
     }
 
@@ -927,9 +929,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         password: 'AMAN',
         name: 'Super Admin AMAN',
         role: 'SUPER_ADMIN',
+        levelId: 'SUPER_ADMIN',
         createdAt: '2026-01-01',
       };
       setCurrentUser(amanUser);
+      setActiveTab('selamatDatang');
       return { success: true };
     }
 
@@ -965,6 +969,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 'edit';
     }
 
+    // STRICT: Portal Pengurusan Pentadbir (Admin) hanya dibenarkan untuk Super Admin sahaja
+    if (key === 'ADMIN') {
+      return 'none';
+    }
+
+    if (key === 'SELAMAT DATANG') {
+      return 'view';
+    }
+
     // Check new granular pageAccess map first
     if (currentUser.pageAccess && Object.prototype.hasOwnProperty.call(currentUser.pageAccess, key)) {
       return currentUser.pageAccess[key] === 'edit' ? 'edit' : 'view';
@@ -975,8 +988,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 'view';
     }
 
-    // Always allow viewing Dashboard Program, Pengiraan Bajet, and Admin overview (as view-only unless edit configured)
-    if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET' || key === 'ADMIN') {
+    // Always allow viewing Dashboard Program and Pengiraan Bajet
+    if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET') {
       return 'view';
     }
 
@@ -1221,6 +1234,42 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
     });
+
+    return { success: true };
+  };
+
+  const updateOwnPhoto = (photoUrl: string): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk terlebih dahulu.' };
+    }
+    const cleanPhoto = photoUrl || '';
+    const updatedUser: AdminUser = { ...currentUser, photoUrl: cleanPhoto };
+
+    setAdminUsers((prev) =>
+      prev.map((u) => (u.id === currentUser.id ? { ...u, photoUrl: cleanPhoto } : u))
+    );
+    setCurrentUser(updatedUser);
+
+    setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
+    });
+
+    // Also sync to matching Pegawai record if exists
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser.name && p.nama.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+    if (matchedPeg) {
+      setPegawaiList((prev) =>
+        prev.map((p) => (p.id === matchedPeg.id ? { ...p, photoUrl: cleanPhoto } : p))
+      );
+      setDoc(
+        doc(db, 'pegawai', matchedPeg.id),
+        sanitizeData({ ...matchedPeg, photoUrl: cleanPhoto }),
+        { merge: true }
+      ).catch(() => {});
+    }
 
     return { success: true };
   };
@@ -2843,6 +2892,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateAdminUser,
         deleteAdminUser,
         changeOwnPassword,
+        updateOwnPhoto,
         resetUserPassword,
         getPageAccessMode,
         getJabatanAccessMode,

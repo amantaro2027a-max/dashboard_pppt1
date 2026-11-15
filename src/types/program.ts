@@ -28,6 +28,7 @@ export interface Pegawai {
   jawatan?: string;
   emel?: string;
   noHp?: string;
+  photoUrl?: string;
 }
 
 export interface ProgramItem {
@@ -211,6 +212,7 @@ export interface AdminUser {
   jabatanAccess?: Record<string, AccessMode>; // Per-department 'view' | 'edit' permission
   allowedPages?: string[]; // Legacy & convenience list of authorized pages
   pageAccess?: Record<string, AccessMode>; // Per-page 'view' | 'edit' permission
+  photoUrl?: string; // Base64 passport photo uploaded by user
   createdAt: string;
 }
 

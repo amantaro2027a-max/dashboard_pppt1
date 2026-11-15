@@ -604,7 +604,6 @@ export const AdminPage: React.FC = () => {
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },
     { key: 'BAKI PERUNTUKAN', label: 'BAKI PERUNTUKAN' },
-    { key: 'ADMIN', label: 'PORTAL ADMIN (TAMBAH / EDIT PROGRAM)' },
   ];
 
   const authorizedJabatans = useMemo(() => getAuthorizedJabatanList(), [getAuthorizedJabatanList]);
@@ -667,6 +666,37 @@ export const AdminPage: React.FC = () => {
   // If not logged in, render the login page (placed after all hooks)
   if (!currentUser) {
     return <AdminLogin />;
+  }
+
+  // Strictly block non-Super Admin users from seeing Portal Pengurusan Pentadbir (Admin)
+  if (!isSuperAdmin) {
+    return (
+      <div className="max-w-lg mx-auto my-10 bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
+        <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Akses Terhad — Super Admin Sahaja</h2>
+        <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+          Portal Pengurusan Pentadbir (Admin) hanya dibenarkan untuk pengguna bertaraf Super Admin sahaja.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('selamatDatang')}
+            className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+          >
+            Kembali ke Selamat Datang
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('dashboard')}
+            className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+          >
+            Dashboard Program
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Handling Program Edit (LOCKED for SELESAI & TANGGUNG programs + requires Edit permission)

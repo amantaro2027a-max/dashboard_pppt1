@@ -21,6 +21,7 @@ import { ProgramDetailModal } from './components/ProgramDetailModal';
 import { ProgramFormModal } from './components/ProgramFormModal';
 import { ExportModal } from './components/ExportModal';
 import { WelcomePage } from './components/WelcomePage';
+import { SelamatDatangPage } from './components/SelamatDatangPage';
 import { DashboardBersepaduPage } from './components/DashboardBersepaduPage';
 import { PengiraanBajetPage } from './components/PengiraanBajetPage';
 import { AnalisisPegawaiPage } from './components/AnalisisPegawaiPage';
@@ -31,7 +32,7 @@ import { IabAllPage } from './components/IabAllPage';
 import { getUserBannerInfo } from './utils/formatters';
 
 const DashboardContent: React.FC = () => {
-  const { activeTab, setActiveTab, currentUser, pegawaiList } = useProgramContext();
+  const { activeTab, currentUser, isSuperAdmin, pegawaiList } = useProgramContext();
 
   const bannerInfo = React.useMemo(
     () => getUserBannerInfo(currentUser, pegawaiList),
@@ -89,7 +90,9 @@ const DashboardContent: React.FC = () => {
 
                 <div className="pt-3 border-t border-slate-100 mt-3">
                   <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                    {activeTab === 'dashboard'
+                    {activeTab === 'selamatDatang'
+                      ? 'Selamat Datang — Profil Pegawai & Akaun'
+                      : activeTab === 'dashboard'
                       ? 'Dashboard Interaktif Masa Kini IAB'
                       : activeTab === 'bersepadu'
                       ? 'Dashboard Bersepadu & Analitik Eksekutif'
@@ -117,10 +120,16 @@ const DashboardContent: React.FC = () => {
                       ? 'Pengurusan Sub Waran Peruntukan'
                       : activeTab === 'baki'
                       ? 'Pemantauan Baki Peruntukan Kewangan'
-                      : 'Portal Pengurusan Pentadbir (Admin)'}
+                      : !currentUser
+                      ? 'Log Masuk Akaun Pengguna & Pentadbir'
+                      : isSuperAdmin
+                      ? 'Portal Pengurusan Pentadbir (Admin)'
+                      : 'Akses Terhad'}
                   </h1>
                 <p className="text-xs text-slate-600 mt-1 max-w-3xl">
-                  {activeTab === 'dashboard'
+                  {activeTab === 'selamatDatang'
+                    ? 'Paparan rasmi profil pegawai, muat naik gambar pasport, masa & tarikh semasa, serta pengemaskinian kata laluan akaun anda.'
+                    : activeTab === 'dashboard'
                     ? 'Sistem pemantauan dan analisis statistik perancangan aktiviti, sumber kewangan, dan status pelaksanaan program rasmi IAB (Mod Paparan Sahaja).'
                     : activeTab === 'bersepadu'
                     ? 'Portal eksekutif bersepadu: Prestasi Keseluruhan, Petunjuk Prestasi Utama (KPI), Risikan Kewangan, Papan Pengumuman & Visualisasi Interaktif.'
@@ -148,7 +157,11 @@ const DashboardContent: React.FC = () => {
                     ? 'Pendaftaran dan pemantauan peruntukan yang diagihkan / disubwaran kepada PTJ Cawangan IAB, JPN, PPD, IPG, dan KV mengikut Sumber Kewangan & pecahan OS.'
                     : activeTab === 'baki'
                     ? 'Analisis baki peruntukan menyeluruh: Peruntukan (Page Peruntukan) − Belanja Sebenar (Page Perbelanjaan) = Penjimatan; Penjimatan − Subwaran = Baki Bersih Akhir.'
-                    : 'Pusat kawalan pendaftaran & kemaskini program, pengurusan akaun ID Admin mengikut Jabatan, serta kemaskini data induk (Master Data).'}
+                    : !currentUser
+                    ? 'Sila masukkan ID Pengguna dan Kata Laluan untuk mengakses halaman dan maklumat mengikut tahap kebenaran anda.'
+                    : isSuperAdmin
+                    ? 'Pusat kawalan pendaftaran & kemaskini program, pengurusan akaun ID Admin mengikut Jabatan, serta kemaskini data induk (Master Data).'
+                    : 'Halaman pengurusan pentadbir hanya boleh diakses oleh Super Admin sahaja.'}
                 </p>
                 </div>
               </div>
@@ -158,7 +171,10 @@ const DashboardContent: React.FC = () => {
 
         {/* Main Content Area */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {activeTab === 'dashboard' ? (
+          {activeTab === 'selamatDatang' ? (
+            /* HALAMAN SELAMAT DATANG SELEPAS LOG MASUK */
+            <SelamatDatangPage />
+          ) : activeTab === 'dashboard' ? (
             /* PAGE 1 – DASHBOARD PROGRAM PUSAT (VIEW ONLY) */
             <div>
               {/* Filter Bar with Sumber Kewangan */}

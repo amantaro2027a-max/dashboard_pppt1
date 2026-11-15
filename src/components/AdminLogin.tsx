@@ -41,7 +41,7 @@ export const AdminLogin: React.FC = () => {
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-            Log Masuk Portal Pengurusan Admin
+            Log Masuk Akaun Pengguna &amp; Pentadbir
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Dashboard Pusat · Institut Aminuddin Baki (IAB)

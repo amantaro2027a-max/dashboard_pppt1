@@ -39,7 +39,8 @@
         "jabatan": { "type": "string" },
         "jawatan": { "type": "string" },
         "emel": { "type": "string" },
-        "noHp": { "type": "string" }
+        "noHp": { "type": "string" },
+        "photoUrl": { "type": "string" }
       },
       "rules": {
         "read": "true",
@@ -63,7 +64,8 @@
         "allowedJabatans": { "type": "array" },
         "jabatanAccess": { "type": "object" },
         "allowedPages": { "type": "array" },
-        "pageAccess": { "type": "object" }
+        "pageAccess": { "type": "object" },
+        "photoUrl": { "type": "string" }
       },
       "rules": {
         "read": "true",

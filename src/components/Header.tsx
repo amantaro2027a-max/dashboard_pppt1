@@ -19,6 +19,8 @@ import {
   Briefcase,
   Globe,
   Layers,
+  UserCheck,
+  KeyRound,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -65,6 +67,13 @@ export const Header: React.FC = () => {
   const isDashboardActive = activeTab !== 'welcome';
 
   const allMenuItems = [
+    {
+      id: 'selamatDatang',
+      label: 'Selamat Datang',
+      desc: 'Profil pegawai, foto pasport, tarikh/masa & tukar password',
+      icon: UserCheck,
+      iconBg: 'bg-emerald-100 text-emerald-700',
+    },
     {
       id: 'dashboard',
       label: 'Dashboard Program',
@@ -185,13 +194,18 @@ export const Header: React.FC = () => {
       return false;
     }
 
+    // 2b. Halaman Selamat Datang tersedia untuk semua pengguna yang telah log masuk
+    if (item.id === 'selamatDatang') {
+      return true;
+    }
+
     // 3. Super Admin mempunyai kebenaran capaian semua modul
     if (isSuperAdmin) {
       return true;
     }
 
-    // 4. Pengguna yang telah log masuk (Level 2–7): tapis mengikut KEBENARAN VIEW/PAPAR PAGE
-    if (item.id === 'admin') return getPageAccessMode('ADMIN') !== 'none';
+    // 4. Pengguna selain Super Admin tidak dibenarkan melihat Portal Pengurusan Pentadbir (Admin)
+    if (item.id === 'admin') return false;
     if (item.id === 'bersepadu') return getPageAccessMode('DASHBOARD BERSEPADU') !== 'none';
     if (item.id === 'perincian') return getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
     if (item.id === 'analisisPegawai') return getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
@@ -418,10 +432,10 @@ export const Header: React.FC = () => {
                     ? 'bg-slate-900 text-white shadow-xs'
                     : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
                 }`}
-                title="Buka Portal Admin / Log Masuk"
+                title="Log Masuk Akaun Pengguna / Super Admin"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                <span>Admin</span>
+                <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                <span>Log Masuk</span>
               </button>
             )}
           </nav>
