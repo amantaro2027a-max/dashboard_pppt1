@@ -38,7 +38,11 @@ import {
   getSubwaranYear,
   computeAvailableFinanceYears,
 } from '../utils/financeYear';
-import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import {
+  aggregateProgramsByCode,
+  deduplicateProgramsByCode,
+  getProgramDedupeKey,
+} from '../utils/programDedupe';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
   KLUSTER_LIST,
@@ -169,7 +173,9 @@ interface ProgramContextType {
   getJabatanAccessMode: (jabatanName?: string) => 'none' | AccessMode;
   canEditPage: (pageKey: string) => boolean;
   canEditJabatan: (jabatanName?: string) => boolean;
+  canEditProgram: (prog?: ProgramItem | null) => boolean;
   getEditableJabatans: () => string[];
+  getCreatableJabatans: () => string[];
   getAuthorizedPusatList: () => string[];
   getAuthorizedJabatanList: () => string[];
   filterScope: FilterScope;
@@ -511,8 +517,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [firebaseStatus, setFirebaseStatus] = useState<'connecting' | 'connected' | 'offline'>('connecting');
   const isInitialSyncDone = useRef(false);
 
-  // 1. Programs state (with localStorage cache fallback - no sample programs)
-  const [programs, setPrograms] = useState<ProgramItem[]>(() => {
+  // 1. Raw Programs state (with localStorage cache fallback - no sample programs)
+  const [rawPrograms, setPrograms] = useState<ProgramItem[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_PROGRAMS);
       if (saved) {
@@ -524,6 +530,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch {}
     return [];
   });
+
+  // Aggregate program data by Kod Program so programs with multiple assigned staff
+  // are counted only once across all dashboard calculations, stats, and charts.
+  const programs = useMemo(() => aggregateProgramsByCode(rawPrograms), [rawPrograms]);
 
   // 2. Admin Users state
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>(() => {
@@ -851,9 +861,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Local storage persistence fallback
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_PROGRAMS, JSON.stringify(programs));
+      localStorage.setItem(STORAGE_PROGRAMS, JSON.stringify(rawPrograms));
     } catch {}
-  }, [programs]);
+  }, [rawPrograms]);
 
   useEffect(() => {
     try {
@@ -2013,7 +2023,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
 
-    if (currentUser.levelId === 'KETUA_JABATAN') {
+    if (
+      currentUser.levelId === 'KETUA_JABATAN' ||
+      currentUser.levelId === 'P_PB' ||
+      currentUser.levelId === 'URUS_SETIA'
+    ) {
       const jabSet = new Set<string>();
       if (!isInvalidJabatan(matchedPeg?.jabatan)) {
         jabSet.add(matchedPeg!.jabatan!.trim());
@@ -2059,7 +2073,94 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     return emptyScope;
-  }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, programs, pusatList]);
+  }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, programs, pusatList, getAuthorizedJabatanList, getAuthorizedPusatList]);
+
+  const getCreatableJabatans = useCallback((): string[] => {
+    const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
+      (j) => j && j !== 'SEMUA JABATAN'
+    );
+    if (!currentUser) return [];
+    if (isSuperAdmin) return allJabs;
+    if (!canEditPage('ADMIN') && !canEditPage('PERINCIAN PROGRAM')) return [];
+
+    const explicitEditable = getEditableJabatans();
+    if (filterScope.isJabatanRestricted && filterScope.allowedJabatans.length > 0) {
+      const allowedUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
+      const intersected = explicitEditable.filter((j) => allowedUpper.has(j.trim().toUpperCase()));
+      return intersected.length > 0 ? intersected : filterScope.allowedJabatans;
+    }
+    if (explicitEditable.length > 0) return explicitEditable;
+    const authJabs = getAuthorizedJabatanList();
+    return authJabs.length > 0 ? authJabs : allJabs;
+  }, [jabatanMap, currentUser, isSuperAdmin, filterScope, getEditableJabatans, getAuthorizedJabatanList]);
+
+  const canEditProgram = useCallback(
+    (prog?: ProgramItem | null): boolean => {
+      if (!currentUser || !prog) return false;
+      if (isSuperAdmin) return true;
+
+      // Only Super Admin can edit SELESAI programs
+      const progStatus = (prog.statusProgram || '').trim().toUpperCase();
+      if (progStatus === 'SELESAI') return false;
+
+      // User must have Edit permission for ADMIN or PERINCIAN PROGRAM
+      if (!canEditPage('ADMIN') && !canEditPage('PERINCIAN PROGRAM')) {
+        return false;
+      }
+
+      const level = currentUser.levelId;
+      if (level === 'KETUA_PUSAT') {
+        const allowedPusatsUpper = new Set(
+          filterScope.allowedPusats.map((p) => p.trim().toUpperCase())
+        );
+        const progPusatUpper = (prog.pusat || '').trim().toUpperCase();
+        if (allowedPusatsUpper.has(progPusatUpper)) return true;
+        return filterScope.allowedPusats.some((pus) =>
+          (jabatanMap[pus] || []).some(
+            (j) => j.trim().toUpperCase() === (prog.jabatan || '').trim().toUpperCase()
+          )
+        );
+      }
+
+      if (level === 'KETUA_JABATAN') {
+        const allowedJabsUpper = new Set(
+          filterScope.allowedJabatans.map((j) => j.trim().toUpperCase())
+        );
+        return allowedJabsUpper.has((prog.jabatan || '').trim().toUpperCase());
+      }
+
+      if (level === 'P_PB') {
+        const userIdNorm = (currentUser.id || '').trim().toUpperCase();
+        const userNameNorm = (currentUser.name || '').trim().toUpperCase();
+        const matchedPeg = pegawaiList.find(
+          (pg) =>
+            (pg.nama && userNameNorm && pg.nama.trim().toUpperCase() === userNameNorm) ||
+            (pg.id && userIdNorm && pg.id.trim().toUpperCase() === userIdNorm)
+        );
+        const pegIdNorm = (matchedPeg?.id || '').trim().toUpperCase();
+        const pegNameNorm = (matchedPeg?.nama || '').trim().toUpperCase();
+
+        const pId = (prog.pengurusId || '').trim().toUpperCase();
+        const pName = (prog.pengurusNama || '').trim().toUpperCase();
+        const pbId = (prog.pengurusBersamaId || '').trim().toUpperCase();
+        const pbName = (prog.pengurusBersamaNama || '').trim().toUpperCase();
+
+        const isPengurus =
+          (pId !== '' && (pId === userIdNorm || (pegIdNorm !== '' && pId === pegIdNorm))) ||
+          (pName !== '' && (pName === userNameNorm || (pegNameNorm !== '' && pName === pegNameNorm)));
+
+        const isPengurusBersama =
+          (pbId !== '' && (pbId === userIdNorm || (pegIdNorm !== '' && pbId === pegIdNorm))) ||
+          (pbName !== '' && (pbName === userNameNorm || (pegNameNorm !== '' && pbName === pegNameNorm)));
+
+        return isPengurus || isPengurusBersama;
+      }
+
+      // PENGARAH, TPP_TPL, URUS_SETIA cannot edit Perincian Maklumat Lengkap Program
+      return false;
+    },
+    [currentUser, isSuperAdmin, filterScope, jabatanMap, pegawaiList]
+  );
 
   const prevLockedScopeRef = useRef<{
     userId?: string;
@@ -3049,7 +3150,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           message: 'Akses View Only: Akaun anda tidak mempunyai kebenaran Edit halaman untuk menambah program.',
         };
       }
-      if (!canEditJabatan(data.jabatan)) {
+      const creatableJabs = getCreatableJabatans();
+      const canCreateJab =
+        canEditJabatan(data.jabatan) ||
+        creatableJabs.some((j) => j.trim().toUpperCase() === (data.jabatan || '').trim().toUpperCase());
+      const pusatAllowed =
+        !filterScope.isPusatRestricted ||
+        filterScope.allowedPusats.length === 0 ||
+        filterScope.allowedPusats.some((p) => p.trim().toUpperCase() === (data.pusat || '').trim().toUpperCase());
+      if (!canCreateJab || !pusatAllowed) {
         logActivity({
           action_type: 'UNAUTHORIZED_ACCESS',
           module_name: 'Perincian Program',
@@ -3059,7 +3168,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         });
         return {
           success: false,
-          message: `Akses View Only / Terhad: Anda hanya dibenarkan menambah atau mengedit program bagi jabatan dengan kebenaran Edit.`,
+          message: `Akses Terhad: Anda hanya dibenarkan menambah program bagi Pusat / Jabatan yang berkaitan dengan anda.`,
         };
       }
     }
@@ -3098,17 +3207,18 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Sila log masuk ke akaun Admin untuk mengemaskini program.' };
     }
 
-    const target = programs.find((p) => p.id === id);
+    const target = programs.find((p) => p.id === id) || rawPrograms.find((p) => p.id === id);
     if (!target) {
       return { success: false, message: 'Program tidak ditemui.' };
     }
+    const targetDedupeKey = getProgramDedupeKey(target);
 
-    // REQUIREMENT: Super admin sahaja boleh edit semua program dengan STATUS PROGRAM: SELESAI DAN TANGGUNG
+    // REQUIREMENT: Super admin sahaja boleh edit program dengan STATUS PROGRAM: SELESAI
     const targetStatus = (target.statusProgram || '').trim().toUpperCase();
-    if ((targetStatus === 'SELESAI' || targetStatus === 'TANGGUNG') && !isSuperAdmin) {
+    if (targetStatus === 'SELESAI' && !isSuperAdmin) {
       return {
         success: false,
-        message: 'Akses ditolak. Program berstatus SELESAI dan TANGGUNG hanya boleh dikemaskini oleh Super Admin sahaja.',
+        message: 'Akses ditolak. Program berstatus SELESAI hanya boleh dikemaskini oleh Super Admin sahaja.',
       };
     }
 
@@ -3119,10 +3229,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           message: 'Akses View Only: Akaun anda tidak mempunyai kebenaran Edit halaman untuk mengemaskini program.',
         };
       }
-      if (!canEditJabatan(target.jabatan)) {
+      if (!canEditProgram(target)) {
         return {
           success: false,
-          message: `Akses View Only / Terhad: Anda hanya mempunyai akses paparan (View Only) atau tidak diberi kebenaran Edit bagi jabatan "${target.jabatan}".`,
+          message:
+            'Akses Ditolak: Hanya Ketua Pusat (Pusat berkaitan), Ketua Jabatan (Jabatan berkaitan), atau Pengurus / Pengurus Bersama (program berkaitan) yang mempunyai kebenaran Edit sahaja boleh mengemaskini program ini.',
         };
       }
     }
@@ -3351,73 +3462,75 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }
 
-    let updatedItem: ProgramItem | null = null;
+    const updatedItemsForSync: ProgramItem[] = [];
+    const baseUpdated = sanitizeProgramExpenditure({
+      ...target,
+      ...data,
+      namaProgram: data.namaProgram !== undefined ? data.namaProgram.toUpperCase() : target.namaProgram,
+      kodProgram: data.kodProgram !== undefined ? data.kodProgram.toUpperCase() : target.kodProgram,
+    });
+
+    if ((baseUpdated.statusProgram || '').trim().toUpperCase() === 'BATAL') {
+      baseUpdated.os21000 = 0;
+      baseUpdated.os24000 = 0;
+      baseUpdated.os27000 = 0;
+      baseUpdated.os29000 = 0;
+      baseUpdated.jumlahRm = 0;
+      baseUpdated.os21000Belanja = 0;
+      baseUpdated.os24000Belanja = 0;
+      baseUpdated.os27000Belanja = 0;
+      baseUpdated.os29000Belanja = 0;
+      baseUpdated.jumlahBelanjaRm = 0;
+      baseUpdated.os21000Penjimatan = 0;
+      baseUpdated.os24000Penjimatan = 0;
+      baseUpdated.os27000Penjimatan = 0;
+      baseUpdated.os29000Penjimatan = 0;
+      baseUpdated.jumlahPenjimatanRm = 0;
+    } else if (
+      data.os21000 !== undefined ||
+      data.os24000 !== undefined ||
+      data.os27000 !== undefined ||
+      data.os29000 !== undefined
+    ) {
+      baseUpdated.jumlahRm =
+        (Number(baseUpdated.os21000) || 0) +
+        (Number(baseUpdated.os24000) || 0) +
+        (Number(baseUpdated.os27000) || 0) +
+        (Number(baseUpdated.os29000) || 0);
+    }
+
+    if (diffItems.length > 0) {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const tarikhPindaan = `${day}/${month}/${year}`;
+      const existingPindaan = target.rekodPindaan || [];
+      const newPindaan: RekodPindaanBK04 = {
+        noPindaan: existingPindaan.length + 1,
+        tarikhPindaan,
+        dikemaskiniOleh: currentUser.name || currentUser.id,
+        perubahan: diffItems,
+      };
+      baseUpdated.rekodPindaan = [...existingPindaan, newPindaan];
+    }
+
     setPrograms((prev) =>
       prev.map((p) => {
-        if (p.id === id) {
-          const updated = sanitizeProgramExpenditure({
-            ...p,
-            ...data,
-            namaProgram: data.namaProgram !== undefined ? data.namaProgram.toUpperCase() : p.namaProgram,
-            kodProgram: data.kodProgram !== undefined ? data.kodProgram.toUpperCase() : p.kodProgram,
-          });
-
-          if ((updated.statusProgram || '').trim().toUpperCase() === 'BATAL') {
-            updated.os21000 = 0;
-            updated.os24000 = 0;
-            updated.os27000 = 0;
-            updated.os29000 = 0;
-            updated.jumlahRm = 0;
-            updated.os21000Belanja = 0;
-            updated.os24000Belanja = 0;
-            updated.os27000Belanja = 0;
-            updated.os29000Belanja = 0;
-            updated.jumlahBelanjaRm = 0;
-            updated.os21000Penjimatan = 0;
-            updated.os24000Penjimatan = 0;
-            updated.os27000Penjimatan = 0;
-            updated.os29000Penjimatan = 0;
-            updated.jumlahPenjimatanRm = 0;
-          } else if (
-            data.os21000 !== undefined ||
-            data.os24000 !== undefined ||
-            data.os27000 !== undefined ||
-            data.os29000 !== undefined
-          ) {
-            updated.jumlahRm =
-              (Number(updated.os21000) || 0) +
-              (Number(updated.os24000) || 0) +
-              (Number(updated.os27000) || 0) +
-              (Number(updated.os29000) || 0);
-          }
-
-          // If there are diffs, record a new BK04 pindaan entry
-          if (diffItems.length > 0) {
-            const now = new Date();
-            const day = String(now.getDate()).padStart(2, '0');
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const year = now.getFullYear();
-            const tarikhPindaan = `${day}/${month}/${year}`;
-            const existingPindaan = p.rekodPindaan || [];
-            const newPindaan: RekodPindaanBK04 = {
-              noPindaan: existingPindaan.length + 1,
-              tarikhPindaan,
-              dikemaskiniOleh: currentUser.name || currentUser.id,
-              perubahan: diffItems,
-            };
-            updated.rekodPindaan = [...existingPindaan, newPindaan];
-          }
-
-          updatedItem = updated;
-          return updated;
+        if (p.id === id || getProgramDedupeKey(p) === targetDedupeKey) {
+          const syncedItem: ProgramItem = { ...baseUpdated, id: p.id };
+          updatedItemsForSync.push(syncedItem);
+          return syncedItem;
         }
         return p;
       })
     );
 
-    if (updatedItem) {
-      updateDoc(doc(db, 'programs', id), sanitizeData(updatedItem)).catch((err) => {
-        handleFirestoreError(err, { operation: OperationType.UPDATE, path: `programs/${id}` });
+    if (updatedItemsForSync.length > 0) {
+      updatedItemsForSync.forEach((synced) => {
+        updateDoc(doc(db, 'programs', synced.id), sanitizeData(synced)).catch((err) => {
+          handleFirestoreError(err, { operation: OperationType.UPDATE, path: `programs/${synced.id}` });
+        });
       });
       logActivity({
         action_type: 'UPDATE',
@@ -3448,15 +3561,28 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
 
-    const target = programs.find((p) => p.id === id);
-    setPrograms((prev) => prev.filter((p) => p.id !== id));
-    if (selectedProgram?.id === id) {
+    const target = programs.find((p) => p.id === id) || rawPrograms.find((p) => p.id === id);
+    const targetKey = target ? getProgramDedupeKey(target) : null;
+    const idsToDelete = targetKey
+      ? Array.from(
+          new Set([
+            id,
+            ...rawPrograms.filter((p) => getProgramDedupeKey(p) === targetKey).map((p) => p.id),
+          ])
+        )
+      : [id];
+    const deleteSet = new Set(idsToDelete);
+
+    setPrograms((prev) => prev.filter((p) => !deleteSet.has(p.id)));
+    if (selectedProgram && deleteSet.has(selectedProgram.id)) {
       setSelectedProgram(null);
       setIsDetailOpen(false);
     }
 
-    deleteDoc(doc(db, 'programs', id)).catch((err) => {
-      handleFirestoreError(err, { operation: OperationType.DELETE, path: `programs/${id}` });
+    idsToDelete.forEach((delId) => {
+      deleteDoc(doc(db, 'programs', delId)).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.DELETE, path: `programs/${delId}` });
+      });
     });
 
     logActivity({
@@ -3488,7 +3614,21 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Tiada program dipilih untuk dipadam.' };
     }
 
-    const idSet = new Set(ids);
+    const initialIdSet = new Set(ids);
+    const targetKeys = new Set(
+      rawPrograms
+        .concat(programs)
+        .filter((p) => initialIdSet.has(p.id))
+        .map((p) => getProgramDedupeKey(p))
+    );
+    const expandedIds = Array.from(
+      new Set([
+        ...ids,
+        ...rawPrograms.filter((p) => targetKeys.has(getProgramDedupeKey(p))).map((p) => p.id),
+      ])
+    );
+    const idSet = new Set(expandedIds);
+
     setPrograms((prev) => prev.filter((p) => !idSet.has(p.id)));
     if (selectedProgram && idSet.has(selectedProgram.id)) {
       setSelectedProgram(null);
@@ -3497,11 +3637,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     try {
       const chunkSize = 400;
-      for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize);
+      for (let i = 0; i < expandedIds.length; i += chunkSize) {
+        const chunk = expandedIds.slice(i, i + chunkSize);
         const batch = writeBatch(db);
-        chunk.forEach((id) => {
-          batch.delete(doc(db, 'programs', id));
+        chunk.forEach((delId) => {
+          batch.delete(doc(db, 'programs', delId));
         });
         batch.commit().catch((err) => {
           handleFirestoreError(err, { operation: OperationType.DELETE, path: `programs/batch` });
@@ -4750,7 +4890,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getJabatanAccessMode,
         canEditPage,
         canEditJabatan,
+        canEditProgram,
         getEditableJabatans,
+        getCreatableJabatans,
         getAuthorizedPusatList,
         getAuthorizedJabatanList,
         filterScope,

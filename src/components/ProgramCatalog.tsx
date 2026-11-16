@@ -13,6 +13,7 @@ import {
   Filter,
   Lock,
   ShieldAlert,
+  Plus,
 } from 'lucide-react';
 
 export const ProgramCatalog: React.FC = () => {
@@ -22,15 +23,19 @@ export const ProgramCatalog: React.FC = () => {
     currentUser,
     isSuperAdmin,
     getPageAccessMode,
+    canEditPage,
     getAuthorizedJabatanList,
     filterScope,
     pegawaiList,
     setActiveTab,
+    setIsFormOpen,
+    setProgramToEdit,
   } = useProgramContext();
 
   // Granular Page Permission Check
   const canAccess =
     Boolean(currentUser) && getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
+  const canCreateProgram = Boolean(currentUser) && canEditPage('PERINCIAN PROGRAM');
 
   // Bilangan paparan katalog dibenarkan: default 6
   const [displayLimit, setDisplayLimit] = useState<string>('6');
@@ -220,11 +225,24 @@ export const ProgramCatalog: React.FC = () => {
             Katalog Perincian Program
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Paparan katalog ringkasan program mengikut spesifikasi Dashboard Pusat IAB (Mod Paparan Sahaja)
+            Paparan katalog ringkasan program mengikut spesifikasi Dashboard Pusat IAB
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {canCreateProgram && (
+            <button
+              type="button"
+              onClick={() => {
+                setProgramToEdit(null);
+                setIsFormOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-md shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Program Baru</span>
+            </button>
+          )}
           {/* Sorting by STATUS PROGRAM */}
           <div className="flex items-center gap-2">
             <label className="text-xs font-semibold text-slate-600 flex items-center gap-1">

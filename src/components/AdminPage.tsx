@@ -752,13 +752,13 @@ export const AdminPage: React.FC = () => {
     );
   }
 
-  // Handling Program Edit (LOCKED for SELESAI & TANGGUNG programs + requires Edit permission)
+  // Handling Program Edit (LOCKED for SELESAI programs + requires Edit permission)
   const handleEditProgram = (prog: ProgramItem) => {
     setProgramBannerMsg(null);
-    if (['SELESAI', 'TANGGUNG'].includes(prog.statusProgram.toUpperCase()) && !isSuperAdmin) {
+    if (prog.statusProgram.toUpperCase() === 'SELESAI' && !isSuperAdmin) {
       setProgramBannerMsg({
         type: 'error',
-        text: 'Program berstatus SELESAI / TANGGUNG telah dikunci (LOCKED) dan hanya boleh diedit oleh Super Admin.',
+        text: 'Program berstatus SELESAI telah dikunci (LOCKED) dan hanya boleh diedit oleh Super Admin.',
       });
       return;
     }
@@ -1913,10 +1913,10 @@ export const AdminPage: React.FC = () => {
                           </td>
                           <td className="py-3 px-4 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center gap-1.5">
-                              {/* Edit or Pencil Button: Super Admin SAHAJA boleh edit program SELESAI & TANGGUNG */}
-                              {['SELESAI', 'TANGGUNG'].includes(prog.statusProgram.toUpperCase()) && !isSuperAdmin ? (
+                              {/* Edit or Pencil Button: Super Admin SAHAJA boleh edit program SELESAI */}
+                              {prog.statusProgram.toUpperCase() === 'SELESAI' && !isSuperAdmin ? (
                                 <span
-                                  title="Program Berstatus SELESAI / TANGGUNG Dikunci - Hanya Super Admin boleh edit"
+                                  title="Program Berstatus SELESAI Dikunci - Hanya Super Admin boleh edit"
                                   className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 text-slate-500 rounded text-[10px] font-bold cursor-not-allowed select-none"
                                 >
                                   <Lock className="w-3 h-3 text-slate-400" />
@@ -1926,7 +1926,7 @@ export const AdminPage: React.FC = () => {
                                 <button
                                   onClick={() => handleEditProgram(prog)}
                                   title={
-                                    ['SELESAI', 'TANGGUNG'].includes(prog.statusProgram.toUpperCase())
+                                    prog.statusProgram.toUpperCase() === 'SELESAI'
                                       ? 'Kemaskini Program (Akses Super Admin)'
                                       : 'Kemaskini Program (Pencil)'
                                   }

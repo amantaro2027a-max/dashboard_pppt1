@@ -24,8 +24,9 @@ export const ProgramFormModal: React.FC = () => {
     currentUser,
     isSuperAdmin,
     canEditPage,
-    canEditJabatan,
-    getEditableJabatans,
+    canEditProgram,
+    getCreatableJabatans,
+    filterScope,
     pusatList,
     jabatanMap,
     pegawaiList,
@@ -62,21 +63,25 @@ export const ProgramFormModal: React.FC = () => {
   const [catatan, setCatatan] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Granular Jabatan edit permissions
-  const editableJabatans = useMemo(() => getEditableJabatans(), [getEditableJabatans]);
+  // Granular Jabatan permissions (scoped by Level ID & Page Edit access)
+  const editableJabatans = useMemo(() => getCreatableJabatans(), [getCreatableJabatans]);
   const canEditFormByPage = isSuperAdmin || canEditPage('ADMIN') || canEditPage('PERINCIAN PROGRAM');
   const isJabatanLocked = !isSuperAdmin && editableJabatans.length <= 1;
 
   const allowedPusatList = useMemo(() => {
     if (isSuperAdmin) return pusatList;
-    const filtered = pusatList.filter((p) =>
+    let filtered = pusatList.filter((p) =>
       (jabatanMap[p] || []).some((j) => editableJabatans.includes(j))
     );
+    if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
+      const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+      filtered = filtered.filter((p) => allowedPusatsUpper.has(p.trim().toUpperCase()));
+    }
     if (programToEdit?.pusat && !filtered.includes(programToEdit.pusat)) {
       return [...filtered, programToEdit.pusat];
     }
     return filtered;
-  }, [isSuperAdmin, pusatList, jabatanMap, editableJabatans, programToEdit]);
+  }, [isSuperAdmin, pusatList, jabatanMap, editableJabatans, programToEdit, filterScope]);
 
   const allowedJabatanOptions = useMemo(() => {
     const allInPusat = jabatanMap[pusat] || [];
@@ -293,20 +298,24 @@ export const ProgramFormModal: React.FC = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Guard: Hanya Super Admin boleh edit program berstatus SELESAI dan TANGGUNG
+    // Guard: Hanya Super Admin boleh edit program berstatus SELESAI
     if (programToEdit) {
-      const editStatus = programToEdit.statusProgram.toUpperCase();
-      if ((editStatus === 'SELESAI' || editStatus === 'TANGGUNG') && !isSuperAdmin) {
+      const editStatus = (programToEdit.statusProgram || '').trim().toUpperCase();
+      if (editStatus === 'SELESAI' && !isSuperAdmin) {
         setErrorMsg(
-          'Program berstatus SELESAI dan TANGGUNG telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.'
+          'Program berstatus SELESAI telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.'
         );
         return;
       }
-    }
-
-    if (!isSuperAdmin && (!canEditFormByPage || !canEditJabatan(jabatan))) {
+      if (!isSuperAdmin && !canEditProgram(programToEdit)) {
+        setErrorMsg(
+          'Akses Ditolak: Hanya Ketua Pusat (Pusat berkaitan), Ketua Jabatan (Jabatan berkaitan), atau Pengurus / Pengurus Bersama (program berkaitan) yang diberi kebenaran Edit sahaja boleh mengemaskini program ini.'
+        );
+        return;
+      }
+    } else if (!isSuperAdmin && (!canEditFormByPage || !editableJabatans.includes(jabatan))) {
       setErrorMsg(
-        `Mod Paparan Sahaja (View Only): Akaun anda tidak mempunyai kebenaran Edit bagi jabatan "${jabatan || '-'}".`
+        `Mod Paparan Sahaja / Terhad: Akaun anda tidak mempunyai kebenaran menambah program bagi jabatan "${jabatan || '-'}".`
       );
       return;
     }
