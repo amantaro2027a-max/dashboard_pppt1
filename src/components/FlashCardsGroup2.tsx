@@ -4,8 +4,8 @@ import { formatNumber } from '../utils/formatters';
 import { CheckCircle2, Clock, AlertTriangle, HelpCircle, XCircle } from 'lucide-react';
 
 export const FlashCardsGroup2: React.FC = () => {
-  const { group2Stats, filteredPrograms, setFilter, filters } = useProgramContext();
-  const total = filteredPrograms.length || 1;
+  const { group1Stats, group2Stats, setFilter, filters } = useProgramContext();
+  const total = group1Stats.bilanganProgram || 1;
 
   const cards = [
     {

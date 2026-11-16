@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatNumber, getStatusConfig } from '../utils/formatters';
+import { deduplicateProgramsByCode, getProgramDedupeKey } from '../utils/programDedupe';
 import {
   Filter,
   RotateCcw,
@@ -132,6 +133,55 @@ export const AnalisisPegawaiPage: React.FC = () => {
     items: ProgramItem[];
   } | null>(null);
 
+  // Lookup maps for officer resolution
+  const officerLookup = useMemo(() => {
+    const byId = new Map<string, Pegawai>();
+    const byName = new Map<string, Pegawai>();
+    pegawaiList.forEach((pg) => {
+      if (pg.id) byId.set(pg.id.trim().toUpperCase(), pg);
+      if (pg.nama) byName.set(pg.nama.trim().toUpperCase(), pg);
+    });
+    return { byId, byName };
+  }, [pegawaiList]);
+
+  const resolveOfficerProfile = (rawId?: string, rawName?: string): Pegawai | undefined => {
+    const cleanId = (rawId || '').trim().toUpperCase();
+    const cleanName = (rawName || '').trim().toUpperCase();
+    return (cleanId && officerLookup.byId.get(cleanId)) || (cleanName ? officerLookup.byName.get(cleanName) : undefined);
+  };
+
+  // Helper to check if an officer/record belongs to active Level ID scope + Pusat/Jabatan slicers
+  const isWithinRoleAndLocationScope = (pusatVal?: string, jabatanVal?: string): boolean => {
+    const pNorm = (pusatVal || '').trim().toUpperCase();
+    const jNorm = (jabatanVal || '').trim().toUpperCase();
+
+    if (
+      filterScope.isPusatRestricted &&
+      filterScope.allowedPusats.length > 0 &&
+      !filterScope.allowedPusats.some((ap) => ap.trim().toUpperCase() === pNorm) &&
+      !(
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === jNorm)
+      )
+    ) {
+      return false;
+    }
+    if (
+      filterScope.isJabatanRestricted &&
+      filterScope.allowedJabatans.length > 0 &&
+      !filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === jNorm)
+    ) {
+      return false;
+    }
+    if (slicerPusat && pNorm !== slicerPusat.trim().toUpperCase()) {
+      return false;
+    }
+    if (slicerJabatan && jNorm !== slicerJabatan.trim().toUpperCase()) {
+      return false;
+    }
+    return true;
+  };
+
   // Available options for slicers (scoped by Level ID)
   const availablePusat = useMemo(() => {
     if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
@@ -174,51 +224,79 @@ export const AnalisisPegawaiPage: React.FC = () => {
   }, [slicerPusat, jabatanMap, pegawaiList, programs, filterScope]);
 
   const availableJawatan = useMemo(() => {
-    const set = new Set<string>(jawatanList);
-    pegawaiList.forEach((pg) => pg.jawatan && set.add(pg.jawatan.toUpperCase()));
+    const isRestricted =
+      filterScope.isPusatRestricted ||
+      filterScope.isJabatanRestricted ||
+      Boolean(slicerPusat) ||
+      Boolean(slicerJabatan);
+    const set = new Set<string>(isRestricted ? [] : jawatanList);
+    pegawaiList.forEach((pg) => {
+      if (!pg.jawatan) return;
+      if (!isWithinRoleAndLocationScope(pg.pusat, pg.jabatan)) return;
+      set.add(pg.jawatan.trim().toUpperCase());
+    });
     return Array.from(set).filter(Boolean).sort();
-  }, [jawatanList, pegawaiList]);
+  }, [jawatanList, pegawaiList, filterScope, slicerPusat, slicerJabatan]);
 
   const availablePengurusOptions = useMemo(() => {
     const map = new Map<string, string>();
     pegawaiList.forEach((pg) => {
-      if (pg.nama) map.set(pg.nama.trim().toUpperCase(), pg.nama.trim().toUpperCase());
+      if (!pg.nama) return;
+      if (!isWithinRoleAndLocationScope(pg.pusat, pg.jabatan)) return;
+      const key = pg.nama.trim().toUpperCase();
+      map.set(key, key);
     });
     programs.forEach((p) => {
-      if (p.pengurusNama) map.set(p.pengurusNama.trim().toUpperCase(), p.pengurusNama.trim().toUpperCase());
+      if (!p.pengurusNama) return;
+      if (!isWithinRoleAndLocationScope(p.pusat, p.jabatan)) return;
+      const profile = resolveOfficerProfile(p.pengurusId, p.pengurusNama);
+      if (profile && !isWithinRoleAndLocationScope(profile.pusat, profile.jabatan)) return;
+      const key = p.pengurusNama.trim().toUpperCase();
+      map.set(key, key);
     });
     return Array.from(map.values()).sort();
-  }, [pegawaiList, programs]);
+  }, [pegawaiList, programs, filterScope, slicerPusat, slicerJabatan, officerLookup]);
 
   const availablePengurusBersamaOptions = useMemo(() => {
     const map = new Map<string, string>();
     pegawaiList.forEach((pg) => {
-      if (pg.nama) map.set(pg.nama.trim().toUpperCase(), pg.nama.trim().toUpperCase());
+      if (!pg.nama) return;
+      if (!isWithinRoleAndLocationScope(pg.pusat, pg.jabatan)) return;
+      const key = pg.nama.trim().toUpperCase();
+      map.set(key, key);
     });
     programs.forEach((p) => {
-      if (p.pengurusBersamaNama) {
-        map.set(p.pengurusBersamaNama.trim().toUpperCase(), p.pengurusBersamaNama.trim().toUpperCase());
-      }
+      if (!p.pengurusBersamaNama) return;
+      if (!isWithinRoleAndLocationScope(p.pusat, p.jabatan)) return;
+      const profile = resolveOfficerProfile(p.pengurusBersamaId, p.pengurusBersamaNama);
+      if (profile && !isWithinRoleAndLocationScope(profile.pusat, profile.jabatan)) return;
+      const key = p.pengurusBersamaNama.trim().toUpperCase();
+      map.set(key, key);
     });
     return Array.from(map.values()).sort();
-  }, [pegawaiList, programs]);
+  }, [pegawaiList, programs, filterScope, slicerPusat, slicerJabatan, officerLookup]);
 
-  // Lookup maps for officer resolution
-  const officerLookup = useMemo(() => {
-    const byId = new Map<string, Pegawai>();
-    const byName = new Map<string, Pegawai>();
-    pegawaiList.forEach((pg) => {
-      if (pg.id) byId.set(pg.id.trim().toUpperCase(), pg);
-      if (pg.nama) byName.set(pg.nama.trim().toUpperCase(), pg);
-    });
-    return { byId, byName };
-  }, [pegawaiList]);
-
-  const resolveOfficerProfile = (rawId?: string, rawName?: string): Pegawai | undefined => {
-    const cleanId = (rawId || '').trim().toUpperCase();
-    const cleanName = (rawName || '').trim().toUpperCase();
-    return (cleanId && officerLookup.byId.get(cleanId)) || (cleanName ? officerLookup.byName.get(cleanName) : undefined);
-  };
+  useEffect(() => {
+    if (slicerJawatan && !availableJawatan.includes(slicerJawatan.trim().toUpperCase())) {
+      setSlicerJawatan('');
+    }
+    if (slicerPengurus && !availablePengurusOptions.includes(slicerPengurus.trim().toUpperCase())) {
+      setSlicerPengurus('');
+    }
+    if (
+      slicerPengurusBersama &&
+      !availablePengurusBersamaOptions.includes(slicerPengurusBersama.trim().toUpperCase())
+    ) {
+      setSlicerPengurusBersama('');
+    }
+  }, [
+    availableJawatan,
+    availablePengurusOptions,
+    availablePengurusBersamaOptions,
+    slicerJawatan,
+    slicerPengurus,
+    slicerPengurusBersama,
+  ]);
 
   // Helper to check if a program matches a specific officer
   const matchesOfficerRef = (officer: { id: string; nama: string }, rawId?: string, rawName?: string) => {
@@ -366,35 +444,47 @@ export const AnalisisPegawaiPage: React.FC = () => {
       // Apply officer-attribute slicers (Pusat, Jabatan, Jawatan, Search, Pengurus/Pengurus Bersama)
       if (slicerJawatan && off.jawatan !== slicerJawatan.trim().toUpperCase()) return;
 
-      // Collect officer's programs from filteredProgramsBySlicers
-      const utamaPrograms = filteredProgramsBySlicers.filter((p) =>
-        matchesOfficerRef(off, p.pengurusId, p.pengurusNama)
+      // Collect officer's programs from filteredProgramsBySlicers (deduplicated by Kod Program)
+      const utamaPrograms = deduplicateProgramsByCode(
+        filteredProgramsBySlicers.filter((p) =>
+          matchesOfficerRef(off, p.pengurusId, p.pengurusNama)
+        )
       );
-      const bersamaPrograms = filteredProgramsBySlicers.filter(
-        (p) =>
-          matchesOfficerRef(off, p.pengurusBersamaId, p.pengurusBersamaNama) &&
-          !matchesOfficerRef(off, p.pengurusId, p.pengurusNama)
+      const bersamaPrograms = deduplicateProgramsByCode(
+        filteredProgramsBySlicers.filter(
+          (p) =>
+            matchesOfficerRef(off, p.pengurusBersamaId, p.pengurusBersamaNama) &&
+            !matchesOfficerRef(off, p.pengurusId, p.pengurusNama)
+        )
       );
 
       const allProgsMap = new Map<string, ProgramItem>();
-      utamaPrograms.forEach((p) => allProgsMap.set(p.id, p));
-      bersamaPrograms.forEach((p) => allProgsMap.set(p.id, p));
+      utamaPrograms.forEach((p) => {
+        const key = getProgramDedupeKey(p);
+        if (!allProgsMap.has(key)) allProgsMap.set(key, p);
+      });
+      bersamaPrograms.forEach((p) => {
+        const key = getProgramDedupeKey(p);
+        if (!allProgsMap.has(key)) allProgsMap.set(key, p);
+      });
       const allProgs = Array.from(allProgsMap.values());
 
-      // Enforce Level ID Pusat & Jabatan scope on officer rows
+      // Strictly enforce Level ID Pusat & Jabatan scope on officer rows
       if (
         filterScope.isPusatRestricted &&
         filterScope.allowedPusats.length > 0 &&
         !filterScope.allowedPusats.some((ap) => ap.trim().toUpperCase() === off.pusat) &&
-        allProgs.length === 0
+        !(
+          filterScope.isJabatanRestricted &&
+          filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === off.jabatan)
+        )
       ) {
         return;
       }
       if (
         filterScope.isJabatanRestricted &&
         filterScope.allowedJabatans.length > 0 &&
-        !filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === off.jabatan) &&
-        allProgs.length === 0
+        !filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === off.jabatan)
       ) {
         return;
       }
@@ -537,32 +627,38 @@ export const AnalisisPegawaiPage: React.FC = () => {
     return sortedOfficers.slice(0, displayLimit);
   }, [sortedOfficers, displayLimit]);
 
-  // Overall Summary KPIs based on filtered programs & officers
+  // Deduplicated filtered programs by Kod Program so KPI and Sumber counts never double-count
+  const uniqueFilteredPrograms = useMemo(
+    () => deduplicateProgramsByCode(filteredProgramsBySlicers),
+    [filteredProgramsBySlicers]
+  );
+
+  // Overall Summary KPIs based on deduplicated filtered programs & officers
   const summaryStats = useMemo(() => {
     const officersActive = officerAnalytics.filter((o) => o.totalCount > 0).length;
-    const totalProgs = filteredProgramsBySlicers.length;
-    const selesai = filteredProgramsBySlicers.filter(
+    const totalProgs = uniqueFilteredPrograms.length;
+    const selesai = uniqueFilteredPrograms.filter(
       (p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI'
     ).length;
-    const dalamTindakan = filteredProgramsBySlicers.filter(
+    const dalamTindakan = uniqueFilteredPrograms.filter(
       (p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN'
     ).length;
-    const tanggung = filteredProgramsBySlicers.filter(
+    const tanggung = uniqueFilteredPrograms.filter(
       (p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG'
     ).length;
-    const belum = filteredProgramsBySlicers.filter(
+    const belum = uniqueFilteredPrograms.filter(
       (p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN'
     ).length;
-    const batal = filteredProgramsBySlicers.filter(
+    const batal = uniqueFilteredPrograms.filter(
       (p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL'
     ).length;
     const activeProgs = Math.max(totalProgs - batal, 0);
     const completionPct = activeProgs > 0 ? Math.round((selesai / activeProgs) * 100) : 0;
 
-    const totalPeruntukan = filteredProgramsBySlicers.reduce((s, p) => s + (Number(p.jumlahRm) || 0), 0);
-    const totalBelanja = filteredProgramsBySlicers.reduce((s, p) => s + (Number(p.jumlahBelanjaRm) || 0), 0);
-    const totalPeserta = filteredProgramsBySlicers.reduce((s, p) => s + (Number(p.bilanganPeserta) || 0), 0);
-    const totalHari = filteredProgramsBySlicers.reduce((s, p) => s + (Number(p.jumlahHari) || 0), 0);
+    const totalPeruntukan = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahRm) || 0), 0);
+    const totalBelanja = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahBelanjaRm) || 0), 0);
+    const totalPeserta = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.bilanganPeserta) || 0), 0);
+    const totalHari = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahHari) || 0), 0);
 
     return {
       totalOfficers: officerAnalytics.length,
@@ -579,7 +675,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
       totalPeserta,
       totalHari,
     };
-  }, [officerAnalytics, filteredProgramsBySlicers]);
+  }, [officerAnalytics, uniqueFilteredPrograms]);
 
   // Visualisation Aggregations
   const topOfficersByPrograms = useMemo(
@@ -612,30 +708,49 @@ export const AnalisisPegawaiPage: React.FC = () => {
       string,
       {
         officers: number;
-        progById: Map<string, ProgramItem>;
-        progByName: Map<string, ProgramItem>;
+        progByKey: Map<string, ProgramItem>;
+        seenCodes: Set<string>;
+        seenNames: Set<string>;
+        uniqueForSum: ProgramItem[];
       }
     > = {};
     officerAnalytics.forEach((o) => {
       const j = o.jawatan || 'LAIN-LAIN';
-      if (!map[j]) map[j] = { officers: 0, progById: new Map(), progByName: new Map() };
+      if (!map[j]) {
+        map[j] = {
+          officers: 0,
+          progByKey: new Map(),
+          seenCodes: new Set(),
+          seenNames: new Set(),
+          uniqueForSum: [],
+        };
+      }
       map[j].officers += 1;
       o.allPrograms.forEach((p) => {
-        map[j].progById.set(p.id, p);
-        const nameKey = (p.namaProgram || '').trim().toUpperCase() || p.id;
-        if (!map[j].progByName.has(nameKey)) {
-          map[j].progByName.set(nameKey, p);
+        const dedupeKey = getProgramDedupeKey(p);
+        if (!map[j].progByKey.has(dedupeKey)) {
+          map[j].progByKey.set(dedupeKey, p);
+        }
+        const kodKey = (p.kodProgram || '').trim().toUpperCase();
+        const nameKey = (p.namaProgram || '').trim().toUpperCase();
+        const alreadySummed =
+          (kodKey && map[j].seenCodes.has(kodKey)) ||
+          (nameKey && map[j].seenNames.has(nameKey)) ||
+          (!kodKey && !nameKey && map[j].uniqueForSum.some((u) => u.id === p.id));
+        if (!alreadySummed) {
+          if (kodKey) map[j].seenCodes.add(kodKey);
+          if (nameKey) map[j].seenNames.add(nameKey);
+          map[j].uniqueForSum.push(p);
         }
       });
     });
     return Object.entries(map)
       .map(([jawatan, v]) => {
-        const uniqueProgs = Array.from(v.progById.values());
-        const uniqueNamedProgs = Array.from(v.progByName.values());
+        const uniqueProgs = Array.from(v.progByKey.values());
         const selesai = uniqueProgs.filter(
           (p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI'
         ).length;
-        const alloc = uniqueNamedProgs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+        const alloc = v.uniqueForSum.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
         return {
           jawatan,
           officers: v.officers,
@@ -652,28 +767,47 @@ export const AnalisisPegawaiPage: React.FC = () => {
       string,
       {
         officers: number;
-        progById: Map<string, ProgramItem>;
-        progByName: Map<string, ProgramItem>;
+        progByKey: Map<string, ProgramItem>;
+        seenCodes: Set<string>;
+        seenNames: Set<string>;
+        uniqueForSum: ProgramItem[];
       }
     > = {};
     officerAnalytics.forEach((o) => {
       const j = o.jabatan || 'TIDAK DINYATAKAN';
-      if (!map[j]) map[j] = { officers: 0, progById: new Map(), progByName: new Map() };
+      if (!map[j]) {
+        map[j] = {
+          officers: 0,
+          progByKey: new Map(),
+          seenCodes: new Set(),
+          seenNames: new Set(),
+          uniqueForSum: [],
+        };
+      }
       map[j].officers += 1;
       o.allPrograms.forEach((p) => {
-        map[j].progById.set(p.id, p);
-        const nameKey = (p.namaProgram || '').trim().toUpperCase() || p.id;
-        if (!map[j].progByName.has(nameKey)) {
-          map[j].progByName.set(nameKey, p);
+        const dedupeKey = getProgramDedupeKey(p);
+        if (!map[j].progByKey.has(dedupeKey)) {
+          map[j].progByKey.set(dedupeKey, p);
+        }
+        const kodKey = (p.kodProgram || '').trim().toUpperCase();
+        const nameKey = (p.namaProgram || '').trim().toUpperCase();
+        const alreadySummed =
+          (kodKey && map[j].seenCodes.has(kodKey)) ||
+          (nameKey && map[j].seenNames.has(nameKey)) ||
+          (!kodKey && !nameKey && map[j].uniqueForSum.some((u) => u.id === p.id));
+        if (!alreadySummed) {
+          if (kodKey) map[j].seenCodes.add(kodKey);
+          if (nameKey) map[j].seenNames.add(nameKey);
+          map[j].uniqueForSum.push(p);
         }
       });
     });
     return Object.entries(map)
       .map(([jabatan, v]) => {
-        const uniqueProgs = Array.from(v.progById.values());
-        const uniqueNamedProgs = Array.from(v.progByName.values());
-        const alloc = uniqueNamedProgs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-        const belanja = uniqueNamedProgs.reduce(
+        const uniqueProgs = Array.from(v.progByKey.values());
+        const alloc = v.uniqueForSum.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+        const belanja = v.uniqueForSum.reduce(
           (sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0),
           0
         );
@@ -691,7 +825,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
   // Analysis 3: Sumber Kewangan across Officer Programs & Risk/BK04 Attention List
   const sumberAcrossPrograms = useMemo(() => {
     const map: Record<string, { count: number; alloc: number; belanja: number }> = {};
-    filteredProgramsBySlicers.forEach((p) => {
+    uniqueFilteredPrograms.forEach((p) => {
       const sk = p.sumberKewangan || 'TIDAK DINYATAKAN';
       if (!map[sk]) map[sk] = { count: 0, alloc: 0, belanja: 0 };
       map[sk].count += 1;
@@ -702,7 +836,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
     return Object.entries(map)
       .map(([sumber, v]) => ({ sumber, ...v, pct: Math.round((v.count / maxCount) * 100) }))
       .sort((a, b) => b.count - a.count);
-  }, [filteredProgramsBySlicers]);
+  }, [uniqueFilteredPrograms]);
 
   const officersNeedingAttention = useMemo(
     () =>

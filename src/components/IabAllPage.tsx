@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import * as XLSX from 'xlsx';
 import {
   Globe,
@@ -77,7 +78,8 @@ export const IabAllPage: React.FC = () => {
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
   }, [programs]);
 
-  const computeStats = (list: ProgramItem[]): GroupStats => {
+  const computeStats = (rawList: ProgramItem[]): GroupStats => {
+    const list = deduplicateProgramsByCode(rawList);
     const selesai = list.filter((p) => p.statusProgram === 'SELESAI').length;
     const dalamTindakan = list.filter((p) => p.statusProgram === 'DALAM TINDAKAN').length;
     const tanggung = list.filter((p) => p.statusProgram === 'TANGGUNG').length;
@@ -113,9 +115,12 @@ export const IabAllPage: React.FC = () => {
     };
   };
 
-  // Year-filtered programs
+  // Year-filtered programs (deduplicated by Kod Program)
   const yearPrograms = useMemo(
-    () => programs.filter((p) => filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun),
+    () =>
+      deduplicateProgramsByCode(
+        programs.filter((p) => filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun)
+      ),
     [programs, filterTahun]
   );
 

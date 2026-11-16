@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatRMWithPrefix, formatNumber, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode, getProgramDedupeKey } from '../utils/programDedupe';
 import * as XLSX from 'xlsx';
 import {
   Briefcase,
@@ -109,11 +110,13 @@ export const JabatanPage: React.FC = () => {
 
   const jabatanPrograms = useMemo(() => {
     if (!selectedJabatan) return [];
-    return programs.filter((p) => {
-      if (p.jabatan !== selectedJabatan) return false;
-      if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) return false;
-      return true;
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        if (p.jabatan !== selectedJabatan) return false;
+        if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) return false;
+        return true;
+      })
+    );
   }, [programs, selectedJabatan, filterTahun]);
 
   // Officers belonging to selectedJabatan (plus any managing programs under it)
@@ -150,6 +153,7 @@ export const JabatanPage: React.FC = () => {
       const nmNorm = (pg.nama || '').trim().toUpperCase();
 
       const matchedProgs: ProgramItem[] = [];
+      const seenProgKeys = new Set<string>();
       let utamaCount = 0;
       let bersamaCount = 0;
 
@@ -161,7 +165,11 @@ export const JabatanPage: React.FC = () => {
           (idNorm && (p.pengurusBersamaId || '').trim().toUpperCase() === idNorm) ||
           (nmNorm && (p.pengurusBersamaNama || '').trim().toUpperCase() === nmNorm);
         if (isUtama || isBersama) {
-          matchedProgs.push(p);
+          const pKey = getProgramDedupeKey(p);
+          if (!seenProgKeys.has(pKey)) {
+            seenProgKeys.add(pKey);
+            matchedProgs.push(p);
+          }
           if (isUtama) utamaCount++;
           if (isBersama) bersamaCount++;
         }

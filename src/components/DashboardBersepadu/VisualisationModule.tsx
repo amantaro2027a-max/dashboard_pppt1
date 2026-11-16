@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ProgramItem, Pegawai } from '../../types/program';
 import { formatNumber, formatRM, getStatusConfig } from '../../utils/formatters';
+import { getProgramDedupeKey } from '../../utils/programDedupe';
 import { BULAN_LIST } from '../../data/constants';
 
 interface VisualisationModuleProps {
@@ -311,7 +312,8 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
       }
 
       const entry = officerByKey.get(key)!;
-      if (!entry.programsManaged.includes(prog)) {
+      const progKey = getProgramDedupeKey(prog);
+      if (!entry.programsManaged.some((existing) => getProgramDedupeKey(existing) === progKey)) {
         entry.programsManaged.push(prog);
       }
     };

@@ -78,15 +78,52 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     return filtered;
   }, [filters.pusat, jabatanMap, filterScope]);
 
+  // Scope Pengurus options strictly by role filterScope and active Pusat/Jabatan selection
+  const availablePengurus = useMemo(() => {
+    const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+    const allowedJabsUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
+    const selectedPusatUpper = (filters.pusat || '').trim().toUpperCase();
+    const selectedJabUpper = (filters.jabatan || '').trim().toUpperCase();
+
+    return pegawaiList.filter((pg) => {
+      const pgPusat = (pg.pusat || '').trim().toUpperCase();
+      const pgJab = (pg.jabatan || '').trim().toUpperCase();
+
+      if (
+        filterScope.isPusatRestricted &&
+        allowedPusatsUpper.size > 0 &&
+        !allowedPusatsUpper.has(pgPusat) &&
+        !(allowedJabsUpper.size > 0 && allowedJabsUpper.has(pgJab))
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        allowedJabsUpper.size > 0 &&
+        !allowedJabsUpper.has(pgJab)
+      ) {
+        return false;
+      }
+      if (selectedPusatUpper && pgPusat !== selectedPusatUpper) {
+        const jabsInPusat = (jabatanMap[filters.pusat] || []).map((j) => j.trim().toUpperCase());
+        if (!jabsInPusat.includes(pgJab)) return false;
+      }
+      if (selectedJabUpper && pgJab !== selectedJabUpper) {
+        return false;
+      }
+      return true;
+    });
+  }, [pegawaiList, filterScope, filters.pusat, filters.jabatan, jabatanMap]);
+
   // Dynamic Pengurus Bersama options excluding the currently selected Pengurus
   const availablePengurusBersama = useMemo(() => {
     if (!filters.pengurus) {
-      return pegawaiList;
+      return availablePengurus;
     }
-    return pegawaiList.filter(
+    return availablePengurus.filter(
       (p) => p.id !== filters.pengurus && p.nama !== filters.pengurus
     );
-  }, [filters.pengurus, pegawaiList]);
+  }, [filters.pengurus, availablePengurus]);
 
   // Count active filters (excluding default empty values and locked role scopes)
   const activeFilterCount = useMemo(() => {
@@ -263,7 +300,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             className="w-full text-xs py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800"
           >
             <option value="">Semua Pengurus</option>
-            {pegawaiList.map((pegawai) => (
+            {availablePengurus.map((pegawai) => (
               <option key={pegawai.id} value={pegawai.id}>
                 {pegawai.label}
               </option>

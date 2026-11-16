@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatRMWithPrefix, formatNumber, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import * as XLSX from 'xlsx';
 import {
   Building2,
@@ -104,14 +105,16 @@ export const PusatPage: React.FC = () => {
     return Array.from(set).sort().reverse();
   }, [programs]);
 
-  // Programs filtered to selectedPusat and optional year
+  // Programs filtered to selectedPusat and optional year (deduplicated by Kod Program)
   const pusatPrograms = useMemo(() => {
     if (!selectedPusat) return [];
-    return programs.filter((p) => {
-      if (p.pusat !== selectedPusat) return false;
-      if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) return false;
-      return true;
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        if (p.pusat !== selectedPusat) return false;
+        if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) return false;
+        return true;
+      })
+    );
   }, [programs, selectedPusat, filterTahun]);
 
   // Jabatans under selectedPusat
@@ -145,16 +148,18 @@ export const PusatPage: React.FC = () => {
     pusatOfficers.forEach((pg) => {
       const idNorm = (pg.id || '').trim().toUpperCase();
       const namaNorm = (pg.nama || '').trim().toUpperCase();
-      const matched = pusatPrograms.filter((p) => {
-        const pId = (p.pengurusId || '').trim().toUpperCase();
-        const pNama = (p.pengurusNama || '').trim().toUpperCase();
-        const pbId = (p.pengurusBersamaId || '').trim().toUpperCase();
-        const pbNama = (p.pengurusBersamaNama || '').trim().toUpperCase();
-        return (
-          (idNorm && (pId === idNorm || pbId === idNorm)) ||
-          (namaNorm && (pNama === namaNorm || pbNama === namaNorm))
-        );
-      });
+      const matched = deduplicateProgramsByCode(
+        pusatPrograms.filter((p) => {
+          const pId = (p.pengurusId || '').trim().toUpperCase();
+          const pNama = (p.pengurusNama || '').trim().toUpperCase();
+          const pbId = (p.pengurusBersamaId || '').trim().toUpperCase();
+          const pbNama = (p.pengurusBersamaNama || '').trim().toUpperCase();
+          return (
+            (idNorm && (pId === idNorm || pbId === idNorm)) ||
+            (namaNorm && (pNama === namaNorm || pbNama === namaNorm))
+          );
+        })
+      );
       const peruntukan = matched.reduce((acc, pr) => {
         if ((pr.statusProgram || '').trim().toUpperCase() === 'BATAL') return acc;
         return acc + (Number(pr.jumlahRm) || 0);

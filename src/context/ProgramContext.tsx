@@ -38,6 +38,7 @@ import {
   getSubwaranYear,
   computeAvailableFinanceYears,
 } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
   KLUSTER_LIST,
@@ -2062,9 +2063,41 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const userId = currentUser?.id;
     const prev = prevLockedScopeRef.current;
+
+    const isOfficerAllowedInScope = (officerRef: string): boolean => {
+      if (!officerRef) return true;
+      if (!filterScope.isPusatRestricted && !filterScope.isJabatanRestricted) return true;
+      const cleanRef = officerRef.trim().toUpperCase();
+      const officer = pegawaiList.find(
+        (pg) =>
+          (pg.id && pg.id.trim().toUpperCase() === cleanRef) ||
+          (pg.nama && pg.nama.trim().toUpperCase() === cleanRef)
+      );
+      if (!officer) return false;
+      const offPusat = (officer.pusat || '').trim().toUpperCase();
+      const offJab = (officer.jabatan || '').trim().toUpperCase();
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.some((ap) => ap.trim().toUpperCase() === offPusat)
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === offJab)
+      ) {
+        return false;
+      }
+      return true;
+    };
+
     setFilters((curr) => {
       let nextPusat = curr.pusat;
       let nextJabatan = curr.jabatan;
+      let nextPengurus = curr.pengurus;
+      let nextPengurusBersama = curr.pengurusBersama;
 
       if (filterScope.lockedPusat) {
         nextPusat = filterScope.lockedPusat;
@@ -2086,15 +2119,35 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         nextJabatan = '';
       }
 
-      if (nextPusat === curr.pusat && nextJabatan === curr.jabatan) return curr;
-      return { ...curr, pusat: nextPusat, jabatan: nextJabatan };
+      if (nextPengurus && !isOfficerAllowedInScope(nextPengurus)) {
+        nextPengurus = '';
+      }
+      if (nextPengurusBersama && !isOfficerAllowedInScope(nextPengurusBersama)) {
+        nextPengurusBersama = '';
+      }
+
+      if (
+        nextPusat === curr.pusat &&
+        nextJabatan === curr.jabatan &&
+        nextPengurus === curr.pengurus &&
+        nextPengurusBersama === curr.pengurusBersama
+      ) {
+        return curr;
+      }
+      return {
+        ...curr,
+        pusat: nextPusat,
+        jabatan: nextJabatan,
+        pengurus: nextPengurus,
+        pengurusBersama: nextPengurusBersama,
+      };
     });
     prevLockedScopeRef.current = {
       userId,
       lockedPusat: filterScope.lockedPusat,
       lockedJabatan: filterScope.lockedJabatan,
     };
-  }, [currentUser?.id, filterScope]);
+  }, [currentUser?.id, filterScope, pegawaiList]);
 
   const createAdminUser = async (
     userData: Omit<AdminUser, 'createdAt'>
@@ -2812,6 +2865,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   }, [programs, filters, filterScope]);
 
+  // Deduplicated filtered programs by Kod Program so same program is never counted or summed twice
+  const uniqueFilteredPrograms = useMemo(
+    () => deduplicateProgramsByCode(filteredPrograms),
+    [filteredPrograms]
+  );
+
   // Flash Card Group 1 Stats
   const group1Stats = useMemo<FlashCardGroup1Stats>(() => {
     const uniqueJenis = new Set<string>();
@@ -2819,14 +2878,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let totalPeserta = 0;
     let totalHari = 0;
 
-    filteredPrograms.forEach((p) => {
+    uniqueFilteredPrograms.forEach((p) => {
       if (p.jenisProgram) uniqueJenis.add(p.jenisProgram);
       if (p.sumberKewangan) uniqueSumber.add(p.sumberKewangan);
       totalPeserta += Number(p.bilanganPeserta) || 0;
       totalHari += Number(p.jumlahHari) || 0;
     });
 
-    const bilanganProgram = filteredPrograms.length;
+    const bilanganProgram = uniqueFilteredPrograms.length;
     const purataPeserta = bilanganProgram > 0 ? Math.round(totalPeserta / bilanganProgram) : 0;
 
     return {
@@ -2837,7 +2896,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       jumlahHariProgram: totalHari,
       purataPeserta,
     };
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   // Flash Card Group 2 Stats
   const group2Stats = useMemo<FlashCardGroup2Stats>(() => {
@@ -2847,7 +2906,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let belumAmbilTindakan = 0;
     let batal = 0;
 
-    filteredPrograms.forEach((p) => {
+    uniqueFilteredPrograms.forEach((p) => {
       const status = (p.statusProgram || '').trim().toUpperCase();
       if (status === 'SELESAI') selesai++;
       else if (status === 'DALAM TINDAKAN') dalamTindakan++;
@@ -2863,7 +2922,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       bilanganBelumAmbilTindakan: belumAmbilTindakan,
       bilanganBatal: batal,
     };
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   // Financial Section Stats
   const financialStats = useMemo<FinancialSectionStats>(() => {
@@ -2879,7 +2938,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     let b29 = 0;
     let bTotal = 0;
 
-    filteredPrograms.forEach((p) => {
+    uniqueFilteredPrograms.forEach((p) => {
       const os21 = Number(p.os21000) || 0;
       const os24 = Number(p.os24000) || 0;
       const os27 = Number(p.os27000) || 0;
@@ -2947,7 +3006,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       bakiOs29: Math.max(0, d29 - b29),
       bakiKeseluruhan: Math.max(0, dTotal - bTotal),
     };
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   const viewProgramDetail = (prog: ProgramItem) => {
     setSelectedProgram(prog);

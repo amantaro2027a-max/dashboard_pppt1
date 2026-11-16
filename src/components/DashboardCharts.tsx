@@ -1,16 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import { PUSAT_LIST, JABATAN_MAP, SUMBER_KEWANGAN_LIST, BULAN_LIST } from '../data/constants';
 import { BarChart3, PieChart, Landmark, ArrowRight, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 export const DashboardCharts: React.FC = () => {
   const { filteredPrograms, setActiveTab, viewProgramDetail, financialStats } = useProgramContext();
 
+  const uniqueFilteredPrograms = useMemo(
+    () => deduplicateProgramsByCode(filteredPrograms),
+    [filteredPrograms]
+  );
+
   // Distribution by Pusat
   const pusatData = useMemo(() => {
     return PUSAT_LIST.map((pusat) => {
-      const items = filteredPrograms.filter((p) => p.pusat === pusat);
+      const items = uniqueFilteredPrograms.filter((p) => p.pusat === pusat);
       const totalPeserta = items.reduce((sum, p) => sum + (Number(p.bilanganPeserta) || 0), 0);
       const totalRm = items.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
       return {
@@ -24,12 +30,12 @@ export const DashboardCharts: React.FC = () => {
         totalRm,
       };
     });
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   // Distribution by Sumber Kewangan
   const sumberData = useMemo(() => {
     return SUMBER_KEWANGAN_LIST.map((sumber) => {
-      const items = filteredPrograms.filter((p) => p.sumberKewangan === sumber);
+      const items = uniqueFilteredPrograms.filter((p) => p.sumberKewangan === sumber);
       const totalRm = items.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
       return {
         sumber,
@@ -37,7 +43,7 @@ export const DashboardCharts: React.FC = () => {
         totalRm,
       };
     });
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   // OS Breakdown Data
   const osData = useMemo(() => {
@@ -77,14 +83,14 @@ export const DashboardCharts: React.FC = () => {
   // Monthly breakdown
   const monthlyData = useMemo(() => {
     return BULAN_LIST.map((m) => {
-      const items = filteredPrograms.filter((p) => p.bulan === m.value);
+      const items = uniqueFilteredPrograms.filter((p) => p.bulan === m.value);
       return {
         bulanNum: m.value,
         bulanLabel: m.label.substring(0, 3),
         count: items.length,
       };
     });
-  }, [filteredPrograms]);
+  }, [uniqueFilteredPrograms]);
 
   const maxMonthCount = Math.max(...monthlyData.map((d) => d.count), 1);
 
@@ -108,7 +114,7 @@ export const DashboardCharts: React.FC = () => {
   };
 
   const sortedPrograms = useMemo(() => {
-    let list = [...filteredPrograms];
+    let list = [...uniqueFilteredPrograms];
     if (sortKey) {
       list.sort((a, b) => {
         let valA: any = '';
@@ -151,7 +157,7 @@ export const DashboardCharts: React.FC = () => {
       });
     }
     return list;
-  }, [filteredPrograms, sortKey, sortDirection]);
+  }, [uniqueFilteredPrograms, sortKey, sortDirection]);
 
   const displayedPrograms = useMemo(() => {
     if (displayCount === 'Semua') return sortedPrograms;
@@ -184,7 +190,7 @@ export const DashboardCharts: React.FC = () => {
               </h3>
             </div>
             <span className="text-xs text-slate-500 tabular-nums">
-              {filteredPrograms.length} Aktiviti
+              {uniqueFilteredPrograms.length} Aktiviti
             </span>
           </div>
 
@@ -353,7 +359,7 @@ export const DashboardCharts: React.FC = () => {
                 <option value="15">15 Program</option>
                 <option value="20">20 Program</option>
                 <option value="50">50 Program</option>
-                <option value="Semua">Semua ({filteredPrograms.length})</option>
+                <option value="Semua">Semua ({uniqueFilteredPrograms.length})</option>
               </select>
             </div>
 
@@ -367,7 +373,7 @@ export const DashboardCharts: React.FC = () => {
           </div>
         </div>
 
-        {filteredPrograms.length === 0 ? (
+        {uniqueFilteredPrograms.length === 0 ? (
           <div className="text-center py-8 text-xs text-slate-500">
             Tiada rekod program sepadan dengan kriteria penapis yang dipilih. Sila ubah atau set semula penapis.
           </div>

@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import * as XLSX from 'xlsx';
 import {
   Layers,
@@ -157,15 +158,17 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     return list;
   }, [jabatansMapForKluster]);
 
-  // Filter programs belonging to this Kluster's Pusats/Jabatans
+  // Filter programs belonging to this Kluster's Pusats/Jabatans (deduplicated by Kod Program)
   const klusterPrograms = useMemo(() => {
     const jabSet = new Set(allJabatansUnderKluster.map((x) => x.jabatan));
     const pusSet = new Set(effectivePusats);
-    return programs.filter((p) => {
-      const matchKluster = pusSet.has(p.pusat) || jabSet.has(p.jabatan);
-      const matchYear = filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun;
-      return matchKluster && matchYear;
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        const matchKluster = pusSet.has(p.pusat) || jabSet.has(p.jabatan);
+        const matchYear = filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun;
+        return matchKluster && matchYear;
+      })
+    );
   }, [programs, effectivePusats, allJabatansUnderKluster, filterTahun]);
 
   // Pegawai under Pusats in this Kluster
@@ -175,7 +178,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     return pegawaiList.filter((peg) => pusSet.has(peg.pusat || '') || jabSet.has(peg.jabatan || ''));
   }, [pegawaiList, effectivePusats, allJabatansUnderKluster]);
 
-  const computeProgramGroupStats = (groupProgs: ProgramItem[]) => {
+  const computeProgramGroupStats = (rawGroupProgs: ProgramItem[]) => {
+    const groupProgs = deduplicateProgramsByCode(rawGroupProgs);
     const selesai = groupProgs.filter((p) => p.statusProgram === 'SELESAI').length;
     const dalamTindakan = groupProgs.filter((p) => p.statusProgram === 'DALAM TINDAKAN').length;
     const tanggung = groupProgs.filter((p) => p.statusProgram === 'TANGGUNG').length;

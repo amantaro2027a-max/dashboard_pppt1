@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { getAdminLevelLabel, ProgramItem } from '../types/program';
+import { getProgramDedupeKey } from '../utils/programDedupe';
 import {
   ArrowRight,
   Camera,
@@ -226,18 +227,20 @@ export const SelamatDatangPage: React.FC = () => {
     const pengurusList: ProgramItem[] = [];
     const bersamaList: ProgramItem[] = [];
     const urusSetiaList: ProgramItem[] = [];
-    const seenProgramIds = new Set<string>();
+    const seenProgramKeys = new Set<string>();
 
     programs.forEach((prog) => {
-      if (!prog || !prog.id || seenProgramIds.has(prog.id)) return;
+      if (!prog) return;
+      const dedupeKey = getProgramDedupeKey(prog);
+      if (seenProgramKeys.has(dedupeKey)) return;
       if (matchesOfficer(prog.pengurusId, prog.pengurusNama)) {
-        seenProgramIds.add(prog.id);
+        seenProgramKeys.add(dedupeKey);
         pengurusList.push(prog);
       } else if (matchesOfficer(prog.pengurusBersamaId, prog.pengurusBersamaNama)) {
-        seenProgramIds.add(prog.id);
+        seenProgramKeys.add(dedupeKey);
         bersamaList.push(prog);
       } else if (matchesOfficer(prog.urusSetiaId, prog.urusSetiaNama)) {
-        seenProgramIds.add(prog.id);
+        seenProgramKeys.add(dedupeKey);
         urusSetiaList.push(prog);
       }
     });

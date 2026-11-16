@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
 import { getFasaYear, getProgramYear, getSubwaranYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Scale,
@@ -56,26 +57,30 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
   // Sembunyi bahagian ini as a default
   const [isCollapsed, setIsCollapsed] = useState(true);
 
-  // Programs under this Sumber Kewangan with status SELESAI & TANGGUNG
+  // Programs under this Sumber Kewangan with status SELESAI & TANGGUNG (deduplicated)
   const relevantPrograms = useMemo(() => {
-    return programs.filter((p) => {
-      if (p.sumberKewangan !== sumberKewangan) return false;
-      const status = (p.statusProgram || '').trim().toUpperCase();
-      return status === 'SELESAI' || status === 'TANGGUNG';
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        if (p.sumberKewangan !== sumberKewangan) return false;
+        const status = (p.statusProgram || '').trim().toUpperCase();
+        return status === 'SELESAI' || status === 'TANGGUNG';
+      })
+    );
   }, [programs, sumberKewangan]);
 
-  // Programs under this Sumber Kewangan with status DALAM TINDAKAN, BELUM AMBIL TINDAKAN, BATAL
+  // Programs under this Sumber Kewangan with status DALAM TINDAKAN, BELUM AMBIL TINDAKAN, BATAL (deduplicated)
   const pendingPrograms = useMemo(() => {
-    return programs.filter((p) => {
-      if (p.sumberKewangan !== sumberKewangan) return false;
-      const status = (p.statusProgram || '').trim().toUpperCase();
-      return (
-        status === 'DALAM TINDAKAN' ||
-        status === 'BELUM AMBIL TINDAKAN' ||
-        status === 'BATAL'
-      );
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        if (p.sumberKewangan !== sumberKewangan) return false;
+        const status = (p.statusProgram || '').trim().toUpperCase();
+        return (
+          status === 'DALAM TINDAKAN' ||
+          status === 'BELUM AMBIL TINDAKAN' ||
+          status === 'BATAL'
+        );
+      })
+    );
   }, [programs, sumberKewangan]);
 
   const pendingTotals = useMemo(() => {
@@ -944,7 +949,10 @@ export const BakiPeruntukanPage: React.FC = () => {
   );
 
   const yearPrograms = useMemo(
-    () => programs.filter((prog) => getProgramYear(prog) === selectedFinanceYear),
+    () =>
+      deduplicateProgramsByCode(
+        programs.filter((prog) => getProgramYear(prog) === selectedFinanceYear)
+      ),
     [programs, selectedFinanceYear]
   );
 

@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
 import { getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   CreditCard,
@@ -35,16 +36,18 @@ const BahagianPerbelanjaanCard: React.FC<BahagianPerbelanjaanProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [filterMode, setFilterMode] = useState<'SELESAI' | 'SEMUA'>('SEMUA');
 
-  // Filter programs under this Sumber Kewangan
+  // Filter programs under this Sumber Kewangan (deduplicated by Kod Program)
   const relevantPrograms = useMemo(() => {
-    return programs.filter((p) => {
-      if (p.sumberKewangan !== sumberKewangan) return false;
-      const status = (p.statusProgram || '').trim().toUpperCase();
-      if (filterMode === 'SELESAI') {
-        return status === 'SELESAI';
-      }
-      return status === 'SELESAI' || status === 'TANGGUNG';
-    });
+    return deduplicateProgramsByCode(
+      programs.filter((p) => {
+        if (p.sumberKewangan !== sumberKewangan) return false;
+        const status = (p.statusProgram || '').trim().toUpperCase();
+        if (filterMode === 'SELESAI') {
+          return status === 'SELESAI';
+        }
+        return status === 'SELESAI' || status === 'TANGGUNG';
+      })
+    );
   }, [programs, sumberKewangan, filterMode]);
 
   // Totals for this section's programs
@@ -308,7 +311,10 @@ export const PerbelanjaanPage: React.FC = () => {
   const canAccess = Boolean(currentUser) && getPageAccessMode('PERBELANJAAN') !== 'none';
 
   const yearPrograms = useMemo(
-    () => programs.filter((p) => getProgramYear(p) === selectedFinanceYear),
+    () =>
+      deduplicateProgramsByCode(
+        programs.filter((p) => getProgramYear(p) === selectedFinanceYear)
+      ),
     [programs, selectedFinanceYear]
   );
 

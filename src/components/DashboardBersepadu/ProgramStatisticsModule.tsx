@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ProgramItem, Pegawai } from '../../types/program';
 import { formatNumber, formatRM, getStatusConfig } from '../../utils/formatters';
+import { deduplicateProgramsByCode, getProgramDedupeKey } from '../../utils/programDedupe';
 
 interface ProgramStatisticsModuleProps {
   programs: ProgramItem[];
@@ -53,16 +54,18 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
   const [activeTab, setActiveTab] = useState<StatTab>('pusat');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const uniquePrograms = useMemo(() => deduplicateProgramsByCode(programs), [programs]);
+
   // -------------------------------------------------------------
   // 1. STATISTIK PUSAT
   // Pusat by jabatan, bilangan pegawai, bilangan program, RM, Status Program
   // -------------------------------------------------------------
   const statsPusat = useMemo(() => {
-    // Unique list of pusat from pusatList and programs
+    // Unique list of pusat from pusatList and uniquePrograms
     const uniquePusat = Array.from(
       new Set([
         ...pusatList,
-        ...programs.map((p) => p.pusat).filter(Boolean),
+        ...uniquePrograms.map((p) => p.pusat).filter(Boolean),
         ...pegawaiList.map((pg) => pg.pusat).filter(Boolean),
       ])
     ).filter(Boolean) as string[];
@@ -70,7 +73,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
     return uniquePusat.map((pusat) => {
       // Jabatan under this pusat
       const deptsFromMap = jabatanMap[pusat] || [];
-      const deptsFromProg = programs
+      const deptsFromProg = uniquePrograms
         .filter((p) => p.pusat === pusat && p.jabatan)
         .map((p) => p.jabatan);
       const allDepts = Array.from(new Set([...deptsFromMap, ...deptsFromProg]));
@@ -78,8 +81,8 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
       // Pegawai under this pusat
       const pegawaiCount = pegawaiList.filter((pg) => pg.pusat === pusat).length;
 
-      // Programs under this pusat
-      const progs = programs.filter((p) => {
+      // Programs under this pusat (already deduplicated by Kod Program)
+      const progs = uniquePrograms.filter((p) => {
         if (p.pusat && p.pusat === pusat) return true;
         if (p.jabatan && allDepts.includes(p.jabatan)) return true;
         return false;
@@ -110,17 +113,17 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         programs: progs,
       };
     });
-  }, [pusatList, programs, pegawaiList, jabatanMap]);
+  }, [pusatList, uniquePrograms, pegawaiList, jabatanMap]);
 
   // -------------------------------------------------------------
   // 2. STATISTIK JABATAN
   // Jabatan by bilangan pegawai, bilangan program, RM, Status Program
   // -------------------------------------------------------------
   const statsJabatan = useMemo(() => {
-    // Collect all departments from jabatanMap & programs
+    // Collect all departments from jabatanMap & uniquePrograms
     const allDeptSet = new Set<string>();
     Object.values(jabatanMap || {}).forEach((jList) => jList.forEach((j) => allDeptSet.add(j)));
-    programs.forEach((p) => {
+    uniquePrograms.forEach((p) => {
       if (p.jabatan) allDeptSet.add(p.jabatan);
     });
     pegawaiList.forEach((pg) => {
@@ -143,7 +146,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
       const pegawaiCount = pegawaiList.filter((pg) => pg.jabatan === jabatan).length;
 
       // Programs
-      const progs = programs.filter((p) => p.jabatan === jabatan);
+      const progs = uniquePrograms.filter((p) => p.jabatan === jabatan);
       const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
       const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
       const balanceRm = allocRm - actualRm;
@@ -168,14 +171,20 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         programs: progs,
       };
     });
-  }, [jabatanMap, programs, pegawaiList]);
+  }, [jabatanMap, uniquePrograms, pegawaiList]);
 
   // -------------------------------------------------------------
   // 3. STATISTIK PEGAWAI
   // Pegawai by bilangan program, RM, Status Program
   // -------------------------------------------------------------
   const statsPegawai = useMemo(() => {
-    // Map across registered pegawai and distinct program managers
+    const allowedOfficerKeys = new Set<string>(
+      pegawaiList.map((pg) => pg.nama.trim().toUpperCase()).filter(Boolean)
+    );
+    const allowedOfficerIds = new Set<string>(
+      pegawaiList.map((pg) => pg.id.trim().toUpperCase()).filter(Boolean)
+    );
+
     const pegawaiMap = new Map<
       string,
       {
@@ -184,11 +193,11 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         jawatan: string;
         pusat: string;
         jabatan: string;
-        progs: ProgramItem[];
+        progsByKey: Map<string, ProgramItem>;
       }
     >();
 
-    // Seed with registered pegawai
+    // Seed with registered pegawai (already scoped by caller)
     pegawaiList.forEach((pg) => {
       pegawaiMap.set(pg.nama.trim().toUpperCase(), {
         id: pg.id,
@@ -196,57 +205,65 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         jawatan: pg.jawatan || 'PEGAWAI',
         pusat: pg.pusat || 'TIDAK DINYATAKAN',
         jabatan: pg.jabatan || 'UMUM',
-        progs: [],
+        progsByKey: new Map(),
       });
     });
 
-    // Match programs by pengurusNama or pengurusId or pengurusBersama
-    programs.forEach((p) => {
+    // Match programs by pengurusNama or pengurusId or pengurusBersama (deduplicated by Kod Program)
+    uniquePrograms.forEach((p) => {
+      const pKey = getProgramDedupeKey(p);
+      const pId = (p.pengurusId || '').trim().toUpperCase();
       const pNama = (p.pengurusNama || p.pengurusId || '').trim().toUpperCase();
       if (pNama) {
-        if (!pegawaiMap.has(pNama)) {
+        const isKnownExternal = !allowedOfficerKeys.has(pNama) && (!pId || !allowedOfficerIds.has(pId));
+        if (!pegawaiMap.has(pNama) && (pegawaiList.length === 0 || !isKnownExternal)) {
           pegawaiMap.set(pNama, {
             id: p.pengurusId || pNama,
             nama: p.pengurusNama || p.pengurusId || pNama,
             jawatan: 'PENGURUS PROGRAM',
             pusat: p.pusat || '',
             jabatan: p.jabatan || '',
-            progs: [],
+            progsByKey: new Map(),
           });
         }
-        pegawaiMap.get(pNama)!.progs.push(p);
+        const target = pegawaiMap.get(pNama);
+        if (target && !target.progsByKey.has(pKey)) {
+          target.progsByKey.set(pKey, p);
+        }
       }
 
-      // Check pengurus bersama
+      const coId = (p.pengurusBersamaId || '').trim().toUpperCase();
       const coNama = (p.pengurusBersamaNama || p.pengurusBersamaId || '').trim().toUpperCase();
       if (coNama && coNama !== pNama) {
-        if (!pegawaiMap.has(coNama)) {
+        const isKnownExternal = !allowedOfficerKeys.has(coNama) && (!coId || !allowedOfficerIds.has(coId));
+        if (!pegawaiMap.has(coNama) && (pegawaiList.length === 0 || !isKnownExternal)) {
           pegawaiMap.set(coNama, {
             id: p.pengurusBersamaId || coNama,
             nama: p.pengurusBersamaNama || p.pengurusBersamaId || coNama,
             jawatan: 'PENGURUS BERSAMA',
             pusat: p.pusat || '',
             jabatan: p.jabatan || '',
-            progs: [],
+            progsByKey: new Map(),
           });
         }
-        const existing = pegawaiMap.get(coNama)!;
-        if (!existing.progs.includes(p)) {
-          existing.progs.push(p);
+        const existing = pegawaiMap.get(coNama);
+        if (existing && !existing.progsByKey.has(pKey)) {
+          existing.progsByKey.set(pKey, p);
         }
       }
     });
 
     return Array.from(pegawaiMap.values()).map((entry) => {
-      const allocRm = entry.progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-      const actualRm = entry.progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+      const progs = Array.from(entry.progsByKey.values());
+      const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+      const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
       const balanceRm = allocRm - actualRm;
 
-      const selesai = entry.progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
-      const dalamTindakan = entry.progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN').length;
-      const tanggung = entry.progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG').length;
-      const belumAmbil = entry.progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN').length;
-      const batal = entry.progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL').length;
+      const selesai = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
+      const dalamTindakan = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN').length;
+      const tanggung = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG').length;
+      const belumAmbil = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN').length;
+      const batal = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL').length;
 
       return {
         id: entry.id,
@@ -254,35 +271,35 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         jawatan: entry.jawatan,
         pusat: entry.pusat,
         jabatan: entry.jabatan,
-        programCount: entry.progs.length,
+        programCount: progs.length,
         allocRm,
         actualRm,
         balanceRm,
         status: { selesai, dalamTindakan, tanggung, belumAmbil, batal },
-        programs: entry.progs,
+        programs: progs,
       };
     }).sort((a, b) => b.programCount - a.programCount);
-  }, [pegawaiList, programs]);
+  }, [pegawaiList, uniquePrograms]);
 
   // -------------------------------------------------------------
   // 4. STATISTIK PROGRAM
   // Program by bilangan pusat, bilangan jabatan, RM, Status Program
   // -------------------------------------------------------------
   const statsProgram = useMemo(() => {
-    const totalPusat = new Set(programs.map((p) => p.pusat).filter(Boolean)).size;
-    const totalJabatan = new Set(programs.map((p) => p.jabatan).filter(Boolean)).size;
-    const totalAlloc = programs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-    const totalActual = programs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+    const totalPusat = new Set(uniquePrograms.map((p) => p.pusat).filter(Boolean)).size;
+    const totalJabatan = new Set(uniquePrograms.map((p) => p.jabatan).filter(Boolean)).size;
+    const totalAlloc = uniquePrograms.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+    const totalActual = uniquePrograms.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
     const totalBalance = totalAlloc - totalActual;
 
-    const selesai = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
-    const dalamTindakan = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN').length;
-    const tanggung = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG').length;
-    const belumAmbil = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN').length;
-    const batal = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL').length;
+    const selesai = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
+    const dalamTindakan = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'DALAM TINDAKAN').length;
+    const tanggung = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG').length;
+    const belumAmbil = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BELUM AMBIL TINDAKAN').length;
+    const batal = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'BATAL').length;
 
     return {
-      totalPrograms: programs.length,
+      totalPrograms: uniquePrograms.length,
       totalPusat,
       totalJabatan,
       totalAlloc,
@@ -290,7 +307,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
       totalBalance,
       status: { selesai, dalamTindakan, tanggung, belumAmbil, batal },
     };
-  }, [programs]);
+  }, [uniquePrograms]);
 
   // -------------------------------------------------------------
   // 5. STATISTIK STATUS
@@ -300,7 +317,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
     const statusKeys = ['SELESAI', 'DALAM TINDAKAN', 'TANGGUNG', 'BELUM AMBIL TINDAKAN', 'BATAL'];
 
     return statusKeys.map((st) => {
-      const progs = programs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === st);
+      const progs = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === st);
 
       const pusatSet = new Set(progs.map((p) => p.pusat).filter(Boolean));
       const jabatanSet = new Set(progs.map((p) => p.jabatan).filter(Boolean));
@@ -328,7 +345,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         programs: progs,
       };
     });
-  }, [programs]);
+  }, [uniquePrograms]);
 
   // Filtered lists for table search
   const filteredPusat = useMemo(() => {
@@ -357,16 +374,16 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
   }, [statsPegawai, searchQuery]);
 
   const filteredProgramList = useMemo(() => {
-    if (!searchQuery.trim()) return programs;
+    if (!searchQuery.trim()) return uniquePrograms;
     const q = searchQuery.toLowerCase();
-    return programs.filter(
+    return uniquePrograms.filter(
       (p) =>
         (p.namaProgram || '').toLowerCase().includes(q) ||
         (p.kodProgram || '').toLowerCase().includes(q) ||
         (p.jabatan || '').toLowerCase().includes(q) ||
         (p.pengurusNama || '').toLowerCase().includes(q)
     );
-  }, [programs, searchQuery]);
+  }, [uniquePrograms, searchQuery]);
 
   return (
     <div className="space-y-8 mb-12">
@@ -476,7 +493,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
                 <FileText className="w-3.5 h-3.5" />
                 <span>4. Statistik Program</span>
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'program' ? 'bg-teal-900 text-teal-100' : 'bg-slate-200 text-slate-600'}`}>
-                  {programs.length}
+                  {uniquePrograms.length}
                 </span>
               </button>
 

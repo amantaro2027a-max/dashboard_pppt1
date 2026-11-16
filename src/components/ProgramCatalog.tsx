@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { FilterBar } from './FilterBar';
 import { formatRM, getStatusConfig } from '../utils/formatters';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import {
   Calendar,
   MapPin,
@@ -43,6 +44,11 @@ export const ProgramCatalog: React.FC = () => {
     [getAuthorizedJabatanList]
   );
 
+  const uniqueFilteredPrograms = useMemo(
+    () => deduplicateProgramsByCode(filteredPrograms),
+    [filteredPrograms]
+  );
+
   // User/Admin Access Filter:
   // Selepas log masuk, memaparkan Katalog program mengikut Level ID / Jabatan diberi akses
   const accessiblePrograms = useMemo(() => {
@@ -54,7 +60,7 @@ export const ProgramCatalog: React.FC = () => {
       currentUser.levelId === 'PENGARAH' ||
       currentUser.levelId === 'TPP_TPL'
     ) {
-      return filteredPrograms;
+      return uniqueFilteredPrograms;
     }
 
     const allowed =
@@ -72,7 +78,7 @@ export const ProgramCatalog: React.FC = () => {
     const pegIdNorm = matchedPegawai?.id?.trim().toUpperCase();
     const pegNamaNorm = matchedPegawai?.nama?.trim().toUpperCase();
 
-    return filteredPrograms.filter((prog) => {
+    return uniqueFilteredPrograms.filter((prog) => {
       // Syarat A0: Ketua Pusat dibenarkan melihat semua program di bawah Pusatnya
       if (
         currentUser.levelId === 'KETUA_PUSAT' &&
@@ -113,7 +119,7 @@ export const ProgramCatalog: React.FC = () => {
 
       return false;
     });
-  }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, filterScope, pegawaiList]);
+  }, [uniqueFilteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, filterScope, pegawaiList]);
 
   const sortedPrograms = useMemo(() => {
     const list = [...accessiblePrograms];
@@ -202,7 +208,7 @@ export const ProgramCatalog: React.FC = () => {
             </span>
           </div>
           <span className="font-semibold text-blue-800 tabular-nums shrink-0">
-            {accessiblePrograms.length} daripada {filteredPrograms.length} program
+            {accessiblePrograms.length} daripada {uniqueFilteredPrograms.length} program
           </span>
         </div>
       )}
@@ -263,7 +269,7 @@ export const ProgramCatalog: React.FC = () => {
           </div>
 
           <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-md font-medium tabular-nums">
-            Menunjukkan <strong>{displayedPrograms.length}</strong> / {filteredPrograms.length} program
+            Menunjukkan <strong>{displayedPrograms.length}</strong> / {accessiblePrograms.length} program
           </span>
         </div>
       </div>

@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getFasaYear, getProgramYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 
 export const DashboardBersepaduPage: React.FC = () => {
   const {
@@ -133,8 +134,18 @@ export const DashboardBersepaduPage: React.FC = () => {
   }, [programs]);
 
   const availableDepartments = useMemo(() => {
+    const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+    const allowedJabsUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
     const list: string[] = [];
-    Object.values(jabatanMap || {}).forEach((jList) => {
+
+    Object.entries(jabatanMap || {}).forEach(([pus, jList]) => {
+      if (
+        filterScope.isPusatRestricted &&
+        allowedPusatsUpper.size > 0 &&
+        !allowedPusatsUpper.has(pus.trim().toUpperCase())
+      ) {
+        return;
+      }
       jList.forEach((j) => {
         if (!j) return;
         const u = j.trim().toUpperCase();
@@ -142,23 +153,161 @@ export const DashboardBersepaduPage: React.FC = () => {
         if (!list.includes(j)) list.push(j);
       });
     });
-    if (filterScope.isJabatanRestricted && filterScope.allowedJabatans.length > 0) {
-      const scoped = list.filter((j) => filterScope.allowedJabatans.includes(j));
+    if (filterScope.isJabatanRestricted && allowedJabsUpper.size > 0) {
+      const scoped = list.filter((j) => allowedJabsUpper.has(j.trim().toUpperCase()));
       return scoped.length > 0 ? scoped : filterScope.allowedJabatans;
     }
     return list;
   }, [jabatanMap, filterScope]);
 
+  const scopedPegawaiList = useMemo(() => {
+    const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+    const allowedJabsUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
+    const selectedJabUpper = filterJabatan !== 'SEMUA' ? filterJabatan.trim().toUpperCase() : '';
+
+    return pegawaiList.filter((pg) => {
+      const pgPusat = (pg.pusat || '').trim().toUpperCase();
+      const pgJab = (pg.jabatan || '').trim().toUpperCase();
+
+      if (
+        filterScope.isPusatRestricted &&
+        allowedPusatsUpper.size > 0 &&
+        !allowedPusatsUpper.has(pgPusat) &&
+        !(allowedJabsUpper.size > 0 && allowedJabsUpper.has(pgJab))
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        allowedJabsUpper.size > 0 &&
+        !allowedJabsUpper.has(pgJab)
+      ) {
+        return false;
+      }
+      if (selectedJabUpper && pgJab !== selectedJabUpper) {
+        return false;
+      }
+      return true;
+    });
+  }, [pegawaiList, filterScope, filterJabatan]);
+
+  const scopedPusatList = useMemo(() => {
+    if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
+      const allowedUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+      const filtered = pusatList.filter((p) => allowedUpper.has(p.trim().toUpperCase()));
+      return filtered.length > 0 ? filtered : filterScope.allowedPusats;
+    }
+    return pusatList;
+  }, [pusatList, filterScope]);
+
+  const scopedJabatanMap = useMemo(() => {
+    if (!filterScope.isPusatRestricted && !filterScope.isJabatanRestricted) return jabatanMap;
+    const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+    const allowedJabsUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
+    const result: Record<string, string[]> = {};
+    Object.entries(jabatanMap || {}).forEach(([pus, jList]) => {
+      if (
+        filterScope.isPusatRestricted &&
+        allowedPusatsUpper.size > 0 &&
+        !allowedPusatsUpper.has(pus.trim().toUpperCase())
+      ) {
+        return;
+      }
+      const filteredJabs = (jList || []).filter((j) => {
+        if (!j) return false;
+        const u = j.trim().toUpperCase();
+        if (u === 'SEMUA JABATAN' || u.includes('SEMUA JABATAN')) return false;
+        if (filterScope.isJabatanRestricted && allowedJabsUpper.size > 0) {
+          return allowedJabsUpper.has(u);
+        }
+        return true;
+      });
+      if (filteredJabs.length > 0) {
+        result[pus] = filteredJabs;
+      }
+    });
+    return result;
+  }, [jabatanMap, filterScope]);
+
   const availablePengurus = useMemo(() => {
+    const allowedPusatsUpper = new Set(filterScope.allowedPusats.map((p) => p.trim().toUpperCase()));
+    const allowedJabsUpper = new Set(filterScope.allowedJabatans.map((j) => j.trim().toUpperCase()));
+    const selectedJabUpper = filterJabatan !== 'SEMUA' ? filterJabatan.trim().toUpperCase() : '';
+
+    const officerByNameOrId = new Map<string, typeof pegawaiList[number]>();
+    pegawaiList.forEach((pg) => {
+      if (pg.id) officerByNameOrId.set(pg.id.trim().toUpperCase(), pg);
+      if (pg.nama) officerByNameOrId.set(pg.nama.trim().toUpperCase(), pg);
+    });
+
     const map = new Map<string, string>();
+    scopedPegawaiList.forEach((pg) => {
+      if (pg.nama) map.set(pg.nama.trim().toUpperCase(), pg.nama);
+    });
+
     programs.forEach((p) => {
+      const pPusat = (p.pusat || '').trim().toUpperCase();
+      const pJab = (p.jabatan || '').trim().toUpperCase();
+      if (
+        filterScope.isPusatRestricted &&
+        allowedPusatsUpper.size > 0 &&
+        !allowedPusatsUpper.has(pPusat)
+      ) {
+        return;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        allowedJabsUpper.size > 0 &&
+        !allowedJabsUpper.has(pJab)
+      ) {
+        return;
+      }
+      if (selectedJabUpper && pJab !== selectedJabUpper) {
+        return;
+      }
       const name = p.pengurusNama || p.pengurusId;
-      if (name && !map.has(name)) {
-        map.set(name, name);
+      if (!name) return;
+      const profile =
+        (p.pengurusId && officerByNameOrId.get(p.pengurusId.trim().toUpperCase())) ||
+        (p.pengurusNama && officerByNameOrId.get(p.pengurusNama.trim().toUpperCase()));
+      if (profile) {
+        const offPusat = (profile.pusat || '').trim().toUpperCase();
+        const offJab = (profile.jabatan || '').trim().toUpperCase();
+        if (
+          filterScope.isPusatRestricted &&
+          allowedPusatsUpper.size > 0 &&
+          !allowedPusatsUpper.has(offPusat) &&
+          !(allowedJabsUpper.size > 0 && allowedJabsUpper.has(offJab))
+        ) {
+          return;
+        }
+        if (
+          filterScope.isJabatanRestricted &&
+          allowedJabsUpper.size > 0 &&
+          !allowedJabsUpper.has(offJab)
+        ) {
+          return;
+        }
+        if (selectedJabUpper && offJab !== selectedJabUpper) {
+          return;
+        }
+      }
+      const key = name.trim().toUpperCase();
+      if (!map.has(key)) {
+        map.set(key, name);
       }
     });
     return Array.from(map.values()).sort();
-  }, [programs]);
+  }, [programs, pegawaiList, scopedPegawaiList, filterScope, filterJabatan]);
+
+  useEffect(() => {
+    if (
+      filterPengurus !== 'SEMUA' &&
+      !availablePengurus.some((p) => p.trim().toUpperCase() === filterPengurus.trim().toUpperCase())
+    ) {
+      setFilterPengurus('SEMUA');
+    }
+  }, [availablePengurus, filterPengurus]);
 
   // Filtered Programs calculation
   const filteredPrograms = useMemo(() => {
@@ -235,6 +384,33 @@ export const DashboardBersepaduPage: React.FC = () => {
     searchQuery,
   ]);
 
+  // Deduplicated programs by Kod Program so same Kod Program is never counted or summed twice
+  const uniqueFilteredPrograms = useMemo(
+    () => deduplicateProgramsByCode(filteredPrograms),
+    [filteredPrograms]
+  );
+
+  const uniqueScopedAllPrograms = useMemo(() => {
+    const scoped = programs.filter((p) => {
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.includes(p.pusat)
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.includes(p.jabatan)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    return deduplicateProgramsByCode(scoped);
+  }, [programs, filterScope]);
+
   // Peruntukan Keseluruhan diambil terus daripada Page PERUNTUKAN (fasaPeruntukanList) mengikut tahun
   const totalAllocationPeruntukanPage = useMemo(() => {
     let grand = 0;
@@ -284,19 +460,19 @@ export const DashboardBersepaduPage: React.FC = () => {
 
   const handleRiskFilterSelect = (type: 'deficit' | 'high_util' | 'pending_lo' | 'all') => {
     if (type === 'deficit') {
-      const list = filteredPrograms.filter(
+      const list = uniqueFilteredPrograms.filter(
         (p) => (Number(p.jumlahBelanjaRm) || 0) > (Number(p.jumlahRm) || 0)
       );
       handleOpenDrillDown('Program Defisit Kewangan (Belanja > Peruntukan)', list);
     } else if (type === 'high_util') {
-      const list = filteredPrograms.filter((p) => {
+      const list = uniqueFilteredPrograms.filter((p) => {
         const a = Number(p.jumlahRm) || 0;
         const b = Number(p.jumlahBelanjaRm) || 0;
         return a > 0 && (b / a) * 100 >= 90;
       });
       handleOpenDrillDown('Program Penggunaan Bajet Tinggi (≥90%)', list);
     } else if (type === 'pending_lo') {
-      const list = filteredPrograms.filter(
+      const list = uniqueFilteredPrograms.filter(
         (p) => (p.statusProgram || '').trim().toUpperCase() === 'TANGGUNG'
       );
       handleOpenDrillDown('Program Komitmen Pesanan Tempatan (LO) Tertunggak (Status Tanggung)', list);
@@ -328,7 +504,7 @@ export const DashboardBersepaduPage: React.FC = () => {
               Penapis Data Eksekutif Bersepadu
             </span>
             <span className="text-[11px] text-slate-400">
-              ({filteredPrograms.length} daripada {programs.length} program dipaparkan)
+              ({uniqueFilteredPrograms.length} daripada {uniqueScopedAllPrograms.length} program dipaparkan)
             </span>
           </div>
 
@@ -499,7 +675,7 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 2. PAPAN PENGUMUMAN & AMARAN RISIKO AUTOMATIK */}
       <AnnouncementBoard
-        programs={filteredPrograms}
+        programs={uniqueFilteredPrograms}
         onSelectRiskFilter={handleRiskFilterSelect}
         onViewProgram={viewProgramDetail}
       />
@@ -595,7 +771,7 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 3. MODUL 1: EXECUTIVE OVERVIEW DASHBOARD */}
       <ExecutiveOverviewModule
-        programs={filteredPrograms}
+        programs={uniqueFilteredPrograms}
         totalAllocationPeruntukanPage={totalAllocationPeruntukanPage}
         onOpenDrillDown={handleOpenDrillDown}
         onViewProgramDetail={viewProgramDetail}
@@ -605,8 +781,8 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 4. MODUL 2: PROGRAMME PERFORMANCE KPI */}
       <PerformanceKpiModule
-        programs={filteredPrograms}
-        allPrograms={programs}
+        programs={uniqueFilteredPrograms}
+        allPrograms={uniqueScopedAllPrograms}
         totalAllocationPeruntukanPage={totalAllocationPeruntukanPage}
         fasaPeruntukanList={fasaPeruntukanList}
         filterSumber={filterSumber}
@@ -618,7 +794,7 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 5. MODUL 3: FINANCIAL INTELLIGENCE DASHBOARD */}
       <FinancialIntelligenceModule
-        programs={filteredPrograms}
+        programs={uniqueFilteredPrograms}
         totalAllocationPeruntukanPage={totalAllocationPeruntukanPage}
         onOpenDrillDown={handleOpenDrillDown}
         onViewProgramDetail={viewProgramDetail}
@@ -628,9 +804,9 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 6. MODUL 4: VISUALISASI DATA INTERAKTIF */}
       <VisualisationModule
-        programs={filteredPrograms}
-        allPrograms={programs}
-        pegawaiList={pegawaiList}
+        programs={uniqueFilteredPrograms}
+        allPrograms={uniqueScopedAllPrograms}
+        pegawaiList={scopedPegawaiList}
         onOpenDrillDown={handleOpenDrillDown}
         onViewProgramDetail={viewProgramDetail}
         isExpanded={moduleExpanded.m4}
@@ -639,11 +815,11 @@ export const DashboardBersepaduPage: React.FC = () => {
 
       {/* 7. MODUL 5: STATISTIK PROGRAM (PUSAT, JABATAN, PEGAWAI, PROGRAM & STATUS) */}
       <ProgramStatisticsModule
-        programs={filteredPrograms}
-        allPrograms={programs}
-        pegawaiList={pegawaiList}
-        pusatList={pusatList}
-        jabatanMap={jabatanMap}
+        programs={uniqueFilteredPrograms}
+        allPrograms={uniqueScopedAllPrograms}
+        pegawaiList={scopedPegawaiList}
+        pusatList={scopedPusatList}
+        jabatanMap={scopedJabatanMap}
         onOpenDrillDown={handleOpenDrillDown}
         onViewProgramDetail={viewProgramDetail}
         isExpanded={moduleExpanded.m5}

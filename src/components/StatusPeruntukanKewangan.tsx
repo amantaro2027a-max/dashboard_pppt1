@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatRM } from '../utils/formatters';
 import { getFasaYear, getSubwaranYear } from '../utils/financeYear';
+import { deduplicateProgramsByCode } from '../utils/programDedupe';
 import {
   Wallet,
   ArrowDownLeft,
@@ -48,7 +49,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
 
     // 2. Peruntukan Dibelanjakan daripada Page Perbelanjaan (Status SELESAI & TANGGUNG)
     let b21 = 0, b24 = 0, b27 = 0, b29 = 0;
-    (filteredPrograms || []).forEach((p) => {
+    deduplicateProgramsByCode(filteredPrograms || []).forEach((p) => {
       const status = (p.statusProgram || '').trim().toUpperCase();
       if (status === 'SELESAI' || status === 'TANGGUNG') {
         b21 += Number(p.os21000Belanja) || 0;
