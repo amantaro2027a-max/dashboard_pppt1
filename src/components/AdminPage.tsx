@@ -69,6 +69,7 @@ export const AdminPage: React.FC = () => {
     deleteAdminUser,
     changeOwnPassword,
     resetUserPassword,
+    syncAdminUsersToFirebaseAuth,
     logActivity,
     getPageAccessMode,
     canEditPage,
@@ -116,6 +117,7 @@ export const AdminPage: React.FC = () => {
 
   // Active sub-tab inside Admin portal
   const [adminTab, setAdminTab] = useState<'programs' | 'master'>('programs');
+  const [isSyncingAuth, setIsSyncingAuth] = useState<boolean>(false);
 
   // Master Data active subcategory (Kluster IAB placed before 4. Pusat)
   const [masterCategory, setMasterCategory] = useState<
@@ -1245,7 +1247,7 @@ export const AdminPage: React.FC = () => {
   };
 
   // Handle Add Admin User submit
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setUserActionMsg(null);
 
@@ -1298,7 +1300,7 @@ export const AdminPage: React.FC = () => {
       primaryJabatan = 'SEMUA JABATAN';
     }
 
-    const res = createAdminUser({
+    const res = await createAdminUser({
       id: newAdminId.trim().toUpperCase(),
       password: effectivePass,
       name: newAdminName.trim(),
@@ -1338,7 +1340,7 @@ export const AdminPage: React.FC = () => {
       user.levelId || (user.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'KETUA_JABATAN');
     setEditAdminLevelId(resolvedLevel);
     setEditAdminName(user.name);
-    setEditAdminPassword(user.password);
+    setEditAdminPassword(user.password || '');
     setEditAdminPusat(user.pusat || pusatList[0] || '');
     setEditAdminJabatan(user.jabatan || '');
 
@@ -1425,7 +1427,7 @@ export const AdminPage: React.FC = () => {
 
     const res = updateAdminUser(editingAdminUser.id, {
       name: editAdminName.trim(),
-      password: editAdminPassword.trim() || '123',
+      ...(editAdminPassword.trim() ? { password: editAdminPassword.trim() } : {}),
       role: finalLevel === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN',
       levelId: finalLevel,
       pusat: finalLevel === 'SUPER_ADMIN' ? '' : editAdminPusat,
@@ -1446,14 +1448,14 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  const handleChangeOwnPasswordSubmit = (e: React.FormEvent) => {
+  const handleChangeOwnPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setOwnPassMsg(null);
     if (ownNewPass !== ownConfirmPass) {
       setOwnPassMsg({ type: 'error', text: 'Kata laluan baharu dan pengesahan tidak sepadan.' });
       return;
     }
-    const res = changeOwnPassword(ownCurrentPass, ownNewPass);
+    const res = await changeOwnPassword(ownCurrentPass, ownNewPass);
     if (res.success) {
       setOwnPassMsg({ type: 'success', text: 'Kata laluan anda berjaya dikemaskini.' });
       setOwnCurrentPass('');
@@ -3102,18 +3104,44 @@ export const AdminPage: React.FC = () => {
 
                   {/* Right: Admin Accounts Table */}
                   <div className="xl:col-span-7 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
-                    <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h3 className="text-sm font-bold text-slate-900">
                           Senarai Akaun Berdaftar Mengikut Level ID
                         </h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Super Admin boleh sunting tahap akses (View Only/Edit), reset kata laluan ke <strong>123</strong>, atau padam akaun.
+                          Super Admin boleh sunting tahap akses (View Only/Edit), segerakkan akaun ke Firebase Auth, atau padam akaun.
                         </p>
                       </div>
-                      <span className="text-xs font-semibold px-2.5 py-0.5 bg-slate-100 rounded text-slate-800">
-                        {adminUsers.length} akaun
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isSyncingAuth}
+                          onClick={async () => {
+                            setIsSyncingAuth(true);
+                            setUserActionMsg(null);
+                            try {
+                              const res = await syncAdminUsersToFirebaseAuth();
+                              setUserActionMsg({
+                                type: res.success ? 'success' : 'error',
+                                text: res.message,
+                              });
+                            } finally {
+                              setIsSyncingAuth(false);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-indigo-700 hover:bg-indigo-800 disabled:bg-slate-400 rounded-md transition-colors cursor-pointer"
+                          title="Segerakkan semua akaun sedia ada ke Firebase Authentication (ID Pengguna sebagai asas log masuk)"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>
+                            {isSyncingAuth ? 'Menyegerakkan...' : 'Segerak Firebase Auth'}
+                          </span>
+                        </button>
+                        <span className="text-xs font-semibold px-2.5 py-0.5 bg-slate-100 rounded text-slate-800">
+                          {adminUsers.length} akaun
+                        </span>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto">
@@ -3240,13 +3268,14 @@ export const AdminPage: React.FC = () => {
                                             'Reset Kata Laluan Pengguna',
                                             `Tetapkan semula kata laluan bagi "${user.id}" (${user.name}) kepada kata laluan lalai "123"?`,
                                             () => {
-                                              const res = resetUserPassword(user.id, '123');
-                                              if (res.success) {
+                                              resetUserPassword(user.id, '123').then((res) => {
                                                 setUserActionMsg({
-                                                  type: 'success',
-                                                  text: `Kata laluan bagi "${user.id}" berjaya ditetapkan semula kepada "123".`,
+                                                  type: res.success ? 'success' : 'error',
+                                                  text:
+                                                    res.message ||
+                                                    `Kata laluan bagi "${user.id}" berjaya ditetapkan semula kepada "123".`,
                                                 });
-                                              }
+                                              });
                                             }
                                           );
                                         }}

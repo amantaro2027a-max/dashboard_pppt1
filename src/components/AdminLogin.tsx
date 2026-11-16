@@ -9,7 +9,7 @@ export const AdminLogin: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -23,13 +23,14 @@ export const AdminLogin: React.FC = () => {
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const result = login(userId, password);
-      setIsLoading(false);
+    try {
+      const result = await login(userId, password);
       if (!result.success) {
         setErrorMessage(result.message || 'Log masuk gagal.');
       }
-    }, 200);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

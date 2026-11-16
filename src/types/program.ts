@@ -202,7 +202,9 @@ export const getAdminLevelLabel = (levelId?: AdminLevelId | string, role?: Admin
 
 export interface AdminUser {
   id: string; // Login ID, e.g. 'AMAN'
-  password: string; // Default '123' when created or reset
+  password?: string; // Legacy local/migration password; cleared once synced to Firebase Auth
+  authUid?: string; // Firebase Authentication UID
+  firebaseAuthSynced?: boolean; // Whether account is provisioned in Firebase Auth
   name: string; // Display name
   role: AdminRole;
   levelId?: AdminLevelId; // Level ID 1..7
@@ -216,6 +218,20 @@ export interface AdminUser {
   isActive?: boolean; // Account active/deactivated status
   lastLoginAt?: string; // Last successful login timestamp (Asia/Kuala_Lumpur)
   createdAt: string;
+}
+
+export interface MonitoringSettings {
+  masterEnabled: boolean; // Global enable/disable for all activity tracking & monitoring
+  realtimeListenersEnabled: boolean; // Live onSnapshot while viewing Monitoring vs manual refresh
+  logReadLimit: 100 | 200 | 500 | 1000; // Max logs fetched per Monitoring load
+  trackAuthEvents: boolean; // LOGIN, LOGOUT, PASSWORD changes, SESSION_TIMEOUT, UNAUTHORIZED_ACCESS
+  trackNavigation: boolean; // NAVIGATE, PAGE_DURATION, VIEW
+  trackDataCrud: boolean; // CREATE, UPDATE, DELETE, ADMIN_ACTION
+  trackFileExports: boolean; // EXPORT, DOWNLOAD, PREVIEW, UPLOAD, REPLACE, PRINT, REPORT
+  trackSearchEvents: boolean; // SEARCH queries
+  enableSecurityAlerts: boolean; // Security alert rule evaluation & Firestore writes
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export type ActivityActionType =

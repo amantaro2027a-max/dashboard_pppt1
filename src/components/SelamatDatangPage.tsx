@@ -268,7 +268,7 @@ export const SelamatDatangPage: React.FC = () => {
     setIsPassModalOpen(true);
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPassMsg(null);
 
@@ -291,7 +291,7 @@ export const SelamatDatangPage: React.FC = () => {
       return;
     }
 
-    const res = changeOwnPassword(currentPass, newPass);
+    const res = await changeOwnPassword(currentPass, newPass);
     if (res.success) {
       setPassMsg({
         type: 'success',

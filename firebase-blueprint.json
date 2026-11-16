@@ -5,76 +5,110 @@
       "description": "Program latihan dan aktiviti rasmi IAB",
       "type": "object",
       "properties": {
-        "namaProgram": { "type": "string" },
-        "kodProgram": { "type": "string" },
-        "jenisProgram": { "type": "string" },
-        "tarikhMula": { "type": "string" },
-        "tarikhTamat": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "namaProgram": { "type": "string", "maxLength": 400 },
+        "kodProgram": { "type": "string", "maxLength": 120 },
+        "jenisProgram": { "type": "string", "maxLength": 150 },
+        "tarikhMula": { "type": "string", "maxLength": 30 },
+        "tarikhTamat": { "type": "string", "maxLength": 30 },
+        "tempoh": { "type": "string", "maxLength": 100 },
         "jumlahHari": { "type": "number" },
-        "tempat": { "type": "string" },
-        "negeri": { "type": "string" },
+        "tempat": { "type": "string", "maxLength": 250 },
+        "negeri": { "type": "string", "maxLength": 100 },
         "bilanganPeserta": { "type": "number" },
-        "pengurus": { "type": "string" },
-        "pengurusBersama": { "type": "string" },
-        "pusat": { "type": "string" },
-        "jabatan": { "type": "string" },
-        "sumberKewangan": { "type": "string" },
-        "status": { "type": "string" },
-        "peruntukanDiterima": { "type": "object" },
-        "peruntukanDibelanjakan": { "type": "object" },
-        "bakiPeruntukan": { "type": "object" }
+        "pengurusId": { "type": "string", "maxLength": 100 },
+        "pengurusNama": { "type": "string", "maxLength": 200 },
+        "pengurusBersamaId": { "type": "string", "maxLength": 100 },
+        "pengurusBersamaNama": { "type": "string", "maxLength": 200 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 250 },
+        "sumberKewangan": { "type": "string", "maxLength": 150 },
+        "os21000": { "type": "number" },
+        "os24000": { "type": "number" },
+        "os27000": { "type": "number" },
+        "os29000": { "type": "number" },
+        "jumlahRm": { "type": "number" },
+        "os21000Belanja": { "type": "number" },
+        "os24000Belanja": { "type": "number" },
+        "os27000Belanja": { "type": "number" },
+        "os29000Belanja": { "type": "number" },
+        "jumlahBelanjaRm": { "type": "number" },
+        "os21000Penjimatan": { "type": "number" },
+        "os24000Penjimatan": { "type": "number" },
+        "os27000Penjimatan": { "type": "number" },
+        "os29000Penjimatan": { "type": "number" },
+        "jumlahPenjimatanRm": { "type": "number" },
+        "statusProgram": { "type": "string", "maxLength": 100 },
+        "tahun": { "type": "number" },
+        "bulan": { "type": "number" },
+        "catatan": { "type": "string", "maxLength": 2000 },
+        "rekodPindaan": { "type": "array" }
       },
-      "rules": {
-        "read": "true",
-        "write": "true"
-      }
+      "required": ["namaProgram", "pusat", "jabatan", "statusProgram"]
     },
     "pegawai": {
       "title": "Pegawai",
       "description": "Senarai pegawai pengurus dan pengurus bersama",
       "type": "object",
       "properties": {
-        "nama": { "type": "string" },
-        "pusat": { "type": "string" },
-        "jabatan": { "type": "string" },
-        "jawatan": { "type": "string" },
-        "emel": { "type": "string" },
-        "noHp": { "type": "string" },
-        "photoUrl": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "label": { "type": "string", "maxLength": 250 },
+        "nama": { "type": "string", "maxLength": 200 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 250 },
+        "jawatan": { "type": "string", "maxLength": 150 },
+        "emel": { "type": "string", "maxLength": 200 },
+        "noHp": { "type": "string", "maxLength": 50 },
+        "photoUrl": { "type": "string", "maxLength": 350000 }
       },
-      "rules": {
-        "read": "true",
-        "write": "true"
-      }
+      "required": ["id", "nama"]
     },
     "admins": {
       "title": "Admin",
-      "description": "Akaun pentadbir sistem dan jabatan",
+      "description": "Akaun pentadbir sistem dan jabatan (dilindungi Firebase Auth)",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "idAdmin": { "type": "string" },
-        "password": { "type": "string" },
-        "name": { "type": "string" },
-        "namaPegawai": { "type": "string" },
-        "pusat": { "type": "string" },
-        "jabatan": { "type": "string" },
-        "role": { "type": "string" },
-        "levelId": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "authUid": { "type": "string", "maxLength": 128 },
+        "firebaseAuthSynced": { "type": "boolean" },
+        "password": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 1000 },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN"] },
+        "levelId": { "type": "string", "maxLength": 64 },
         "allowedJabatans": { "type": "array" },
         "jabatanAccess": { "type": "object" },
         "allowedPages": { "type": "array" },
         "pageAccess": { "type": "object" },
-        "photoUrl": { "type": "string" }
+        "photoUrl": { "type": "string", "maxLength": 350000 },
+        "isActive": { "type": "boolean" },
+        "lastLoginAt": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "maxLength": 64 }
       },
-      "rules": {
-        "read": "true",
-        "write": "true"
-      }
+      "required": ["id", "name", "role", "createdAt"]
+    },
+    "auth_users": {
+      "title": "AuthUserRbac",
+      "description": "Pemetaan UID Firebase Auth kepada peranan dan kebenaran RBAC",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN"] },
+        "levelId": { "type": "string", "maxLength": 64 },
+        "isActive": { "type": "boolean" },
+        "pageAccess": { "type": "object" },
+        "jabatanAccess": { "type": "object" },
+        "allowedPages": { "type": "array" },
+        "allowedJabatans": { "type": "array" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "adminId", "role", "isActive"]
     },
     "master_data": {
       "title": "MasterData",
-      "description": "Konfigurasi pusat, jabatan, sumber kewangan, dan status program",
+      "description": "Konfigurasi kluster, pusat, jabatan, kewangan, kadar bajet, dan tetapan pemantauan",
       "type": "object",
       "properties": {
         "klusterList": { "type": "array" },
@@ -82,68 +116,116 @@
         "pusatList": { "type": "array" },
         "jabatanMap": { "type": "object" },
         "sumberKewanganList": { "type": "array" },
-        "statusList": { "type": "array" },
+        "statusProgramList": { "type": "array" },
         "jawatanList": { "type": "array" },
-        "budgetRates": { "type": "object" }
-      },
-      "rules": {
-        "read": "true",
-        "write": "true"
+        "budgetRates": { "type": "object" },
+        "monitoringSettings": { "type": "object" },
+        "list": { "type": "array" }
       }
+    },
+    "subwaran": {
+      "title": "Subwaran",
+      "description": "Rekod agihan subwaran kepada PTJ",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sumberKewangan": { "type": "string", "maxLength": 150 },
+        "namaPtj": { "type": "string", "maxLength": 100 },
+        "ptjLain": { "type": "string", "maxLength": 200 },
+        "tarikhSubWaran": { "type": "string", "maxLength": 30 },
+        "os21000": { "type": "number" },
+        "os24000": { "type": "number" },
+        "os27000": { "type": "number" },
+        "os29000": { "type": "number" },
+        "jumlah": { "type": "number" },
+        "namaProgram": { "type": "string", "maxLength": 400 },
+        "objektif": { "type": "string", "maxLength": 1000 },
+        "pegawaiPic": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "sumberKewangan", "namaPtj", "namaProgram"]
     },
     "user_activity_logs": {
       "title": "UserActivityLog",
-      "description": "Log aktiviti pengguna masa nyata dalam zon masa Asia/Kuala_Lumpur",
+      "description": "Log aktiviti pengguna masa nyata dalam zon masa Asia/Kuala_Lumpur (append-only)",
       "type": "object",
       "properties": {
-        "log_id": { "type": "string" },
-        "user_id": { "type": "string" },
-        "user_name": { "type": "string" },
-        "user_email": { "type": "string" },
-        "user_role": { "type": "string" },
-        "action_type": { "type": "string" },
-        "module_name": { "type": "string" },
-        "activity_description": { "type": "string" },
-        "record_id": { "type": "string" },
-        "ip_address": { "type": "string" },
-        "device_info": { "type": "string" },
-        "session_id": { "type": "string" },
-        "timestamp": { "type": "string" },
-        "malaysia_date": { "type": "string" },
-        "malaysia_datetime_display": { "type": "string" },
+        "log_id": { "type": "string", "maxLength": 128 },
+        "user_id": { "type": "string", "maxLength": 128 },
+        "user_name": { "type": "string", "maxLength": 200 },
+        "user_email": { "type": "string", "maxLength": 200 },
+        "user_role": { "type": "string", "maxLength": 100 },
+        "action_type": { "type": "string", "maxLength": 64 },
+        "module_name": { "type": "string", "maxLength": 150 },
+        "activity_description": { "type": "string", "maxLength": 1000 },
+        "record_id": { "type": "string", "maxLength": 200 },
+        "ip_address": { "type": "string", "maxLength": 100 },
+        "device_info": { "type": "string", "maxLength": 300 },
+        "session_id": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "malaysia_date": { "type": "string", "maxLength": 20 },
+        "malaysia_datetime_display": { "type": "string", "maxLength": 64 },
         "duration_seconds": { "type": "number" },
-        "status": { "type": "string" }
+        "status": { "type": "string", "enum": ["SUCCESS", "FAILED", "BLOCKED"] }
       },
-      "rules": {
-        "read": "true",
-        "write": "true"
-      }
+      "required": ["log_id", "user_id", "action_type", "module_name", "timestamp", "status"]
     },
     "security_alerts": {
       "title": "SecurityAlert",
       "description": "Amaran keselamatan automatik bagi aktiviti mencurigakan",
       "type": "object",
       "properties": {
-        "alert_id": { "type": "string" },
-        "rule_code": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "severity": { "type": "string" },
-        "status": { "type": "string" },
-        "user_id": { "type": "string" },
-        "user_name": { "type": "string" },
-        "module_name": { "type": "string" },
+        "alert_id": { "type": "string", "maxLength": 128 },
+        "rule_code": { "type": "string", "maxLength": 64 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["New", "Under Review", "Resolved"] },
+        "user_id": { "type": "string", "maxLength": 128 },
+        "user_name": { "type": "string", "maxLength": 200 },
+        "module_name": { "type": "string", "maxLength": 150 },
         "trigger_count": { "type": "number" },
         "related_log_ids": { "type": "array" },
-        "timestamp": { "type": "string" },
-        "malaysia_datetime_display": { "type": "string" },
-        "reviewed_by": { "type": "string" },
-        "reviewed_at": { "type": "string" }
+        "timestamp": { "type": "string", "maxLength": 64 },
+        "malaysia_datetime_display": { "type": "string", "maxLength": 64 },
+        "reviewed_by": { "type": "string", "maxLength": 200 },
+        "reviewed_at": { "type": "string", "maxLength": 64 }
       },
-      "rules": {
-        "read": "true",
-        "write": "true"
-      }
+      "required": ["alert_id", "rule_code", "title", "severity", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/programs/{programId}": {
+      "schema": { "$ref": "#/entities/programs" },
+      "description": "Program latihan dan aktiviti IAB"
+    },
+    "/pegawai/{pegawaiId}": {
+      "schema": { "$ref": "#/entities/pegawai" },
+      "description": "Direktori pegawai IAB"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/admins" },
+      "description": "Profil dan kebenaran pentadbir"
+    },
+    "/auth_users/{uid}": {
+      "schema": { "$ref": "#/entities/auth_users" },
+      "description": "Pemetaan peranan Firebase Auth UID untuk penguatkuasaan rules"
+    },
+    "/master_data/{docId}": {
+      "schema": { "$ref": "#/entities/master_data" },
+      "description": "Konfigurasi induk sistem dan tetapan pemantauan"
+    },
+    "/subwaran/{subwaranId}": {
+      "schema": { "$ref": "#/entities/subwaran" },
+      "description": "Rekod agihan subwaran"
+    },
+    "/user_activity_logs/{logId}": {
+      "schema": { "$ref": "#/entities/user_activity_logs" },
+      "description": "Log audit aktiviti pengguna"
+    },
+    "/security_alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/security_alerts" },
+      "description": "Amaran keselamatan automatik"
     }
   }
 }

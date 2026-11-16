@@ -45,9 +45,11 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  SlidersHorizontal,
+  RefreshCw,
 } from 'lucide-react';
 
-type MonitoringSubTab = 'overview' | 'logs' | 'profiles' | 'alerts' | 'reports';
+type MonitoringSubTab = 'overview' | 'logs' | 'profiles' | 'alerts' | 'reports' | 'settings';
 
 type ReportTypeId =
   | 'daily_activity'
@@ -213,6 +215,10 @@ export const AdminMonitoringPage: React.FC = () => {
     pegawaiList,
     activityLogs,
     securityAlerts,
+    monitoringSettings,
+    isRefreshingMonitoring,
+    updateMonitoringSettings,
+    refreshMonitoringLogs,
     updateAlertStatus,
     toggleAdminUserActive,
     logActivity,
@@ -1219,7 +1225,23 @@ export const AdminMonitoringPage: React.FC = () => {
             <span>Timezone: Asia/Kuala_Lumpur (MYT)</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono tabular-nums">
-              {scopedLogs.length.toLocaleString()} total logs captured
+              {scopedLogs.length.toLocaleString()} total logs loaded
+            </span>
+            <span aria-hidden="true">·</span>
+            <span
+              className={`font-bold px-2 py-0.5 rounded border text-[10px] uppercase ${
+                !monitoringSettings.masterEnabled
+                  ? 'bg-slate-100 text-slate-700 border-slate-300'
+                  : !monitoringSettings.trackNavigation && !monitoringSettings.realtimeListenersEnabled
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}
+            >
+              {!monitoringSettings.masterEnabled
+                ? 'Tracking Disabled (Zero Cost)'
+                : !monitoringSettings.realtimeListenersEnabled
+                ? `Manual Refresh · Limit ${monitoringSettings.logReadLimit}`
+                : `Live Stream · Limit ${monitoringSettings.logReadLimit}`}
             </span>
           </div>
           <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-1">
@@ -1227,41 +1249,76 @@ export const AdminMonitoringPage: React.FC = () => {
           </h2>
         </div>
 
-        {/* Segmented Sub-Tab Controls */}
-        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
-          {(
-            [
-              { id: 'overview', label: 'Analytics Overview', icon: BarChart3 },
-              { id: 'logs', label: 'Recent Activity', icon: List },
-              { id: 'profiles', label: 'User Profiles', icon: UserCog },
-              {
-                id: 'alerts',
-                label: `Security Alerts${alertCounts.newCount > 0 ? ` (${alertCounts.newCount})` : ''}`,
-                icon: Shield,
-              },
-              { id: 'reports', label: 'Reports', icon: FileText },
-            ] as const
-          ).map((t) => {
-            const Icon = t.icon;
-            const active = subTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setSubTab(t.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  active
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
+        {/* Segmented Sub-Tab Controls + Refresh */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={isRefreshingMonitoring || !monitoringSettings.masterEnabled}
+            onClick={() => refreshMonitoringLogs()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 cursor-pointer"
+            title="Fetch latest logs & alerts from Firestore manually"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingMonitoring ? 'animate-spin' : ''}`} />
+            <span>{isRefreshingMonitoring ? 'Refreshing...' : 'Refresh Data'}</span>
+          </button>
+
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
+            {(
+              [
+                { id: 'overview', label: 'Analytics Overview', icon: BarChart3 },
+                { id: 'logs', label: 'Recent Activity', icon: List },
+                { id: 'profiles', label: 'User Profiles', icon: UserCog },
+                {
+                  id: 'alerts',
+                  label: `Security Alerts${alertCounts.newCount > 0 ? ` (${alertCounts.newCount})` : ''}`,
+                  icon: Shield,
+                },
+                { id: 'reports', label: 'Reports', icon: FileText },
+                { id: 'settings', label: 'Cost Controls', icon: SlidersHorizontal },
+              ] as const
+            ).map((t) => {
+              const Icon = t.icon;
+              const active = subTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSubTab(t.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    active
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
+
+      {!monitoringSettings.masterEnabled && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Monitoring &amp; Activity Logging is currently DISABLED (Zero-Cost Mode).</strong>{' '}
+              No new Firestore activity log writes or live listeners are running.
+            </span>
+          </div>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setSubTab('settings')}
+              className="px-3 py-1 bg-amber-900 text-white rounded-md text-[11px] font-semibold hover:bg-amber-800 cursor-pointer"
+            >
+              Open Cost Controls
+            </button>
+          )}
+        </div>
+      )}
 
       {actionFeedback && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-800 flex items-center justify-between">
@@ -2631,6 +2688,288 @@ export const AdminMonitoringPage: React.FC = () => {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* SUB-TAB 6: COST & MODULE CONTROLS (ENABLE / DISABLE FUNCTIONS)      */}
+      {/* =================================================================== */}
+      {subTab === 'settings' && (
+        <div className="space-y-5">
+          {/* Quick Presets Card */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Monitoring Quota &amp; Function Controls
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Enable or disable all or individual monitoring functions to reduce Firestore read/write usage and stay comfortably within free-tier quotas.
+                </p>
+              </div>
+              {monitoringSettings.updatedAt && (
+                <div className="text-[11px] text-slate-500 font-mono shrink-0">
+                  Last saved: {monitoringSettings.updatedAt}
+                  {monitoringSettings.updatedBy ? ` by ${monitoringSettings.updatedBy}` : ''}
+                </div>
+              )}
+            </div>
+
+            {!isSuperAdmin && (
+              <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+                Only Super Admin users can modify global monitoring cost controls. Viewing current system settings below.
+              </div>
+            )}
+
+            {/* One-Click Preset Mode Buttons */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <button
+                type="button"
+                disabled={!isSuperAdmin}
+                onClick={() => {
+                  updateMonitoringSettings({
+                    masterEnabled: true,
+                    realtimeListenersEnabled: true,
+                    logReadLimit: 500,
+                    trackAuthEvents: true,
+                    trackNavigation: true,
+                    trackDataCrud: true,
+                    trackFileExports: true,
+                    trackSearchEvents: true,
+                    enableSecurityAlerts: true,
+                  });
+                  showToast('All monitoring functions & live streaming enabled.');
+                }}
+                className="p-4 text-left rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-50 disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                <div className="text-xs font-bold text-emerald-900">Enable All Functions</div>
+                <p className="text-[11px] text-emerald-700 mt-1">
+                  Full audit trail (Auth, Navigation, CRUD, Exports, Searches, Alerts) + live real-time stream.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                disabled={!isSuperAdmin}
+                onClick={() => {
+                  updateMonitoringSettings({
+                    masterEnabled: true,
+                    realtimeListenersEnabled: false,
+                    logReadLimit: 200,
+                    trackAuthEvents: true,
+                    trackNavigation: false,
+                    trackDataCrud: true,
+                    trackFileExports: true,
+                    trackSearchEvents: false,
+                    enableSecurityAlerts: true,
+                  });
+                  showToast('Low-Cost Mode applied (Auth, CRUD, Exports & Alerts only; Manual Refresh).');
+                }}
+                className="p-4 text-left rounded-xl border border-amber-200 bg-amber-50/70 hover:bg-amber-50 disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                <div className="text-xs font-bold text-amber-900">Low-Cost Mode (Recommended)</div>
+                <p className="text-[11px] text-amber-700 mt-1">
+                  Keeps Auth, CRUD, Exports &amp; Alerts ON. Turns OFF high-volume Navigation/Search writes &amp; uses Manual Refresh (200 limit).
+                </p>
+              </button>
+
+              <button
+                type="button"
+                disabled={!isSuperAdmin}
+                onClick={() => {
+                  updateMonitoringSettings({
+                    masterEnabled: false,
+                    realtimeListenersEnabled: false,
+                    trackAuthEvents: false,
+                    trackNavigation: false,
+                    trackDataCrud: false,
+                    trackFileExports: false,
+                    trackSearchEvents: false,
+                    enableSecurityAlerts: false,
+                  });
+                  showToast('All monitoring tracking & listeners disabled (Zero-Cost Mode).');
+                }}
+                className="p-4 text-left rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-50 disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                <div className="text-xs font-bold text-rose-900">Disable All (Zero-Cost Mode)</div>
+                <p className="text-[11px] text-rose-700 mt-1">
+                  Stops all activity log writes, alert writes, and monitoring listeners completely.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {/* Individual Function Toggles + Read Limit */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Read & Listener Optimization Controls */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Read Quota &amp; Listener Controls
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Control how much data is read from Firestore when opening this dashboard.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  {
+                    key: 'masterEnabled' as const,
+                    title: 'Master Monitoring System',
+                    desc: 'Global switch for all automatic activity tracking, alerts, and monitoring queries.',
+                    impact: 'Saves 100% of Monitoring Reads & Writes when OFF',
+                  },
+                  {
+                    key: 'realtimeListenersEnabled' as const,
+                    title: 'Live Real-Time Updates (onSnapshot)',
+                    desc: 'Stream new logs automatically while this page is open. Turn OFF to use the manual Refresh Data button instead.',
+                    impact: 'Saves continuous read units during long sessions',
+                  },
+                  {
+                    key: 'enableSecurityAlerts' as const,
+                    title: 'Automated Security Alert Engine',
+                    desc: 'Evaluate suspicious patterns and read/write security_alerts documents.',
+                    impact: 'Reduces alert read/write operations',
+                  },
+                ].map((item) => {
+                  const checked = Boolean(monitoringSettings[item.key]);
+                  return (
+                    <div
+                      key={item.key}
+                      className="flex items-start justify-between gap-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50/60"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900">{item.title}</div>
+                        <p className="text-[11px] text-slate-600 mt-0.5">{item.desc}</p>
+                        <div className="text-[10px] font-semibold text-indigo-700 mt-1">
+                          {item.impact}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!isSuperAdmin}
+                        onClick={() => {
+                          updateMonitoringSettings({ [item.key]: !checked });
+                          showToast(`${item.title} ${!checked ? 'enabled' : 'disabled'}.`);
+                        }}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold shrink-0 border transition-colors cursor-pointer disabled:opacity-60 ${
+                          checked
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        {checked ? 'ENABLED' : 'DISABLED'}
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {/* Log Read Limit Selector */}
+                <div className="flex items-center justify-between gap-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50/60">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Maximum Logs Per Load</div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Lower limits (100–200) significantly reduce daily Firestore read units.
+                    </p>
+                  </div>
+                  <select
+                    disabled={!isSuperAdmin}
+                    value={monitoringSettings.logReadLimit}
+                    onChange={(e) => {
+                      const val = Number(e.target.value) as 100 | 200 | 500 | 1000;
+                      updateMonitoringSettings({ logReadLimit: val });
+                      showToast(`Monitoring log fetch limit updated to ${val} records.`);
+                    }}
+                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-md text-xs font-bold text-slate-800 disabled:opacity-60 cursor-pointer"
+                  >
+                    <option value={100}>100 logs (Lowest Read)</option>
+                    <option value={200}>200 logs (Balanced)</option>
+                    <option value={500}>500 logs</option>
+                    <option value={1000}>1000 logs (Highest Read)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Write Quota & Event Category Controls */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+              <div>
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Write Quota &amp; Activity Event Categories
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Selectively turn off high-frequency event categories to save Firestore write quota.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {[
+                  {
+                    key: 'trackAuthEvents' as const,
+                    title: '1. Authentication & Security Logs',
+                    desc: 'LOGIN, LOGOUT, PASSWORD_CHANGE, PASSWORD_RESET, SESSION_TIMEOUT, UNAUTHORIZED_ACCESS.',
+                    impact: 'Low Write Volume (~2–4 writes/user/day)',
+                  },
+                  {
+                    key: 'trackNavigation' as const,
+                    title: '2. Page Navigation & Time-Spent Logs',
+                    desc: 'NAVIGATE and PAGE_DURATION each time a user switches pages.',
+                    impact: 'High Write Volume — Turn OFF for biggest write savings',
+                  },
+                  {
+                    key: 'trackDataCrud' as const,
+                    title: '3. Data CRUD & Admin Action Logs',
+                    desc: 'CREATE, UPDATE, DELETE, and ADMIN_ACTION on programs, staff, budgets, and accounts.',
+                    impact: 'Low/Medium Write Volume — Recommended ON for audit',
+                  },
+                  {
+                    key: 'trackFileExports' as const,
+                    title: '4. File Exports, Downloads & Previews',
+                    desc: 'EXPORT, DOWNLOAD, PREVIEW, UPLOAD, PRINT, and REPORT downloads.',
+                    impact: 'Low Write Volume',
+                  },
+                  {
+                    key: 'trackSearchEvents' as const,
+                    title: '5. Search Keyword Logs',
+                    desc: 'SEARCH queries typed into dashboard filter and catalog search bars.',
+                    impact: 'Medium/High Write Volume',
+                  },
+                ].map((item) => {
+                  const checked = Boolean(monitoringSettings[item.key]);
+                  return (
+                    <div
+                      key={item.key}
+                      className="flex items-start justify-between gap-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50/60"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-900">{item.title}</div>
+                        <p className="text-[11px] text-slate-600 mt-0.5">{item.desc}</p>
+                        <div className="text-[10px] font-semibold text-slate-500 mt-1">
+                          {item.impact}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!isSuperAdmin || !monitoringSettings.masterEnabled}
+                        onClick={() => {
+                          updateMonitoringSettings({ [item.key]: !checked });
+                          showToast(`${item.title} ${!checked ? 'enabled' : 'disabled'}.`);
+                        }}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-bold shrink-0 border transition-colors cursor-pointer disabled:opacity-50 ${
+                          checked && monitoringSettings.masterEnabled
+                            ? 'bg-emerald-600 text-white border-emerald-700'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        {checked && monitoringSettings.masterEnabled ? 'ENABLED' : 'DISABLED'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

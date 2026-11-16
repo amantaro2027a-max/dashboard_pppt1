@@ -19,6 +19,7 @@ import {
   ActivityActionType,
   ActivityLogStatus,
   AlertStatus,
+  MonitoringSettings,
   getAdminLevelLabel,
 } from '../types/program';
 import {
@@ -50,11 +51,33 @@ import {
   onSnapshot,
   writeBatch,
   getDoc,
+  getDocs,
   query,
   orderBy,
   limit,
+  deleteField,
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType, testFirestoreConnection } from '../firebase';
+import {
+  User as FirebaseUser,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+} from 'firebase/auth';
+import {
+  auth,
+  secondaryAuth,
+  db,
+  idToAuthEmail,
+  authEmailToId,
+  toFirebaseAuthPassword,
+  handleFirestoreError,
+  OperationType,
+  testFirestoreConnection,
+} from '../firebase';
 
 interface FlashCardGroup1Stats {
   bilanganProgram: number;
@@ -109,17 +132,20 @@ interface ProgramContextType {
 
   // Auth, RBAC & Admin Management
   currentUser: AdminUser | null;
+  firebaseUser: FirebaseUser | null;
+  authReady: boolean;
   isSuperAdmin: boolean;
   adminUsers: AdminUser[];
-  login: (id: string, pass: string) => { success: boolean; message?: string };
-  logout: () => void;
-  createAdminUser: (user: Omit<AdminUser, 'createdAt'>) => { success: boolean; message?: string };
+  login: (id: string, pass: string) => Promise<{ success: boolean; message?: string }>;
+  logout: () => Promise<void>;
+  createAdminUser: (user: Omit<AdminUser, 'createdAt'>) => Promise<{ success: boolean; message?: string }>;
   updateAdminUser: (id: string, updated: Partial<AdminUser>) => { success: boolean; message?: string };
   toggleAdminUserActive: (userId: string) => { success: boolean; message?: string };
   deleteAdminUser: (id: string) => { success: boolean; message?: string };
-  changeOwnPassword: (currentPassword: string, newPassword: string) => { success: boolean; message?: string };
+  changeOwnPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   updateOwnPhoto: (photoUrl: string) => { success: boolean; message?: string };
-  resetUserPassword: (targetUserId: string, newPassword?: string) => { success: boolean; message?: string };
+  resetUserPassword: (targetUserId: string, newPassword?: string) => Promise<{ success: boolean; message?: string }>;
+  syncAdminUsersToFirebaseAuth: () => Promise<{ success: boolean; syncedCount: number; skippedCount: number; message: string }>;
   getPageAccessMode: (pageKey: string) => 'none' | AccessMode;
   getJabatanAccessMode: (jabatanName?: string) => 'none' | AccessMode;
   canEditPage: (pageKey: string) => boolean;
@@ -193,10 +219,14 @@ interface ProgramContextType {
   budgetRates: BudgetRatesConfig;
   updateBudgetRates: (rates: BudgetRatesConfig) => { success: boolean; message?: string };
 
-  // User Activity Logs & Security Alerts (Admin Monitoring Dashboard)
+  // User Activity Logs, Security Alerts & Cost Control Settings (Admin Monitoring Dashboard)
   activityLogs: UserActivityLog[];
   securityAlerts: SecurityAlert[];
   sessionId: string;
+  monitoringSettings: MonitoringSettings;
+  isRefreshingMonitoring: boolean;
+  updateMonitoringSettings: (updates: Partial<MonitoringSettings>) => { success: boolean; message?: string };
+  refreshMonitoringLogs: () => Promise<void>;
   logActivity: (params: {
     action_type: ActivityActionType | string;
     module_name: string;
@@ -240,6 +270,19 @@ const STORAGE_BUDGET_RATES = 'pppt_dashboard_budget_rates_v2';
 const STORAGE_ACTIVITY_LOGS = 'pppt_dashboard_activity_logs_v1';
 const STORAGE_SECURITY_ALERTS = 'pppt_dashboard_security_alerts_v1';
 const STORAGE_SESSION_ID = 'pppt_dashboard_session_id_v1';
+const STORAGE_MONITORING_SETTINGS = 'pppt_dashboard_monitoring_settings_v1';
+
+export const DEFAULT_MONITORING_SETTINGS: MonitoringSettings = {
+  masterEnabled: true,
+  realtimeListenersEnabled: true,
+  logReadLimit: 200,
+  trackAuthEvents: true,
+  trackNavigation: true,
+  trackDataCrud: true,
+  trackFileExports: true,
+  trackSearchEvents: true,
+  enableSecurityAlerts: true,
+};
 
 export const DEFAULT_BUDGET_RATES: BudgetRatesConfig = {
   makanMinum: {
@@ -471,7 +514,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return INITIAL_ADMIN_USERS;
   });
 
-  // 3. Current logged-in user
+  // 3. Current logged-in user & Firebase Auth state
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(() => {
     try {
       const saved = sessionStorage.getItem(STORAGE_SESSION);
@@ -481,6 +524,27 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch {}
     return null;
   });
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => auth.currentUser);
+  const [authReady, setAuthReady] = useState<boolean>(false);
+
+  // Monitoring Cost Control Settings state
+  const [monitoringSettings, setMonitoringSettings] = useState<MonitoringSettings>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_MONITORING_SETTINGS);
+      if (saved) {
+        return { ...DEFAULT_MONITORING_SETTINGS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return DEFAULT_MONITORING_SETTINGS;
+  });
+  const [isRefreshingMonitoring, setIsRefreshingMonitoring] = useState<boolean>(false);
+  const monitoringSettingsRef = useRef<MonitoringSettings>(monitoringSettings);
+  useEffect(() => {
+    monitoringSettingsRef.current = monitoringSettings;
+    try {
+      localStorage.setItem(STORAGE_MONITORING_SETTINGS, JSON.stringify(monitoringSettings));
+    } catch {}
+  }, [monitoringSettings]);
 
   // 4. Master Data state
   const [klusterList, setKlusterList] = useState<string[]>(() => {
@@ -796,14 +860,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch {}
   }, [budgetRates]);
 
-  // Firebase Firestore Connection & Real-Time Listeners
+  // 1. Public Core Firestore Listeners (Programs, Pegawai, Master Data — always available for Pelawat & Staff)
   useEffect(() => {
     let unsubscribePrograms = () => {};
     let unsubscribePegawai = () => {};
-    let unsubscribeAdmins = () => {};
     let unsubscribeMaster = () => {};
 
-    const setupFirebaseSync = async () => {
+    const setupPublicFirebaseSync = async () => {
       try {
         const isConnected = await testFirestoreConnection();
         if (!isConnected) {
@@ -812,11 +875,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         setFirebaseStatus('connected');
 
-        // 1. Live Programs Listener (Tiada data contoh asal)
+        // Live Programs Listener
         const programsCol = collection(db, 'programs');
         unsubscribePrograms = onSnapshot(
           programsCol,
-          async (snapshot) => {
+          (snapshot) => {
             if (snapshot.empty) {
               setPrograms([]);
               try {
@@ -824,14 +887,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               } catch {}
             } else {
               const loaded: ProgramItem[] = [];
-              const staleSampleDocs: string[] = [];
               snapshot.forEach((docSnap) => {
                 const data = docSnap.data() as ProgramItem;
-                // Double protection: ignore any residual sample prog IDs
-                if (docSnap.id.match(/^prog-0\d\d$/)) {
-                  staleSampleDocs.push(docSnap.id);
-                  return;
-                }
+                if (docSnap.id.match(/^prog-0\d\d$/)) return;
                 loaded.push(
                   sanitizeProgramExpenditure({
                     ...data,
@@ -839,18 +897,6 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   })
                 );
               });
-
-              // Clean up any stale sample documents if found
-              if (staleSampleDocs.length > 0) {
-                try {
-                  const cleanupBatch = writeBatch(db);
-                  staleSampleDocs.forEach((docId) => {
-                    cleanupBatch.delete(doc(db, 'programs', docId));
-                  });
-                  await cleanupBatch.commit();
-                } catch {}
-              }
-
               setPrograms(loaded);
             }
           },
@@ -859,23 +905,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         );
 
-        // 2. Live Pegawai Listener & Seeding
+        // Live Pegawai Listener
         const pegawaiCol = collection(db, 'pegawai');
         unsubscribePegawai = onSnapshot(
           pegawaiCol,
-          async (snapshot) => {
-            if (snapshot.empty && !isInitialSyncDone.current) {
-              try {
-                const batch = writeBatch(db);
-                PEGAWAI_LIST.forEach((peg) => {
-                  const docRef = doc(db, 'pegawai', peg.id);
-                  batch.set(docRef, sanitizeData(peg));
-                });
-                await batch.commit();
-              } catch (e) {
-                handleFirestoreError(e, { operation: OperationType.CREATE, path: 'pegawai' });
-              }
-            } else if (!snapshot.empty) {
+          (snapshot) => {
+            if (!snapshot.empty) {
               const loaded: Pegawai[] = [];
               snapshot.forEach((docSnap) => {
                 const data = docSnap.data() as Pegawai;
@@ -898,72 +933,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         );
 
-        // 3. Live Admins Listener & Seeding
-        const adminsCol = collection(db, 'admins');
-        unsubscribeAdmins = onSnapshot(
-          adminsCol,
-          async (snapshot) => {
-            if (snapshot.empty && !isInitialSyncDone.current) {
-              try {
-                const batch = writeBatch(db);
-                INITIAL_ADMIN_USERS.forEach((admin) => {
-                  const docRef = doc(db, 'admins', admin.id);
-                  batch.set(docRef, sanitizeData(admin));
-                });
-                await batch.commit();
-              } catch (e) {
-                handleFirestoreError(e, { operation: OperationType.CREATE, path: 'admins' });
-              }
-            } else if (!snapshot.empty) {
-              const loaded: AdminUser[] = [];
-              snapshot.forEach((docSnap) => {
-                loaded.push(docSnap.data() as AdminUser);
-              });
-              // Ensure AMAN is always present
-              if (!loaded.some((u) => u.id.toUpperCase() === 'AMAN')) {
-                loaded.unshift(INITIAL_ADMIN_USERS[0]);
-              }
-              setAdminUsers(loaded);
-            }
-          },
-          (error) => {
-            handleFirestoreError(error, { operation: OperationType.LIST, path: 'admins' });
-          }
-        );
-
-        // 4. Live Master Data Listener & Seeding
+        // Live Master Data Settings Listener (includes budgetRates & monitoringSettings)
         const masterDocRef = doc(db, 'master_data', 'settings');
         unsubscribeMaster = onSnapshot(
           masterDocRef,
-          async (snapshot) => {
-            if (!snapshot.exists() && !isInitialSyncDone.current) {
-              try {
-                await setDoc(masterDocRef, {
-                  klusterList: KLUSTER_LIST,
-                  klusterMap: KLUSTER_MAP,
-                  pusatList: PUSAT_LIST,
-                  jabatanMap: JABATAN_MAP,
-                  sumberKewanganList: SUMBER_KEWANGAN_LIST,
-                  statusProgramList: STATUS_PROGRAM_LIST,
-                  jawatanList: DEFAULT_JAWATAN_LIST,
-                  budgetRates: DEFAULT_BUDGET_RATES,
-                });
-              } catch (e) {
-                handleFirestoreError(e, { operation: OperationType.CREATE, path: 'master_data/settings' });
-              }
-            } else if (snapshot.exists()) {
+          (snapshot) => {
+            if (snapshot.exists()) {
               const data = snapshot.data();
               if (Array.isArray(data?.klusterList) && data.klusterList.length > 0) {
                 setKlusterList(data.klusterList);
               } else {
-                // Seed initial 2 klusters if existing settings doc doesn't have klusterList yet
                 setKlusterList(KLUSTER_LIST);
-                setKlusterMap(KLUSTER_MAP);
-                setDoc(
-                  masterDocRef,
-                  { klusterList: KLUSTER_LIST, klusterMap: KLUSTER_MAP },
-                  { merge: true }
-                ).catch(() => {});
               }
               if (data?.klusterMap) setKlusterMap(sanitizeKlusterMap(data.klusterMap));
               if (data?.pusatList) setPusatList(data.pusatList);
@@ -979,6 +959,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
                   updatedBy: data.budgetRates.updatedBy,
                 });
               }
+              if (data?.monitoringSettings) {
+                setMonitoringSettings({
+                  ...DEFAULT_MONITORING_SETTINGS,
+                  ...data.monitoringSettings,
+                });
+              }
             }
             isInitialSyncDone.current = true;
           },
@@ -992,63 +978,244 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     };
 
-    let unsubscribeLogs = () => {};
-    let unsubscribeAlerts = () => {};
-
-    const setupFirebaseSyncWithLogs = async () => {
-      try {
-        const logsQuery = query(
-          collection(db, 'user_activity_logs'),
-          orderBy('timestamp', 'desc'),
-          limit(2000)
-        );
-        unsubscribeLogs = onSnapshot(
-          logsQuery,
-          (snapshot) => {
-            const loaded: UserActivityLog[] = [];
-            snapshot.forEach((docSnap) => {
-              loaded.push(docSnap.data() as UserActivityLog);
-            });
-            if (loaded.length > 0) {
-              setActivityLogs(loaded);
-            }
-          },
-          () => {}
-        );
-
-        const alertsQuery = query(
-          collection(db, 'security_alerts'),
-          orderBy('timestamp', 'desc'),
-          limit(500)
-        );
-        unsubscribeAlerts = onSnapshot(
-          alertsQuery,
-          (snapshot) => {
-            const loaded: SecurityAlert[] = [];
-            snapshot.forEach((docSnap) => {
-              loaded.push(docSnap.data() as SecurityAlert);
-            });
-            if (loaded.length > 0) {
-              setSecurityAlerts(loaded);
-            }
-          },
-          () => {}
-        );
-      } catch {}
-    };
-
-    setupFirebaseSync();
-    setupFirebaseSyncWithLogs();
+    setupPublicFirebaseSync();
 
     return () => {
       unsubscribePrograms();
       unsubscribePegawai();
-      unsubscribeAdmins();
       unsubscribeMaster();
-      unsubscribeLogs();
-      unsubscribeAlerts();
     };
   }, []);
+
+  // 2. Firebase Authentication Session Restore Listener
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      if (!fbUser) {
+        setCurrentUser(null);
+        try {
+          sessionStorage.removeItem(STORAGE_SESSION);
+        } catch {}
+        setAuthReady(true);
+        return;
+      }
+
+      // Restore profile from admins collection using UID or Login ID derived from auth email
+      try {
+        let resolvedId = authEmailToId(fbUser.email);
+        try {
+          const authUserSnap = await getDoc(doc(db, 'auth_users', fbUser.uid));
+          if (authUserSnap.exists() && authUserSnap.data()?.adminId) {
+            resolvedId = String(authUserSnap.data().adminId).trim().toUpperCase();
+          }
+        } catch {}
+
+        if (resolvedId) {
+          const adminSnap = await getDoc(doc(db, 'admins', resolvedId));
+          if (adminSnap.exists()) {
+            const profile = adminSnap.data() as AdminUser;
+            if (profile.isActive === false) {
+              await signOut(auth);
+              setCurrentUser(null);
+              setAuthReady(true);
+              return;
+            }
+            setCurrentUser(profile);
+          } else if (resolvedId === 'AMAN') {
+            const amanDefault: AdminUser = {
+              id: 'AMAN',
+              authUid: fbUser.uid,
+              firebaseAuthSynced: true,
+              name: 'Super Admin AMAN',
+              role: 'SUPER_ADMIN',
+              levelId: 'SUPER_ADMIN',
+              isActive: true,
+              createdAt: '2026-01-01',
+            };
+            setCurrentUser(amanDefault);
+          }
+        }
+      } catch (err) {
+        console.warn('Auth profile restore warning:', err);
+      } finally {
+        setAuthReady(true);
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  // 3. Role-Scoped Admins Listener (NEVER attached for Pelawat / unauthenticated visitors)
+  useEffect(() => {
+    if (!firebaseUser || !currentUser) return;
+
+    const userIsSuper =
+      currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN';
+    const hasMonitoringPerm =
+      userIsSuper ||
+      Boolean(
+        currentUser.pageAccess?.['ADMIN MONITORING DASHBOARD'] ||
+          currentUser.allowedPages?.includes('ADMIN MONITORING DASHBOARD')
+      );
+
+    // Super Admin or Monitoring users need the user directory; regular staff only listen to their own doc (1 read!)
+    if (userIsSuper || hasMonitoringPerm) {
+      const adminsCol = collection(db, 'admins');
+      const unsub = onSnapshot(
+        adminsCol,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const loaded: AdminUser[] = [];
+            snapshot.forEach((docSnap) => {
+              loaded.push(docSnap.data() as AdminUser);
+            });
+            if (!loaded.some((u) => u.id.toUpperCase() === 'AMAN')) {
+              loaded.unshift({ ...INITIAL_ADMIN_USERS[0], password: '' });
+            }
+            setAdminUsers(loaded);
+          }
+        },
+        (error) => {
+          handleFirestoreError(error, { operation: OperationType.LIST, path: 'admins' });
+        }
+      );
+      return () => unsub();
+    } else {
+      const selfRef = doc(db, 'admins', currentUser.id);
+      const unsub = onSnapshot(
+        selfRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const selfProfile = docSnap.data() as AdminUser;
+            if (selfProfile.isActive === false) {
+              signOut(auth).catch(() => {});
+              return;
+            }
+            setCurrentUser(selfProfile);
+            setAdminUsers([selfProfile]);
+          }
+        },
+        () => {}
+      );
+      return () => unsub();
+    }
+  }, [firebaseUser?.uid, currentUser?.id, currentUser?.role, currentUser?.levelId]);
+
+  // Manual Fetch Function for Monitoring Dashboard (used when real-time listeners are disabled to save quota)
+  const refreshMonitoringLogs = async () => {
+    if (!firebaseUser || !currentUser) return;
+    const limitNum = monitoringSettingsRef.current.logReadLimit || 200;
+    setIsRefreshingMonitoring(true);
+    try {
+      const logsQuery = query(
+        collection(db, 'user_activity_logs'),
+        orderBy('timestamp', 'desc'),
+        limit(limitNum)
+      );
+      const logsSnap = await getDocs(logsQuery);
+      const loadedLogs: UserActivityLog[] = [];
+      logsSnap.forEach((docSnap) => {
+        loadedLogs.push(docSnap.data() as UserActivityLog);
+      });
+      setActivityLogs(loadedLogs);
+
+      if (monitoringSettingsRef.current.enableSecurityAlerts) {
+        const alertsQuery = query(
+          collection(db, 'security_alerts'),
+          orderBy('timestamp', 'desc'),
+          limit(200)
+        );
+        const alertsSnap = await getDocs(alertsQuery);
+        const loadedAlerts: SecurityAlert[] = [];
+        alertsSnap.forEach((docSnap) => {
+          loadedAlerts.push(docSnap.data() as SecurityAlert);
+        });
+        setSecurityAlerts(loadedAlerts);
+      }
+    } catch (err) {
+      handleFirestoreError(err, { operation: OperationType.LIST, path: 'user_activity_logs' });
+    } finally {
+      setIsRefreshingMonitoring(false);
+    }
+  };
+
+  // 4. Scoped & Cost-Controlled Activity Log + Alert Listeners
+  // ONLY runs while an authorized user is viewing the Admin Monitoring Dashboard AND masterEnabled is true!
+  useEffect(() => {
+    if (!firebaseUser || !currentUser) return;
+    if (activeTab !== 'monitoring') return;
+    if (!monitoringSettings.masterEnabled) return;
+
+    const userIsSuper =
+      currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN';
+    const hasMonitoringPerm =
+      userIsSuper ||
+      Boolean(
+        currentUser.pageAccess?.['ADMIN MONITORING DASHBOARD'] ||
+          currentUser.allowedPages?.includes('ADMIN MONITORING DASHBOARD')
+      );
+    if (!hasMonitoringPerm) return;
+
+    const limitNum = monitoringSettings.logReadLimit || 200;
+
+    if (!monitoringSettings.realtimeListenersEnabled) {
+      refreshMonitoringLogs();
+      return;
+    }
+
+    const logsQuery = query(
+      collection(db, 'user_activity_logs'),
+      orderBy('timestamp', 'desc'),
+      limit(limitNum)
+    );
+    const unsubLogs = onSnapshot(
+      logsQuery,
+      (snapshot) => {
+        const loaded: UserActivityLog[] = [];
+        snapshot.forEach((docSnap) => {
+          loaded.push(docSnap.data() as UserActivityLog);
+        });
+        setActivityLogs(loaded);
+      },
+      () => {}
+    );
+
+    let unsubAlerts = () => {};
+    if (monitoringSettings.enableSecurityAlerts) {
+      const alertsQuery = query(
+        collection(db, 'security_alerts'),
+        orderBy('timestamp', 'desc'),
+        limit(200)
+      );
+      unsubAlerts = onSnapshot(
+        alertsQuery,
+        (snapshot) => {
+          const loaded: SecurityAlert[] = [];
+          snapshot.forEach((docSnap) => {
+            loaded.push(docSnap.data() as SecurityAlert);
+          });
+          setSecurityAlerts(loaded);
+        },
+        () => {}
+      );
+    }
+
+    return () => {
+      unsubLogs();
+      unsubAlerts();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    firebaseUser?.uid,
+    currentUser?.id,
+    currentUser?.role,
+    currentUser?.levelId,
+    activeTab,
+    monitoringSettings.masterEnabled,
+    monitoringSettings.realtimeListenersEnabled,
+    monitoringSettings.logReadLimit,
+    monitoringSettings.enableSecurityAlerts,
+  ]);
 
   // Helper to persist master data updates to Firestore
   const syncMasterDataToFirestore = async (updates: Partial<{
@@ -1060,6 +1227,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     statusProgramList: string[];
     jawatanList: string[];
     budgetRates: BudgetRatesConfig;
+    monitoringSettings: MonitoringSettings;
   }>) => {
     try {
       const docRef = doc(db, 'master_data', 'settings');
@@ -1069,7 +1237,27 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Helper: Core Automatic Activity Logger (Asia/Kuala_Lumpur) + Security Alert Evaluator
+  // Super Admin Cost-Control Settings Updater
+  const updateMonitoringSettings = (
+    updates: Partial<MonitoringSettings>
+  ): { success: boolean; message?: string } => {
+    if (!currentUser || (currentUser.role !== 'SUPER_ADMIN' && currentUser.levelId !== 'SUPER_ADMIN')) {
+      return { success: false, message: 'Hanya Super Admin dibenarkan mengubah tetapan pemantauan.' };
+    }
+    const { malaysia_datetime_display } = getMalaysiaTimestampParts();
+    const next: MonitoringSettings = {
+      ...monitoringSettingsRef.current,
+      ...updates,
+      updatedAt: malaysia_datetime_display,
+      updatedBy: `${currentUser.name} (${currentUser.id})`,
+    };
+    setMonitoringSettings(next);
+    monitoringSettingsRef.current = next;
+    syncMasterDataToFirestore({ monitoringSettings: next });
+    return { success: true };
+  };
+
+  // Helper: Core Automatic Activity Logger (Asia/Kuala_Lumpur) + Cost-Control Gating + Security Alert Evaluator
   const logActivity = (params: {
     action_type: ActivityActionType | string;
     module_name: string;
@@ -1084,6 +1272,32 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       user_role?: string;
     };
   }) => {
+    const cfg = monitoringSettingsRef.current;
+    if (!cfg.masterEnabled) return;
+
+    const act = String(params.action_type || '').toUpperCase();
+    const isAuthAct = [
+      'LOGIN',
+      'FAILED_LOGIN',
+      'LOGOUT',
+      'SESSION_TIMEOUT',
+      'PASSWORD_CHANGE',
+      'PASSWORD_RESET',
+      'UNAUTHORIZED_ACCESS',
+    ].includes(act);
+    const isNavAct = ['NAVIGATE', 'PAGE_DURATION', 'VIEW'].includes(act);
+    const isCrudAct = ['CREATE', 'UPDATE', 'DELETE', 'ADMIN_ACTION'].includes(act);
+    const isFileAct = ['EXPORT', 'DOWNLOAD', 'PREVIEW', 'UPLOAD', 'REPLACE', 'PRINT', 'REPORT'].includes(act);
+    const isSearchAct = act === 'SEARCH';
+
+    if (isAuthAct && !cfg.trackAuthEvents) return;
+    if (isNavAct && !cfg.trackNavigation) return;
+    if (isCrudAct && !cfg.trackDataCrud) return;
+    if (isFileAct && !cfg.trackFileExports) return;
+    if (isSearchAct && !cfg.trackSearchEvents) return;
+
+    // Under Option A hardened rules, only signed-in Firebase Auth users write activity logs to Firestore
+    const activeFbUser = auth.currentUser;
     const targetUserId = (params.userOverride?.user_id || currentUser?.id || 'PELAWAT').toUpperCase();
     const matchedPeg = pegawaiList.find(
       (p) =>
@@ -1130,16 +1344,19 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     activityLogsRef.current = nextLogs;
     setActivityLogs(nextLogs);
 
-    setDoc(doc(db, 'user_activity_logs', logId), entry).catch(() => {});
+    if (activeFbUser) {
+      setDoc(doc(db, 'user_activity_logs', logId), entry).catch(() => {});
 
-    // Evaluate deterministic security alert rules
-    const generatedAlert = evaluateSecurityAlertRules(entry, prevLogs, securityAlertsRef.current);
-    if (generatedAlert) {
-      const cleanAlert = sanitizeData(generatedAlert);
-      const nextAlerts = [cleanAlert, ...securityAlertsRef.current].slice(0, 500);
-      securityAlertsRef.current = nextAlerts;
-      setSecurityAlerts(nextAlerts);
-      setDoc(doc(db, 'security_alerts', cleanAlert.alert_id), cleanAlert).catch(() => {});
+      if (cfg.enableSecurityAlerts) {
+        const generatedAlert = evaluateSecurityAlertRules(entry, prevLogs, securityAlertsRef.current);
+        if (generatedAlert) {
+          const cleanAlert = sanitizeData(generatedAlert);
+          const nextAlerts = [cleanAlert, ...securityAlertsRef.current].slice(0, 500);
+          securityAlertsRef.current = nextAlerts;
+          setSecurityAlerts(nextAlerts);
+          setDoc(doc(db, 'security_alerts', cleanAlert.alert_id), cleanAlert).catch(() => {});
+        }
+      }
     }
   };
 
@@ -1241,6 +1458,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           activity_description: `Session timed out automatically after 30 minutes of inactivity`,
           status: 'SUCCESS',
         });
+        signOut(auth).catch(() => {});
         setCurrentUser(null);
         sessionStorage.removeItem(STORAGE_SESSION);
         setActiveTabState('admin');
@@ -1257,118 +1475,176 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [currentUser]);
 
-  // Auth functions
-  const login = (id: string, pass: string): { success: boolean; message?: string } => {
+  // Helper to sync trusted RBAC record into auth_users/{uid} (for Firestore security rules)
+  const syncAuthUserRuleDoc = async (uid: string, user: AdminUser) => {
+    const resolvedLevelId: AdminLevelId =
+      user.id.toUpperCase() === 'AMAN'
+        ? 'SUPER_ADMIN'
+        : user.levelId || (user.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'URUS_SETIA');
+    const resolvedRole: AdminRole =
+      resolvedLevelId === 'SUPER_ADMIN' || user.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
+    await setDoc(
+      doc(db, 'auth_users', uid),
+      sanitizeData({
+        uid,
+        adminId: user.id.toUpperCase(),
+        role: resolvedRole,
+        levelId: resolvedLevelId,
+        isActive: user.isActive !== false,
+        pageAccess: user.pageAccess || {},
+        jabatanAccess: user.jabatanAccess || {},
+        allowedPages: user.allowedPages || [],
+        allowedJabatans: user.allowedJabatans || [],
+        updatedAt: new Date().toISOString(),
+      }),
+      { merge: true }
+    );
+  };
+
+  // Auth functions (Firebase Auth with Login ID -> internal email mapping)
+  const login = async (id: string, pass: string): Promise<{ success: boolean; message?: string }> => {
     const cleanId = id.trim().toUpperCase();
     const cleanPass = pass.trim();
+    const authEmail = idToAuthEmail(cleanId);
+    const fbPass = toFirebaseAuthPassword(cleanPass);
 
-    const userById = adminUsers.find((u) => u.id.toUpperCase() === cleanId);
-    if (userById && userById.isActive === false) {
-      logActivity({
-        action_type: 'FAILED_LOGIN',
-        module_name: 'Authentication',
-        activity_description: `Blocked login attempt for deactivated account "${cleanId}"`,
-        record_id: cleanId,
-        status: 'BLOCKED',
-        userOverride: {
-          user_id: userById.id,
-          user_name: userById.name,
-          user_role: getAdminLevelLabel(userById.levelId, userById.role),
-        },
-      });
+    let fbUid = '';
+    try {
+      const cred = await signInWithEmailAndPassword(auth, authEmail, fbPass);
+      fbUid = cred.user.uid;
+    } catch (err: any) {
+      const code = err?.code || '';
+      if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found') {
+        return {
+          success: false,
+          message:
+            'Kaedah log masuk Email/Password belum diaktifkan dalam Firebase Console. Sila aktifkan di Authentication → Sign-in method.',
+        };
+      }
+
+      // First-time automatic bootstrap for default Super Admin AMAN
+      if (
+        cleanId === 'AMAN' &&
+        cleanPass === 'AMAN' &&
+        (code === 'auth/user-not-found' || code === 'auth/invalid-credential')
+      ) {
+        try {
+          const bootCred = await createUserWithEmailAndPassword(auth, authEmail, fbPass);
+          fbUid = bootCred.user.uid;
+        } catch (bootErr: any) {
+          if (bootErr?.code === 'auth/operation-not-allowed') {
+            return {
+              success: false,
+              message:
+                'Kaedah log masuk Email/Password belum diaktifkan dalam Firebase Console. Sila aktifkan di Authentication → Sign-in method.',
+            };
+          }
+          return {
+            success: false,
+            message: 'ID Pengguna atau Kata Laluan tidak sah. Sila cuba lagi.',
+          };
+        }
+      } else {
+        return {
+          success: false,
+          message:
+            code === 'auth/too-many-requests'
+              ? 'Terlalu banyak percubaan gagal. Sila tunggu sebentar dan cuba lagi.'
+              : 'ID Pengguna atau Kata Laluan tidak sah. Sila pastikan akaun telah disegerakkan ke Firebase Auth oleh Super Admin.',
+        };
+      }
+    }
+
+    // Now authenticated with Firebase Auth — fetch profile from admins/{cleanId}
+    let profile: AdminUser | null = null;
+    try {
+      const adminSnap = await getDoc(doc(db, 'admins', cleanId));
+      if (adminSnap.exists()) {
+        profile = adminSnap.data() as AdminUser;
+      }
+    } catch (err) {
+      console.warn('Error loading admin profile:', err);
+    }
+
+    if (!profile && cleanId === 'AMAN') {
+      profile = {
+        id: 'AMAN',
+        name: 'Super Admin AMAN',
+        role: 'SUPER_ADMIN',
+        levelId: 'SUPER_ADMIN',
+        isActive: true,
+        authUid: fbUid,
+        firebaseAuthSynced: true,
+        createdAt: '2026-01-01',
+      };
+      await setDoc(doc(db, 'admins', 'AMAN'), sanitizeData(profile), { merge: true }).catch(() => {});
+    }
+
+    if (!profile) {
+      await signOut(auth).catch(() => {});
+      return {
+        success: false,
+        message: `Profil pentadbir untuk ID "${cleanId}" tidak ditemui dalam pangkalan data.`,
+      };
+    }
+
+    if (profile.isActive === false) {
+      await signOut(auth).catch(() => {});
       return {
         success: false,
         message: 'Akaun ini telah dinyahaktifkan oleh Super Admin. Sila hubungi pentadbir.',
       };
     }
 
-    const user = adminUsers.find(
-      (u) => u.id.toUpperCase() === cleanId && u.password === cleanPass
-    );
+    const nextSession = generateSessionId();
+    setSessionId(nextSession);
+    const { timestamp } = getMalaysiaTimestampParts();
+    const updatedUser: AdminUser = {
+      ...profile,
+      authUid: fbUid,
+      firebaseAuthSynced: true,
+      lastLoginAt: timestamp,
+    };
+    delete updatedUser.password;
 
-    if (user) {
-      const nextSession = generateSessionId();
-      setSessionId(nextSession);
-      const { timestamp } = getMalaysiaTimestampParts();
-      const updatedUser: AdminUser = { ...user, lastLoginAt: timestamp };
-      setAdminUsers((prev) => prev.map((u) => (u.id === user.id ? updatedUser : u)));
-      setCurrentUser(updatedUser);
-      setDoc(doc(db, 'admins', user.id), sanitizeData({ lastLoginAt: timestamp }), {
-        merge: true,
-      }).catch(() => {});
+    setCurrentUser(updatedUser);
+    setAdminUsers((prev) => {
+      const exists = prev.some((u) => u.id.toUpperCase() === updatedUser.id.toUpperCase());
+      return exists
+        ? prev.map((u) => (u.id.toUpperCase() === updatedUser.id.toUpperCase() ? updatedUser : u))
+        : [...prev, updatedUser];
+    });
 
-      pageVisitRef.current = { tab: 'selamatDatang', enteredAtMs: Date.now() };
-      setActiveTabState('selamatDatang');
-
-      logActivity({
-        action_type: 'LOGIN',
-        module_name: 'Authentication',
-        activity_description: `User "${updatedUser.name}" (${updatedUser.id}) logged in successfully`,
-        record_id: updatedUser.id,
-        status: 'SUCCESS',
-        userOverride: {
-          user_id: updatedUser.id,
-          user_name: updatedUser.name,
-          user_role: getAdminLevelLabel(updatedUser.levelId, updatedUser.role),
-        },
-      });
-      return { success: true };
+    // Ensure auth_users/{uid} & admins/{id} metadata are synced
+    if (cleanId === 'AMAN' || updatedUser.role === 'SUPER_ADMIN' || updatedUser.levelId === 'SUPER_ADMIN') {
+      await syncAuthUserRuleDoc(fbUid, updatedUser).catch(() => {});
     }
+    setDoc(
+      doc(db, 'admins', updatedUser.id),
+      { authUid: fbUid, firebaseAuthSynced: true, lastLoginAt: timestamp, password: deleteField() },
+      { merge: true }
+    ).catch(() => {});
 
-    // Fallback for default AMAN
-    if (cleanId === 'AMAN' && cleanPass === 'AMAN') {
-      const nextSession = generateSessionId();
-      setSessionId(nextSession);
-      const { timestamp } = getMalaysiaTimestampParts();
-      const amanUser: AdminUser = {
-        id: 'AMAN',
-        password: 'AMAN',
-        name: 'Super Admin AMAN',
-        role: 'SUPER_ADMIN',
-        levelId: 'SUPER_ADMIN',
-        isActive: true,
-        lastLoginAt: timestamp,
-        createdAt: '2026-01-01',
-      };
-      setCurrentUser(amanUser);
-      pageVisitRef.current = { tab: 'selamatDatang', enteredAtMs: Date.now() };
-      setActiveTabState('selamatDatang');
-
-      logActivity({
-        action_type: 'LOGIN',
-        module_name: 'Authentication',
-        activity_description: `Super Admin AMAN logged in successfully`,
-        record_id: 'AMAN',
-        status: 'SUCCESS',
-        userOverride: {
-          user_id: 'AMAN',
-          user_name: 'Super Admin AMAN',
-          user_role: 'Super Admin',
-        },
-      });
-      return { success: true };
-    }
+    pageVisitRef.current = { tab: 'selamatDatang', enteredAtMs: Date.now() };
+    setActiveTabState('selamatDatang');
 
     logActivity({
-      action_type: 'FAILED_LOGIN',
+      action_type: 'LOGIN',
       module_name: 'Authentication',
-      activity_description: `Failed login attempt with User ID "${cleanId || 'EMPTY'}"`,
-      record_id: cleanId || '-',
-      status: 'FAILED',
+      activity_description: `User "${updatedUser.name}" (${updatedUser.id}) logged in via Firebase Auth`,
+      record_id: updatedUser.id,
+      status: 'SUCCESS',
       userOverride: {
-        user_id: cleanId || 'UNKNOWN',
-        user_name: userById?.name || cleanId || 'Unknown User',
-        user_role: userById ? getAdminLevelLabel(userById.levelId, userById.role) : 'Unauthenticated',
+        user_id: updatedUser.id,
+        user_name: updatedUser.name,
+        user_role: getAdminLevelLabel(updatedUser.levelId, updatedUser.role),
       },
     });
 
-    return {
-      success: false,
-      message: 'ID Pengguna atau Kata Laluan tidak sah. Sila cuba lagi.',
-    };
+    return { success: true };
   };
 
-  const logout = () => {
+  const logout = async () => {
     if (currentUser) {
       logActivity({
         action_type: 'LOGOUT',
@@ -1378,6 +1654,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         status: 'SUCCESS',
       });
     }
+    await signOut(auth).catch(() => {});
     setCurrentUser(null);
     sessionStorage.removeItem(STORAGE_SESSION);
     setSessionId(generateSessionId());
@@ -1547,9 +1824,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return Array.from(set);
   };
 
-  const createAdminUser = (
+  const createAdminUser = async (
     userData: Omit<AdminUser, 'createdAt'>
-  ): { success: boolean; message?: string } => {
+  ): Promise<{ success: boolean; message?: string }> => {
     if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Hanya Super Admin dibenarkan mencipta ID Admin.' };
     }
@@ -1564,28 +1841,63 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const resolvedRole: AdminRole = resolvedLevelId === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN';
     const resolvedPassword = (userData.password || '123').trim() || '123';
 
+    let provisionedUid = '';
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        idToAuthEmail(cleanId),
+        toFirebaseAuthPassword(resolvedPassword)
+      );
+      provisionedUid = cred.user.uid;
+      await signOut(secondaryAuth).catch(() => {});
+    } catch (err: any) {
+      if (err?.code === 'auth/email-already-in-use') {
+        return {
+          success: false,
+          message: `Akaun Firebase Auth untuk "${cleanId}" sudah wujud.`,
+        };
+      }
+      if (err?.code === 'auth/operation-not-allowed') {
+        return {
+          success: false,
+          message:
+            'Sila aktifkan kaedah log masuk Email/Password dalam Firebase Console terlebih dahulu.',
+        };
+      }
+      return {
+        success: false,
+        message: `Gagal mencipta akaun Firebase Auth: ${err?.message || 'Ralat tidak diketahui'}`,
+      };
+    }
+
     const newUser: AdminUser = {
       ...userData,
       id: cleanId,
-      password: resolvedPassword,
+      authUid: provisionedUid,
+      firebaseAuthSynced: true,
       name: userData.name.trim(),
       role: resolvedRole,
       levelId: resolvedLevelId,
       isActive: userData.isActive !== false,
       createdAt: new Date().toISOString().slice(0, 10),
     };
+    delete newUser.password;
 
     setAdminUsers((prev) => [...prev, newUser]);
 
-    // Persist to Firebase Firestore
-    setDoc(doc(db, 'admins', cleanId), sanitizeData(newUser)).catch((err) => {
+    try {
+      await setDoc(doc(db, 'admins', cleanId), sanitizeData(newUser));
+      if (provisionedUid) {
+        await syncAuthUserRuleDoc(provisionedUid, newUser);
+      }
+    } catch (err) {
       handleFirestoreError(err, { operation: OperationType.CREATE, path: `admins/${cleanId}` });
-    });
+    }
 
     logActivity({
       action_type: 'ADMIN_ACTION',
       module_name: 'Portal Admin',
-      activity_description: `Created new user account "${newUser.name}" (${cleanId}) with role ${getAdminLevelLabel(resolvedLevelId, resolvedRole)}`,
+      activity_description: `Created Firebase Auth user account "${newUser.name}" (${cleanId}) with role ${getAdminLevelLabel(resolvedLevelId, resolvedRole)}`,
       record_id: cleanId,
       status: 'SUCCESS',
     });
@@ -1622,7 +1934,6 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       role: nextRole,
       levelId: id.toUpperCase() === 'AMAN' ? 'SUPER_ADMIN' : nextLevelId,
       name: updated.name !== undefined ? updated.name.trim() : target.name,
-      password: updated.password !== undefined ? updated.password.trim() : target.password,
       pusat: updated.pusat !== undefined ? updated.pusat : target.pusat,
       jabatan: updated.jabatan !== undefined ? updated.jabatan : target.jabatan,
       allowedJabatans: updated.allowedJabatans !== undefined ? updated.allowedJabatans : target.allowedJabatans,
@@ -1640,6 +1951,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setDoc(doc(db, 'admins', id), sanitizeData(modifiedUser), { merge: true }).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${id}` });
     });
+
+    if (modifiedUser.authUid) {
+      syncAuthUserRuleDoc(modifiedUser.authUid, modifiedUser).catch(() => {});
+    }
+
     const hasSemuaEdit = Object.entries(modifiedUser.jabatanAccess || {}).some(
       ([k, v]) => k === 'SEMUA JABATAN' && v === 'edit'
     );
@@ -1671,6 +1987,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setDoc(doc(db, 'admins', userId), sanitizeData({ isActive: nextActive }), { merge: true }).catch(
       () => {}
     );
+    if (target.authUid) {
+      syncAuthUserRuleDoc(target.authUid, updatedUser).catch(() => {});
+    }
     logActivity({
       action_type: 'ADMIN_ACTION',
       module_name: 'Portal Admin',
@@ -1681,14 +2000,27 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
-  const changeOwnPassword = (
+  const changeOwnPassword = async (
     currentPassword: string,
     newPassword: string
-  ): { success: boolean; message?: string } => {
-    if (!currentUser) {
+  ): Promise<{ success: boolean; message?: string }> => {
+    if (!currentUser || !auth.currentUser || !auth.currentUser.email) {
       return { success: false, message: 'Sila log masuk terlebih dahulu.' };
     }
-    if (currentPassword.trim() !== currentUser.password) {
+    const cleanCurrent = currentPassword.trim();
+    const cleanNewPass = newPassword.trim();
+    if (!cleanNewPass) {
+      return { success: false, message: 'Kata laluan baharu tidak boleh kosong.' };
+    }
+
+    try {
+      const cred = EmailAuthProvider.credential(
+        auth.currentUser.email,
+        toFirebaseAuthPassword(cleanCurrent)
+      );
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, toFirebaseAuthPassword(cleanNewPass));
+    } catch (err: any) {
       logActivity({
         action_type: 'PASSWORD_CHANGE',
         module_name: 'Selamat Datang',
@@ -1696,28 +2028,25 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         record_id: currentUser.id,
         status: 'FAILED',
       });
-      return { success: false, message: 'Kata laluan semasa tidak tepat.' };
-    }
-    if (!newPassword.trim()) {
-      return { success: false, message: 'Kata laluan baharu tidak boleh kosong.' };
+      return {
+        success: false,
+        message: 'Kata laluan semasa tidak tepat atau sesi perlu log masuk semula.',
+      };
     }
 
-    const cleanNewPass = newPassword.trim();
-    const updatedUser: AdminUser = { ...currentUser, password: cleanNewPass };
-
-    setAdminUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, password: cleanNewPass } : u))
-    );
+    const updatedUser: AdminUser = { ...currentUser };
+    delete updatedUser.password;
     setCurrentUser(updatedUser);
-
-    setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
-      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
-    });
+    setDoc(
+      doc(db, 'admins', currentUser.id),
+      { firebaseAuthSynced: true, password: deleteField() },
+      { merge: true }
+    ).catch(() => {});
 
     logActivity({
       action_type: 'PASSWORD_CHANGE',
       module_name: 'Selamat Datang',
-      activity_description: `User "${currentUser.name}" (${currentUser.id}) changed own password`,
+      activity_description: `User "${currentUser.name}" (${currentUser.id}) changed own password in Firebase Auth`,
       record_id: currentUser.id,
       status: 'SUCCESS',
     });
@@ -1737,7 +2066,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     );
     setCurrentUser(updatedUser);
 
-    setDoc(doc(db, 'admins', currentUser.id), sanitizeData(updatedUser), { merge: true }).catch((err) => {
+    setDoc(doc(db, 'admins', currentUser.id), sanitizeData({ photoUrl: cleanPhoto }), { merge: true }).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
     });
 
@@ -1771,10 +2100,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
-  const resetUserPassword = (
+  const resetUserPassword = async (
     targetUserId: string,
     newPassword = '123'
-  ): { success: boolean; message?: string } => {
+  ): Promise<{ success: boolean; message?: string }> => {
     if (!currentUser || !isSuperAdmin) {
       logActivity({
         action_type: 'UNAUTHORIZED_ACCESS',
@@ -1790,30 +2119,158 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return { success: false, message: 'Akaun pengguna tidak ditemui.' };
     }
 
-    const cleanResetPass = (newPassword || '123').trim() || '123';
-    const updatedUser: AdminUser = { ...target, password: cleanResetPass };
-
-    setAdminUsers((prev) =>
-      prev.map((u) => (u.id === targetUserId ? updatedUser : u))
-    );
-
-    if (currentUser.id === targetUserId) {
-      setCurrentUser(updatedUser);
+    // In pure client-side Option A (Firebase Auth without backend Admin SDK),
+    // legacy unsynced users can still be provisioned with the reset password, while
+    // already-synced users update their password themselves or via Firebase Console.
+    if (!target.firebaseAuthSynced && !target.authUid) {
+      const cleanResetPass = (newPassword || '123').trim() || '123';
+      try {
+        const cred = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          idToAuthEmail(target.id),
+          toFirebaseAuthPassword(cleanResetPass)
+        );
+        const newUid = cred.user.uid;
+        await signOut(secondaryAuth).catch(() => {});
+        const syncedUser: AdminUser = { ...target, authUid: newUid, firebaseAuthSynced: true };
+        delete syncedUser.password;
+        setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? syncedUser : u)));
+        await setDoc(
+          doc(db, 'admins', targetUserId),
+          { authUid: newUid, firebaseAuthSynced: true, password: deleteField() },
+          { merge: true }
+        );
+        await syncAuthUserRuleDoc(newUid, syncedUser);
+        logActivity({
+          action_type: 'PASSWORD_RESET',
+          module_name: 'Portal Admin',
+          activity_description: `Provisioned & reset default password ("${cleanResetPass}") for "${target.name}" (${targetUserId})`,
+          record_id: targetUserId,
+          status: 'SUCCESS',
+        });
+        return {
+          success: true,
+          message: `Akaun "${targetUserId}" telah disegerakkan ke Firebase Auth dengan kata laluan lalai "${cleanResetPass}".`,
+        };
+      } catch (err: any) {
+        if (err?.code !== 'auth/email-already-in-use') {
+          return {
+            success: false,
+            message: `Gagal menetapkan semula kata laluan: ${err?.message || 'Ralat Firebase Auth'}`,
+          };
+        }
+      }
     }
 
-    setDoc(doc(db, 'admins', targetUserId), sanitizeData(updatedUser), { merge: true }).catch((err) => {
-      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${targetUserId}` });
-    });
+    return {
+      success: false,
+      message: `Akaun "${targetUserId}" sudah menggunakan Firebase Authentication (${idToAuthEmail(targetUserId)}). Untuk keselamatan, penetapan semula kata laluan pengguna lain dilakukan melalui Firebase Console → Authentication → Users, atau pengguna menukar kata laluan sendiri di halaman Selamat Datang.`,
+    };
+  };
+
+  const syncAdminUsersToFirebaseAuth = async (): Promise<{
+    success: boolean;
+    syncedCount: number;
+    skippedCount: number;
+    message: string;
+  }> => {
+    if (!currentUser || !isSuperAdmin) {
+      return {
+        success: false,
+        syncedCount: 0,
+        skippedCount: 0,
+        message: 'Hanya Super Admin dibenarkan menjalankan penyegerakan Firebase Auth.',
+      };
+    }
+    let syncedCount = 0;
+    let skippedCount = 0;
+
+    for (const user of adminUsers) {
+      if (user.id.toUpperCase() === 'AMAN' && firebaseUser?.uid) {
+        await syncAuthUserRuleDoc(firebaseUser.uid, user).catch(() => {});
+        await setDoc(
+          doc(db, 'admins', user.id),
+          { authUid: firebaseUser.uid, firebaseAuthSynced: true, password: deleteField() },
+          { merge: true }
+        ).catch(() => {});
+        syncedCount++;
+        continue;
+      }
+
+      if (user.authUid && user.firebaseAuthSynced) {
+        await syncAuthUserRuleDoc(user.authUid, user).catch(() => {});
+        skippedCount++;
+        continue;
+      }
+
+      const rawPass = (user.password || '123').trim() || '123';
+      try {
+        const cred = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          idToAuthEmail(user.id),
+          toFirebaseAuthPassword(rawPass)
+        );
+        const uid = cred.user.uid;
+        await signOut(secondaryAuth).catch(() => {});
+        const nextUser: AdminUser = { ...user, authUid: uid, firebaseAuthSynced: true };
+        delete nextUser.password;
+        await setDoc(
+          doc(db, 'admins', user.id),
+          { authUid: uid, firebaseAuthSynced: true, password: deleteField() },
+          { merge: true }
+        );
+        await syncAuthUserRuleDoc(uid, nextUser);
+        syncedCount++;
+      } catch (err: any) {
+        if (err?.code === 'auth/email-already-in-use') {
+          try {
+            const signCred = await signInWithEmailAndPassword(
+              secondaryAuth,
+              idToAuthEmail(user.id),
+              toFirebaseAuthPassword(rawPass)
+            );
+            const uid = signCred.user.uid;
+            await signOut(secondaryAuth).catch(() => {});
+            const nextUser: AdminUser = { ...user, authUid: uid, firebaseAuthSynced: true };
+            delete nextUser.password;
+            await setDoc(
+              doc(db, 'admins', user.id),
+              { authUid: uid, firebaseAuthSynced: true, password: deleteField() },
+              { merge: true }
+            );
+            await syncAuthUserRuleDoc(uid, nextUser);
+            syncedCount++;
+          } catch {
+            skippedCount++;
+          }
+        } else if (err?.code === 'auth/operation-not-allowed') {
+          return {
+            success: false,
+            syncedCount,
+            skippedCount,
+            message:
+              'Kaedah Email/Password belum diaktifkan di Firebase Console → Authentication → Sign-in method.',
+          };
+        } else {
+          skippedCount++;
+        }
+      }
+    }
 
     logActivity({
-      action_type: 'PASSWORD_RESET',
+      action_type: 'ADMIN_ACTION',
       module_name: 'Portal Admin',
-      activity_description: `Reset password to default for user "${target.name}" (${targetUserId})`,
-      record_id: targetUserId,
+      activity_description: `Synchronized admin accounts to Firebase Auth (${syncedCount} synced, ${skippedCount} skipped)`,
+      record_id: 'FIREBASE_AUTH_SYNC',
       status: 'SUCCESS',
     });
 
-    return { success: true };
+    return {
+      success: true,
+      syncedCount,
+      skippedCount,
+      message: `Penyegerakan selesai: ${syncedCount} akaun disegerakkan ke Firebase Auth (${skippedCount} sedia ada / dilangkau).`,
+    };
   };
 
   const deleteAdminUser = (userId: string): { success: boolean; message?: string } => {
@@ -1827,10 +2284,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const target = adminUsers.find((u) => u.id === userId);
     setAdminUsers((prev) => prev.filter((u) => u.id !== userId));
 
-    // Delete in Firestore
+    // Delete in Firestore (and RBAC mapping if synced)
     deleteDoc(doc(db, 'admins', userId)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.DELETE, path: `admins/${userId}` });
     });
+    if (target?.authUid) {
+      deleteDoc(doc(db, 'auth_users', target.authUid)).catch(() => {});
+    }
 
     logActivity({
       action_type: 'ADMIN_ACTION',
@@ -3752,6 +4212,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         financialStats,
         viewProgramDetail,
         currentUser,
+        firebaseUser,
+        authReady,
         isSuperAdmin,
         adminUsers,
         login,
@@ -3763,6 +4225,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         changeOwnPassword,
         updateOwnPhoto,
         resetUserPassword,
+        syncAdminUsersToFirebaseAuth,
         getPageAccessMode,
         getJabatanAccessMode,
         canEditPage,
@@ -3820,6 +4283,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activityLogs,
         securityAlerts,
         sessionId,
+        monitoringSettings,
+        isRefreshingMonitoring,
+        updateMonitoringSettings,
+        refreshMonitoringLogs,
         logActivity,
         updateAlertStatus,
         firebaseStatus,

@@ -1,40 +1,320 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Programs collection - read for dashboard, write for admin operations
+    // 1. Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_.\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authEmailMatchesId(adminId) {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email == (adminId.lower() + '@iab.internal');
+    }
+
+    function hasAuthRecord() {
+      return isSignedIn() && exists(/databases/$(database)/documents/auth_users/$(request.auth.uid));
+    }
+
+    function authRecord() {
+      return get(/databases/$(database)/documents/auth_users/$(request.auth.uid)).data;
+    }
+
+    function isActiveStaff() {
+      return isSignedIn() && (
+        request.auth.token.email == 'aman@iab.internal' ||
+        request.auth.token.email == 'iab-1248@moe-dl.edu.my' ||
+        (hasAuthRecord() && authRecord().isActive == true)
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'aman@iab.internal' ||
+        request.auth.token.email == 'iab-1248@moe-dl.edu.my' ||
+        (
+          hasAuthRecord() &&
+          authRecord().isActive == true &&
+          (authRecord().role == 'SUPER_ADMIN' || authRecord().levelId == 'SUPER_ADMIN')
+        )
+      );
+    }
+
+    function hasPageRead(pageKey) {
+      return isSuperAdmin() || (
+        isActiveStaff() &&
+        hasAuthRecord() &&
+        (
+          (authRecord().pageAccess is map && pageKey in authRecord().pageAccess) ||
+          (authRecord().allowedPages is list && pageKey in authRecord().allowedPages)
+        )
+      );
+    }
+
+    function hasPageEdit(pageKey) {
+      return isSuperAdmin() || (
+        isActiveStaff() &&
+        hasAuthRecord() &&
+        authRecord().pageAccess is map &&
+        pageKey in authRecord().pageAccess &&
+        authRecord().pageAccess[pageKey] == 'edit'
+      );
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidProgram(data) {
+      return data.keys().hasAll(['namaProgram', 'pusat', 'jabatan', 'statusProgram'])
+        && data.keys().hasOnly([
+          'id', 'namaProgram', 'kodProgram', 'jenisProgram', 'tarikhMula', 'tarikhTamat',
+          'tempoh', 'jumlahHari', 'tempat', 'negeri', 'bilanganPeserta',
+          'pengurusId', 'pengurusNama', 'pengurusBersamaId', 'pengurusBersamaNama',
+          'pusat', 'jabatan', 'sumberKewangan',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlahRm',
+          'os21000Belanja', 'os24000Belanja', 'os27000Belanja', 'os29000Belanja', 'jumlahBelanjaRm',
+          'os21000Penjimatan', 'os24000Penjimatan', 'os27000Penjimatan', 'os29000Penjimatan', 'jumlahPenjimatanRm',
+          'statusProgram', 'tahun', 'bulan', 'catatan', 'rekodPindaan'
+        ])
+        && data.namaProgram is string && data.namaProgram.size() >= 1 && data.namaProgram.size() <= 400
+        && data.pusat is string && data.pusat.size() <= 250
+        && data.jabatan is string && data.jabatan.size() <= 250
+        && data.statusProgram is string && data.statusProgram.size() <= 100
+        && (!('kodProgram' in data) || (data.kodProgram is string && data.kodProgram.size() <= 120))
+        && (!('catatan' in data) || (data.catatan is string && data.catatan.size() <= 2000))
+        && (!('rekodPindaan' in data) || (data.rekodPindaan is list && data.rekodPindaan.size() <= 200));
+    }
+
+    function isValidPegawai(data) {
+      return data.keys().hasAll(['id', 'nama'])
+        && data.keys().hasOnly(['id', 'label', 'nama', 'pusat', 'jabatan', 'jawatan', 'emel', 'noHp', 'photoUrl'])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.nama is string && data.nama.size() >= 1 && data.nama.size() <= 200
+        && (!('pusat' in data) || (data.pusat is string && data.pusat.size() <= 250))
+        && (!('jabatan' in data) || (data.jabatan is string && data.jabatan.size() <= 250))
+        && (!('jawatan' in data) || (data.jawatan is string && data.jawatan.size() <= 150))
+        && (!('emel' in data) || (data.emel is string && data.emel.size() <= 200))
+        && (!('noHp' in data) || (data.noHp is string && data.noHp.size() <= 50))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 350000));
+    }
+
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['id', 'name', 'role', 'createdAt'])
+        && data.keys().hasOnly([
+          'id', 'authUid', 'firebaseAuthSynced', 'password', 'name', 'role', 'levelId',
+          'pusat', 'jabatan', 'allowedJabatans', 'jabatanAccess', 'allowedPages',
+          'pageAccess', 'photoUrl', 'isActive', 'lastLoginAt', 'createdAt'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 200
+        && data.role in ['SUPER_ADMIN', 'ADMIN']
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('authUid' in data) || (data.authUid is string && data.authUid.size() <= 128))
+        && (!('firebaseAuthSynced' in data) || data.firebaseAuthSynced is bool)
+        && (!('isActive' in data) || data.isActive is bool)
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 350000))
+        && (!('allowedJabatans' in data) || (data.allowedJabatans is list && data.allowedJabatans.size() <= 200))
+        && (!('allowedPages' in data) || (data.allowedPages is list && data.allowedPages.size() <= 50));
+    }
+
+    function isValidAuthUser(data, uidParam) {
+      return data.keys().hasAll(['uid', 'adminId', 'role', 'isActive'])
+        && data.keys().hasOnly([
+          'uid', 'adminId', 'role', 'levelId', 'isActive',
+          'pageAccess', 'jabatanAccess', 'allowedPages', 'allowedJabatans', 'updatedAt'
+        ])
+        && data.uid == uidParam
+        && data.adminId is string && data.adminId.size() >= 1 && data.adminId.size() <= 128
+        && data.role in ['SUPER_ADMIN', 'ADMIN']
+        && data.isActive is bool
+        && (!('allowedPages' in data) || (data.allowedPages is list && data.allowedPages.size() <= 50))
+        && (!('allowedJabatans' in data) || (data.allowedJabatans is list && data.allowedJabatans.size() <= 200));
+    }
+
+    function isValidMasterData(docId, data) {
+      return docId == 'settings'
+        ? data.keys().hasOnly([
+            'klusterList', 'klusterMap', 'pusatList', 'jabatanMap',
+            'sumberKewanganList', 'statusProgramList', 'jawatanList',
+            'budgetRates', 'monitoringSettings'
+          ])
+        : (docId == 'peruntukan_fasa' && data.keys().hasOnly(['list']) && data.list is list && data.list.size() <= 100);
+    }
+
+    function isValidSubwaran(data) {
+      return data.keys().hasAll(['id', 'sumberKewangan', 'namaPtj', 'namaProgram'])
+        && data.keys().hasOnly([
+          'id', 'sumberKewangan', 'namaPtj', 'ptjLain', 'tarikhSubWaran',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
+          'namaProgram', 'objektif', 'pegawaiPic', 'createdAt'
+        ])
+        && data.id is string && data.id.size() <= 128
+        && data.sumberKewangan is string && data.sumberKewangan.size() <= 150
+        && data.namaPtj is string && data.namaPtj.size() <= 100
+        && data.namaProgram is string && data.namaProgram.size() <= 400
+        && (!('objektif' in data) || (data.objektif is string && data.objektif.size() <= 1000));
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['log_id', 'user_id', 'action_type', 'module_name', 'timestamp', 'status'])
+        && data.keys().hasOnly([
+          'log_id', 'user_id', 'user_name', 'user_email', 'user_role',
+          'action_type', 'module_name', 'activity_description', 'record_id',
+          'ip_address', 'device_info', 'session_id', 'timestamp',
+          'malaysia_date', 'malaysia_datetime_display', 'duration_seconds', 'status'
+        ])
+        && data.log_id is string && data.log_id.size() >= 1 && data.log_id.size() <= 128
+        && data.user_id is string && data.user_id.size() >= 1 && data.user_id.size() <= 128
+        && data.action_type is string && data.action_type.size() >= 1 && data.action_type.size() <= 64
+        && data.module_name is string && data.module_name.size() >= 1 && data.module_name.size() <= 150
+        && data.timestamp is string && data.timestamp.size() <= 64
+        && data.status in ['SUCCESS', 'FAILED', 'BLOCKED']
+        && (!('activity_description' in data) || (data.activity_description is string && data.activity_description.size() <= 1000))
+        && (!('duration_seconds' in data) || (data.duration_seconds is number && data.duration_seconds >= 0 && data.duration_seconds <= 86400));
+    }
+
+    function isValidSecurityAlert(data) {
+      return data.keys().hasAll(['alert_id', 'rule_code', 'title', 'severity', 'status', 'timestamp'])
+        && data.keys().hasOnly([
+          'alert_id', 'rule_code', 'title', 'description', 'severity', 'status',
+          'user_id', 'user_name', 'module_name', 'trigger_count', 'related_log_ids',
+          'timestamp', 'malaysia_datetime_display', 'reviewed_by', 'reviewed_at'
+        ])
+        && data.alert_id is string && data.alert_id.size() >= 1 && data.alert_id.size() <= 128
+        && data.rule_code is string && data.rule_code.size() <= 64
+        && data.title is string && data.title.size() <= 200
+        && data.severity in ['Critical', 'High', 'Medium', 'Low']
+        && data.status in ['New', 'Under Review', 'Resolved']
+        && data.timestamp is string && data.timestamp.size() <= 64
+        && (!('related_log_ids' in data) || (data.related_log_ids is list && data.related_log_ids.size() <= 100));
+    }
+
+    // 4. Collection Rules
+
+    // Programs - Public read for Dashboard Program; authenticated authorized edit for writes
     match /programs/{programId} {
-      allow read: if true;
-      allow write: if true;
+      allow get: if isValidId(programId);
+      allow list: if true;
+      allow create, update: if isValidId(programId)
+        && isValidProgram(incoming())
+        && (
+          isSuperAdmin() ||
+          hasPageEdit('PERINCIAN PROGRAM') ||
+          hasPageEdit('DASHBOARD BERSEPADU') ||
+          hasPageEdit('PERBELANJAAN') ||
+          hasPageEdit('JABATAN') ||
+          hasPageEdit('PUSAT')
+        );
+      allow delete: if isValidId(programId)
+        && (isSuperAdmin() || hasPageEdit('PERINCIAN PROGRAM') || hasPageEdit('DASHBOARD BERSEPADU'));
     }
 
-    // Pegawai collection - read for dropdowns and directory, write for admin
+    // Pegawai - Public read for filters/dropdowns; Super Admin manage (staff can update own photoUrl)
     match /pegawai/{pegawaiId} {
-      allow read: if true;
-      allow write: if true;
+      allow get: if isValidId(pegawaiId);
+      allow list: if true;
+      allow create: if isSuperAdmin() && isValidId(pegawaiId) && isValidPegawai(incoming());
+      allow delete: if isSuperAdmin() && isValidId(pegawaiId);
+      allow update: if isValidId(pegawaiId) && isValidPegawai(incoming()) && (
+        isSuperAdmin() ||
+        (isActiveStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['photoUrl']))
+      );
     }
 
-    // Admins collection - read and write for authentication & account management
+    // Admins - Strictly private & authenticated (no public reads, self-update locked to safe profile fields)
     match /admins/{adminId} {
-      allow read: if true;
-      allow write: if true;
+      allow get: if isSignedIn() && isValidId(adminId) && (
+        isSuperAdmin() ||
+        hasPageRead('ADMIN MONITORING DASHBOARD') ||
+        authEmailMatchesId(adminId) ||
+        (existing().keys().hasAny(['authUid']) && existing().authUid == request.auth.uid)
+      );
+      allow list: if isSignedIn() && (isSuperAdmin() || hasPageRead('ADMIN MONITORING DASHBOARD'));
+      allow create: if isValidId(adminId) && isValidAdmin(incoming()) && (
+        isSuperAdmin() ||
+        (isSignedIn() && adminId == 'AMAN' && request.auth.token.email == 'aman@iab.internal')
+      );
+      allow update: if isValidId(adminId) && isValidAdmin(incoming()) && (
+        isSuperAdmin() ||
+        (
+          isSignedIn() &&
+          (authEmailMatchesId(adminId) || (existing().keys().hasAny(['authUid']) && existing().authUid == request.auth.uid)) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['photoUrl', 'lastLoginAt', 'authUid', 'firebaseAuthSynced', 'password']) &&
+          (!('password' in incoming().diff(existing()).affectedKeys()) || !('password' in incoming()))
+        )
+      );
+      allow delete: if isSuperAdmin() && isValidId(adminId) && adminId != 'AMAN';
     }
 
-    // Master data collection (Pusat, Jabatan, Sumber Kewangan, Status)
+    // Trusted RBAC lookup table keyed by Firebase Auth UID
+    match /auth_users/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create, update: if isValidId(uid) && isValidAuthUser(incoming(), uid) && (
+        isSuperAdmin() ||
+        (
+          isSignedIn() &&
+          request.auth.uid == uid &&
+          request.auth.token.email == 'aman@iab.internal' &&
+          incoming().adminId == 'AMAN' &&
+          incoming().role == 'SUPER_ADMIN'
+        )
+      );
+      allow delete: if isSuperAdmin() && isValidId(uid);
+    }
+
+    // Master Data & Monitoring Cost Settings
     match /master_data/{docId} {
-      allow read: if true;
-      allow write: if true;
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update: if isValidId(docId) && isValidMasterData(docId, incoming()) && (
+        isSuperAdmin() ||
+        (docId == 'peruntukan_fasa' && hasPageEdit('PERUNTUKAN'))
+      );
+      allow delete: if isSuperAdmin() && isValidId(docId);
     }
 
-    // User activity logs collection - real-time activity tracking & admin monitoring
+    // Subwaran
+    match /subwaran/{subwaranId} {
+      allow get: if isValidId(subwaranId);
+      allow list: if true;
+      allow create, update: if isValidId(subwaranId) && isValidSubwaran(incoming()) && (
+        isSuperAdmin() || hasPageEdit('SUBWARAN')
+      );
+      allow delete: if isValidId(subwaranId) && (isSuperAdmin() || hasPageEdit('SUBWARAN'));
+    }
+
+    // User Activity Logs - Append-only audit trail; read restricted to authorized Monitoring users
     match /user_activity_logs/{logId} {
-      allow read: if true;
-      allow write: if true;
+      allow get, list: if isSignedIn() && (isSuperAdmin() || hasPageRead('ADMIN MONITORING DASHBOARD'));
+      allow create: if isSignedIn() && isValidId(logId) && isValidActivityLog(incoming());
+      allow update, delete: if false;
     }
 
-    // Security alerts collection - suspicious activity detection & triage workflow
+    // Security Alerts - Read restricted to Monitoring users; triage updates restricted to status/review fields
     match /security_alerts/{alertId} {
-      allow read: if true;
-      allow write: if true;
+      allow get, list: if isSignedIn() && (isSuperAdmin() || hasPageRead('ADMIN MONITORING DASHBOARD'));
+      allow create: if isSignedIn() && isValidId(alertId) && isValidSecurityAlert(incoming());
+      allow update: if isValidId(alertId)
+        && isValidSecurityAlert(incoming())
+        && (isSuperAdmin() || hasPageEdit('ADMIN MONITORING DASHBOARD'))
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at']);
+      allow delete: if false;
     }
   }
 }
