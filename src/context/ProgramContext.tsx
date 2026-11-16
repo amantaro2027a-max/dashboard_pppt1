@@ -31,6 +31,12 @@ import {
   evaluateSecurityAlertRules,
 } from '../utils/activityLogger';
 import { formatRM } from '../utils/formatters';
+import {
+  getCurrentFinanceYear,
+  getFasaYear,
+  getSubwaranYear,
+  computeAvailableFinanceYears,
+} from '../utils/financeYear';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
   KLUSTER_LIST,
@@ -144,6 +150,7 @@ interface ProgramContextType {
   deleteAdminUser: (id: string) => { success: boolean; message?: string };
   changeOwnPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; message?: string }>;
   updateOwnPhoto: (photoUrl: string) => { success: boolean; message?: string };
+  updateOwnContactInfo: (noHp: string, emel: string) => { success: boolean; message?: string };
   resetUserPassword: (targetUserId: string, newPassword?: string) => Promise<{ success: boolean; message?: string }>;
   syncAdminUsersToFirebaseAuth: () => Promise<{ success: boolean; syncedCount: number; skippedCount: number; message: string }>;
   getPageAccessMode: (pageKey: string) => 'none' | AccessMode;
@@ -203,10 +210,15 @@ interface ProgramContextType {
   importStatusProgramBulk: (items: string[]) => { success: boolean; added: number; message?: string };
   importJawatanBulk: (items: string[]) => { success: boolean; added: number; message?: string };
 
+  // Synchronized Finance Year (Default: current year)
+  selectedFinanceYear: number;
+  setSelectedFinanceYear: (year: number) => void;
+  availableFinanceYears: number[];
+
   // Page Peruntukan (Super Admin)
   fasaPeruntukanList: FasaPeruntukanRecord[];
   updateFasaPeruntukan: (fasaId: string, allocations: Record<string, OsAllocation>) => { success: boolean; message?: string };
-  addFasaPeruntukan: (namaFasa?: string) => { success: boolean; message?: string };
+  addFasaPeruntukan: (namaFasa?: string, tahun?: number) => { success: boolean; message?: string };
   deleteFasaPeruntukan: (fasaId: string) => { success: boolean; message?: string };
 
   // Page Subwaran (Super Admin)
@@ -723,6 +735,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   });
 
   // UI States
+  const [selectedFinanceYear, setSelectedFinanceYear] = useState<number>(() => getCurrentFinanceYear());
+  const availableFinanceYears = useMemo(
+    () => computeAvailableFinanceYears(programs, fasaPeruntukanList, subwaranList),
+    [programs, fasaPeruntukanList, subwaranList]
+  );
   const [filters, setFilters] = useState<ProgramFilterState>(defaultFilters);
   const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -860,11 +877,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch {}
   }, [budgetRates]);
 
-  // 1. Public Core Firestore Listeners (Programs, Pegawai, Master Data — always available for Pelawat & Staff)
+  // 1. Public Core Firestore Listeners (Programs, Pegawai, Master Data, Peruntukan Fasa, Subwaran)
   useEffect(() => {
     let unsubscribePrograms = () => {};
     let unsubscribePegawai = () => {};
     let unsubscribeMaster = () => {};
+    let unsubscribePeruntukan = () => {};
+    let unsubscribeSubwaran = () => {};
+    let hasSubwaranFirestoreData = false;
 
     const setupPublicFirebaseSync = async () => {
       try {
@@ -972,6 +992,52 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             handleFirestoreError(error, { operation: OperationType.READ, path: 'master_data/settings' });
           }
         );
+
+        // Live Peruntukan Fasa Listener
+        const peruntukanDocRef = doc(db, 'master_data', 'peruntukan_fasa');
+        unsubscribePeruntukan = onSnapshot(
+          peruntukanDocRef,
+          (snapshot) => {
+            if (snapshot.exists()) {
+              const data = snapshot.data();
+              if (Array.isArray(data?.list)) {
+                setFasaPeruntukanList(
+                  data.list.map((f: FasaPeruntukanRecord) => ({
+                    ...f,
+                    tahun: getFasaYear(f),
+                  }))
+                );
+              }
+            }
+          },
+          (error) => {
+            handleFirestoreError(error, { operation: OperationType.READ, path: 'master_data/peruntukan_fasa' });
+          }
+        );
+
+        // Live Subwaran Listener
+        const subwaranCol = collection(db, 'subwaran');
+        unsubscribeSubwaran = onSnapshot(
+          subwaranCol,
+          (snapshot) => {
+            if (!snapshot.empty || hasSubwaranFirestoreData) {
+              hasSubwaranFirestoreData = true;
+              const loaded: SubwaranRecord[] = [];
+              snapshot.forEach((docSnap) => {
+                const data = docSnap.data() as SubwaranRecord;
+                loaded.push({
+                  ...data,
+                  id: docSnap.id,
+                  tahun: getSubwaranYear(data),
+                });
+              });
+              setSubwaranList(loaded);
+            }
+          },
+          (error) => {
+            handleFirestoreError(error, { operation: OperationType.LIST, path: 'subwaran' });
+          }
+        );
       } catch (err) {
         console.warn('Firebase setup notice:', err);
         setFirebaseStatus('offline');
@@ -984,6 +1050,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       unsubscribePrograms();
       unsubscribePegawai();
       unsubscribeMaster();
+      unsubscribePeruntukan();
+      unsubscribeSubwaran();
     };
   }, []);
 
@@ -2100,6 +2168,64 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
+  const updateOwnContactInfo = (
+    noHp: string,
+    emel: string
+  ): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk terlebih dahulu.' };
+    }
+    const cleanNoHp = (noHp || '').trim().slice(0, 50);
+    const cleanEmel = (emel || '').trim().toLowerCase().slice(0, 200);
+
+    if (cleanEmel && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmel)) {
+      return { success: false, message: 'Format Emel Rasmi tidak sah. Sila masukkan emel yang betul.' };
+    }
+
+    const updatedUser: AdminUser = { ...currentUser, noHp: cleanNoHp, emel: cleanEmel };
+
+    setAdminUsers((prev) =>
+      prev.map((u) => (u.id === currentUser.id ? { ...u, noHp: cleanNoHp, emel: cleanEmel } : u))
+    );
+    setCurrentUser(updatedUser);
+
+    setDoc(
+      doc(db, 'admins', currentUser.id),
+      sanitizeData({ noHp: cleanNoHp, emel: cleanEmel }),
+      { merge: true }
+    ).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.UPDATE, path: `admins/${currentUser.id}` });
+    });
+
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser.name && p.nama.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && p.id.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+    if (matchedPeg) {
+      setPegawaiList((prev) =>
+        prev.map((p) => (p.id === matchedPeg.id ? { ...p, noHp: cleanNoHp, emel: cleanEmel } : p))
+      );
+      setDoc(
+        doc(db, 'pegawai', matchedPeg.id),
+        sanitizeData({ ...matchedPeg, noHp: cleanNoHp, emel: cleanEmel }),
+        { merge: true }
+      ).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.UPDATE, path: `pegawai/${matchedPeg.id}` });
+      });
+    }
+
+    logActivity({
+      action_type: 'UPDATE',
+      module_name: 'Selamat Datang',
+      activity_description: `Updated contact info (No. HP: ${cleanNoHp || '-'}, Emel: ${cleanEmel || '-'}) for "${currentUser.name}" (${currentUser.id})`,
+      record_id: currentUser.id,
+      status: 'SUCCESS',
+    });
+
+    return { success: true };
+  };
+
   const resetUserPassword = async (
     targetUserId: string,
     newPassword = '123'
@@ -2380,6 +2506,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           p.negeri,
           p.pengurusNama,
           p.pengurusBersamaNama,
+          p.urusSetiaNama || '',
           p.pusat,
           p.jabatan,
           p.sumberKewangan,
@@ -2844,6 +2971,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         jenisPerubahan: 'Pengurus Bersama',
         maklumatAsal: target.pengurusBersamaNama || 'Tiada',
         maklumatTerkini: data.pengurusBersamaNama || 'Tiada',
+      });
+    }
+
+    if (
+      data.urusSetiaNama !== undefined &&
+      data.urusSetiaNama !== (target.urusSetiaNama || '')
+    ) {
+      diffItems.push({
+        jenisPerubahan: 'Urus Setia',
+        maklumatAsal: target.urusSetiaNama || 'Tiada',
+        maklumatTerkini: data.urusSetiaNama || 'Tiada',
       });
     }
 
@@ -3937,6 +4075,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       f.id === fasaId
         ? {
             ...f,
+            tahun: getFasaYear(f),
             allocations,
             updatedAt: new Date().toISOString().slice(0, 10),
           }
@@ -3947,7 +4086,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       localStorage.setItem(STORAGE_PERUNTUKAN_FASA, JSON.stringify(nextList));
       const docRef = doc(db, 'master_data', 'peruntukan_fasa');
-      setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
+      setDoc(docRef, { list: nextList.map((item) => sanitizeData(item)) }, { merge: true }).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.UPDATE, path: 'master_data/peruntukan_fasa' });
+      });
     } catch {}
 
     logActivity({
@@ -3961,12 +4102,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
-  const addFasaPeruntukan = (namaFasa?: string): { success: boolean; message?: string } => {
+  const addFasaPeruntukan = (namaFasa?: string, tahun?: number): { success: boolean; message?: string } => {
     if (!currentUser || (!isSuperAdmin && !canEditPage('PERUNTUKAN'))) {
       return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk menambah fasa peruntukan.' };
     }
 
-    const nextNum = fasaPeruntukanList.length + 1;
+    const targetYear = typeof tahun === 'number' && Number.isFinite(tahun) ? tahun : selectedFinanceYear;
+    const sameYearCount = fasaPeruntukanList.filter((f) => getFasaYear(f) === targetYear).length;
+    const nextNum = sameYearCount + 1;
     const newId = `fasa_${Date.now()}`;
     const newName = (namaFasa || `PERUNTUKAN FASA ${nextNum}`).toUpperCase();
 
@@ -3978,6 +4121,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const newFasa: FasaPeruntukanRecord = {
       id: newId,
       nama: newName,
+      tahun: targetYear,
       allocations: initialAlloc,
       updatedAt: new Date().toISOString().slice(0, 10),
     };
@@ -3987,13 +4131,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       localStorage.setItem(STORAGE_PERUNTUKAN_FASA, JSON.stringify(nextList));
       const docRef = doc(db, 'master_data', 'peruntukan_fasa');
-      setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
+      setDoc(docRef, { list: nextList.map((item) => sanitizeData(item)) }, { merge: true }).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.UPDATE, path: 'master_data/peruntukan_fasa' });
+      });
     } catch {}
 
     logActivity({
       action_type: 'CREATE',
       module_name: 'Peruntukan',
-      activity_description: `Created new Fasa Peruntukan "${newName}"`,
+      activity_description: `Created new Fasa Peruntukan "${newName}" (${targetYear})`,
       record_id: newId,
       status: 'SUCCESS',
     });
@@ -4011,7 +4157,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       localStorage.setItem(STORAGE_PERUNTUKAN_FASA, JSON.stringify(nextList));
       const docRef = doc(db, 'master_data', 'peruntukan_fasa');
-      setDoc(docRef, { list: nextList }, { merge: true }).catch(() => {});
+      setDoc(docRef, { list: nextList.map((item) => sanitizeData(item)) }, { merge: true }).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.UPDATE, path: 'master_data/peruntukan_fasa' });
+      });
     } catch {}
 
     logActivity({
@@ -4038,10 +4186,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const os24 = Number(record.os24000) || 0;
     const os27 = Number(record.os27000) || 0;
     const os29 = Number(record.os29000) || 0;
+    const resolvedYear =
+      record.tarikhSubWaran && /^\d{4}/.test(record.tarikhSubWaran)
+        ? Number(record.tarikhSubWaran.slice(0, 4))
+        : (typeof record.tahun === 'number' ? record.tahun : selectedFinanceYear);
 
     const newRecord: SubwaranRecord = {
       ...record,
       id: newId,
+      tahun: resolvedYear,
       os21000: os21,
       os24000: os24,
       os27000: os27,
@@ -4056,13 +4209,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       localStorage.setItem(STORAGE_SUBWARAN, JSON.stringify(nextList));
       const docRef = doc(db, 'subwaran', newId);
-      setDoc(docRef, sanitizeData(newRecord)).catch(() => {});
+      setDoc(docRef, sanitizeData(newRecord)).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.CREATE, path: `subwaran/${newId}` });
+      });
     } catch {}
 
     logActivity({
       action_type: 'CREATE',
       module_name: 'Subwaran',
-      activity_description: `Created subwaran "${newRecord.namaProgram}" for PTJ ${newRecord.namaPtj} (RM ${formatRM(newRecord.jumlah)})`,
+      activity_description: `Created subwaran "${newRecord.namaProgram}" for PTJ ${newRecord.namaPtj} (${resolvedYear}, RM ${formatRM(newRecord.jumlah)})`,
       record_id: newId,
       status: 'SUCCESS',
     });
@@ -4085,9 +4240,15 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const os24 = updated.os24000 !== undefined ? Number(updated.os24000) : s.os24000;
         const os27 = updated.os27000 !== undefined ? Number(updated.os27000) : s.os27000;
         const os29 = updated.os29000 !== undefined ? Number(updated.os29000) : s.os29000;
+        const nextTarikh = updated.tarikhSubWaran !== undefined ? updated.tarikhSubWaran : s.tarikhSubWaran;
+        const resolvedYear =
+          nextTarikh && /^\d{4}/.test(nextTarikh)
+            ? Number(nextTarikh.slice(0, 4))
+            : (updated.tahun ?? getSubwaranYear(s));
         const merged: SubwaranRecord = {
           ...s,
           ...updated,
+          tahun: resolvedYear,
           os21000: os21,
           os24000: os24,
           os27000: os27,
@@ -4224,6 +4385,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteAdminUser,
         changeOwnPassword,
         updateOwnPhoto,
+        updateOwnContactInfo,
         resetUserPassword,
         syncAdminUsersToFirebaseAuth,
         getPageAccessMode,
@@ -4270,6 +4432,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         importSumberKewanganBulk,
         importStatusProgramBulk,
         importJawatanBulk,
+        selectedFinanceYear,
+        setSelectedFinanceYear,
+        availableFinanceYears,
         fasaPeruntukanList,
         updateFasaPeruntukan,
         addFasaPeruntukan,

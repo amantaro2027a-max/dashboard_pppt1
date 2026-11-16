@@ -87,6 +87,14 @@ export const ProgramCatalog: React.FC = () => {
         (pbNama && (pbNama === userNameNorm || (pegNamaNorm && pbNama === pegNamaNorm)));
       if (isPengurusBersama) return true;
 
+      // Syarat D: User/admin sebagai Urus Setia program
+      const usId = (prog.urusSetiaId || '').trim().toUpperCase();
+      const usNama = (prog.urusSetiaNama || '').trim().toUpperCase();
+      const isUrusSetia =
+        (usId && (usId === userIdNorm || (pegIdNorm && usId === pegIdNorm))) ||
+        (usNama && (usNama === userNameNorm || (pegNamaNorm && usNama === pegNamaNorm)));
+      if (isUrusSetia) return true;
+
       return false;
     });
   }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, pegawaiList]);

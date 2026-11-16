@@ -37,6 +37,7 @@ const ALL_EXPORT_FIELDS: ExportFieldDef[] = [
   { key: 'bilanganPeserta', label: 'Bilangan Peserta', getValue: (p) => p.bilanganPeserta },
   { key: 'pengurusNama', label: 'Pengurus', getValue: (p) => p.pengurusNama },
   { key: 'pengurusBersamaNama', label: 'Pengurus Bersama', getValue: (p) => p.pengurusBersamaNama || '-' },
+  { key: 'urusSetiaNama', label: 'Urus Setia', getValue: (p) => p.urusSetiaNama || '-' },
   { key: 'pusat', label: 'Pusat', getValue: (p) => p.pusat },
   { key: 'jabatan', label: 'Jabatan', getValue: (p) => p.jabatan },
   { key: 'sumberKewangan', label: 'Sumber Kewangan', getValue: (p) => p.sumberKewangan },

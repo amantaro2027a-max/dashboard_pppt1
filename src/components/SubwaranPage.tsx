@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { SubwaranRecord, PtjOption } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
+import { getCurrentFinanceYear, getSubwaranYear } from '../utils/financeYear';
+import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Share2,
   Plus,
@@ -318,6 +320,8 @@ export const SubwaranPage: React.FC = () => {
     canEditPage,
     setActiveTab,
     sumberKewanganList,
+    selectedFinanceYear,
+    setSelectedFinanceYear,
     subwaranList,
     addSubwaran,
     updateSubwaran,
@@ -326,6 +330,11 @@ export const SubwaranPage: React.FC = () => {
 
   const canAccess = Boolean(currentUser) && getPageAccessMode('SUBWARAN') !== 'none';
   const canEdit = isSuperAdmin || canEditPage('SUBWARAN');
+
+  const yearSubwaranList = useMemo(
+    () => subwaranList.filter((item) => getSubwaranYear(item) === selectedFinanceYear),
+    [subwaranList, selectedFinanceYear]
+  );
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -368,7 +377,7 @@ export const SubwaranPage: React.FC = () => {
       let s29 = 0;
       let count = 0;
 
-      subwaranList.forEach((item) => {
+      yearSubwaranList.forEach((item) => {
         if (item.sumberKewangan === sk) {
           s21 += Number(item.os21000) || 0;
           s24 += Number(item.os24000) || 0;
@@ -406,7 +415,7 @@ export const SubwaranPage: React.FC = () => {
         totalAgihan,
       },
     };
-  }, [sumberKewanganList, subwaranList]);
+  }, [sumberKewanganList, yearSubwaranList]);
 
   // Form Auto Total
   const calculatedFormTotal = useMemo(() => {
@@ -424,7 +433,11 @@ export const SubwaranPage: React.FC = () => {
     setFormSumberKewangan(sk);
     setFormNamaPtj('IABCGH');
     setFormPtjLain('');
-    setFormTarikhSubwaran('');
+    const defaultDate =
+      selectedFinanceYear === getCurrentFinanceYear()
+        ? new Date().toISOString().slice(0, 10)
+        : `${selectedFinanceYear}-01-15`;
+    setFormTarikhSubwaran(defaultDate);
     setFormOs21000('0.00');
     setFormOs24000('0.00');
     setFormOs27000('0.00');
@@ -481,11 +494,16 @@ export const SubwaranPage: React.FC = () => {
       return;
     }
 
+    const resolvedYear = /^\d{4}/.test(formTarikhSubwaran)
+      ? Number(formTarikhSubwaran.slice(0, 4))
+      : selectedFinanceYear;
+
     const payload = {
       sumberKewangan: formSumberKewangan,
       namaPtj: formNamaPtj,
       ptjLain: formPtjLain.trim() || undefined,
       tarikhSubWaran: formTarikhSubwaran,
+      tahun: resolvedYear,
       os21000: Number(formOs21000) || 0,
       os24000: Number(formOs24000) || 0,
       os27000: Number(formOs27000) || 0,
@@ -508,6 +526,10 @@ export const SubwaranPage: React.FC = () => {
         setFormError(res.message || 'Gagal menambah subwaran.');
         return;
       }
+    }
+
+    if (resolvedYear !== selectedFinanceYear) {
+      setSelectedFinanceYear(resolvedYear);
     }
 
     setIsModalOpen(false);
@@ -582,7 +604,7 @@ export const SubwaranPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="bg-slate-800/90 border border-slate-700 px-4 py-2 rounded-lg text-right">
             <span className="text-[10px] text-slate-400 font-semibold uppercase block">
-              Jumlah Disubwaran
+              Jumlah Disubwaran ({selectedFinanceYear})
             </span>
             <span className="text-base font-bold text-amber-400 font-mono">
               {formatRMWithPrefix(keseluruhanStats.grandTotals.grand)}
@@ -606,6 +628,9 @@ export const SubwaranPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Synchronized Finance Year Filter / Tabs */}
+      <FinanceYearTabs accentColor="amber" />
+
       {/* =========================================================================
           SECTION 1: PERUNTUKAN SUBWARAN KESELURUHAN
          ========================================================================= */}
@@ -619,14 +644,14 @@ export const SubwaranPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-white uppercase tracking-wider">
-                  PERUNTUKAN SUBWARAN KESELURUHAN
+                  PERUNTUKAN SUBWARAN KESELURUHAN — TAHUN {selectedFinanceYear}
                 </h2>
                 <span className="text-[10px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                   Autofill Automatik
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Jumlah amaun peruntukan disubwaran bagi semua Bahagian mengikut Sumber Kewangan Induk.
+                Jumlah amaun peruntukan disubwaran bagi Tahun {selectedFinanceYear} mengikut Sumber Kewangan Induk.
               </p>
             </div>
           </div>
@@ -733,7 +758,7 @@ export const SubwaranPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
               <Share2 className="w-4 h-4 text-slate-600" />
-              <span>Agihan Peruntukan Disubwaran Mengikut Sumber Kewangan</span>
+              <span>Agihan Peruntukan Disubwaran Mengikut Sumber Kewangan (Tahun {selectedFinanceYear})</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Setiap bahagian boleh dibuka atau disembunyikan. Klik butang &quot;DAFTAR SUB WARAN PERUNTUKAN INI&quot; untuk menambah agihan baharu.
@@ -746,7 +771,7 @@ export const SubwaranPage: React.FC = () => {
             key={sk}
             bahagianIndex={idx + 1}
             sumberKewangan={sk}
-            subwaranItems={subwaranList}
+            subwaranItems={yearSubwaranList}
             onOpenCreateModal={handleOpenCreateModal}
             onOpenEditModal={handleOpenEditModal}
             onRequestDelete={(item) => canEdit && setDeleteTarget(item)}

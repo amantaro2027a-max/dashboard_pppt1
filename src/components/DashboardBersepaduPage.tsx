@@ -27,6 +27,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
+import { getFasaYear, getProgramYear } from '../utils/financeYear';
 
 export const DashboardBersepaduPage: React.FC = () => {
   const {
@@ -37,6 +38,7 @@ export const DashboardBersepaduPage: React.FC = () => {
     sumberKewanganList,
     statusProgramList,
     fasaPeruntukanList,
+    availableFinanceYears,
     viewProgramDetail,
     currentUser,
     getPageAccessMode,
@@ -102,11 +104,13 @@ export const DashboardBersepaduPage: React.FC = () => {
     items: [],
   });
 
-  // Unique options derived from actual database
+  // Unique options derived from actual database & synchronized finance years
   const availableYears = useMemo(() => {
-    const set = new Set(programs.map((p) => String(p.tahun || '2026')));
+    const set = new Set<string>(availableFinanceYears.map(String));
+    programs.forEach((p) => set.add(String(getProgramYear(p))));
+    (fasaPeruntukanList || []).forEach((f) => set.add(String(getFasaYear(f))));
     return Array.from(set).sort().reverse();
-  }, [programs]);
+  }, [programs, fasaPeruntukanList, availableFinanceYears]);
 
   const availableTypes = useMemo(() => {
     const set = new Set(programs.map((p) => p.jenisProgram).filter(Boolean));
@@ -137,7 +141,7 @@ export const DashboardBersepaduPage: React.FC = () => {
   // Filtered Programs calculation
   const filteredPrograms = useMemo(() => {
     return programs.filter((p) => {
-      if (filterTahun !== 'SEMUA' && String(p.tahun || '2026') !== filterTahun) {
+      if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) {
         return false;
       }
       if (
@@ -194,10 +198,11 @@ export const DashboardBersepaduPage: React.FC = () => {
     searchQuery,
   ]);
 
-  // Peruntukan Keseluruhan diambil terus daripada Page PERUNTUKAN (fasaPeruntukanList)
+  // Peruntukan Keseluruhan diambil terus daripada Page PERUNTUKAN (fasaPeruntukanList) mengikut tahun
   const totalAllocationPeruntukanPage = useMemo(() => {
     let grand = 0;
     (fasaPeruntukanList || []).forEach((fasa) => {
+      if (filterTahun !== 'SEMUA' && String(getFasaYear(fasa)) !== filterTahun) return;
       if (!fasa.allocations) return;
       Object.entries(fasa.allocations).forEach(([sk, alloc]) => {
         if (filterSumber !== 'SEMUA' && sk !== filterSumber) return;
@@ -219,7 +224,7 @@ export const DashboardBersepaduPage: React.FC = () => {
       });
     });
     return grand;
-  }, [fasaPeruntukanList, filterSumber, filterOsCode]);
+  }, [fasaPeruntukanList, filterTahun, filterSumber, filterOsCode]);
 
   const handleResetFilters = () => {
     setFilterTahun('SEMUA');
@@ -561,6 +566,9 @@ export const DashboardBersepaduPage: React.FC = () => {
         programs={filteredPrograms}
         allPrograms={programs}
         totalAllocationPeruntukanPage={totalAllocationPeruntukanPage}
+        fasaPeruntukanList={fasaPeruntukanList}
+        filterSumber={filterSumber}
+        filterOsCode={filterOsCode}
         onOpenDrillDown={handleOpenDrillDown}
         isExpanded={moduleExpanded.m2}
         onToggleExpand={() => toggleModule('m2')}

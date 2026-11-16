@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
+import { getProgramYear } from '../utils/financeYear';
+import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   CreditCard,
   ShieldAlert,
@@ -298,11 +300,17 @@ export const PerbelanjaanPage: React.FC = () => {
     getPageAccessMode,
     setActiveTab,
     sumberKewanganList,
+    selectedFinanceYear,
     programs,
     viewProgramDetail,
   } = useProgramContext();
 
   const canAccess = Boolean(currentUser) && getPageAccessMode('PERBELANJAAN') !== 'none';
+
+  const yearPrograms = useMemo(
+    () => programs.filter((p) => getProgramYear(p) === selectedFinanceYear),
+    [programs, selectedFinanceYear]
+  );
 
   // Compute PERUNTUKAN DIBELANJAKAN KESELURUHAN (STATUS PROGRAM: TANGGUNG DAN SELESAI)
   const keseluruhanStats = useMemo(() => {
@@ -325,7 +333,7 @@ export const PerbelanjaanPage: React.FC = () => {
       let s29 = 0;
       let count = 0;
 
-      programs.forEach((p) => {
+      yearPrograms.forEach((p) => {
         if (p.sumberKewangan === sk) {
           const status = (p.statusProgram || '').trim().toUpperCase();
           if (status === 'SELESAI' || status === 'TANGGUNG') {
@@ -371,7 +379,7 @@ export const PerbelanjaanPage: React.FC = () => {
         totalPrograms,
       },
     };
-  }, [sumberKewanganList, programs]);
+  }, [sumberKewanganList, yearPrograms]);
 
   // If user cannot access, show restricted screen
   if (!canAccess) {
@@ -435,7 +443,7 @@ export const PerbelanjaanPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="bg-slate-800/90 border border-slate-700 px-3.5 py-2 rounded-lg text-right">
             <span className="text-[10px] text-slate-400 font-semibold uppercase block">
-              Jumlah Perbelanjaan
+              Jumlah Perbelanjaan ({selectedFinanceYear})
             </span>
             <span className="text-base font-bold text-teal-400 font-mono">
               {formatRMWithPrefix(keseluruhanStats.grandTotals.grand)}
@@ -474,6 +482,9 @@ export const PerbelanjaanPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Synchronized Finance Year Filter / Tabs */}
+      <FinanceYearTabs accentColor="teal" />
+
       {/* =========================================================================
           SECTION 1: PERUNTUKAN DIBELANJAKAN KESELURUHAN (STATUS PROGRAM: TANGGUNG DAN SELESAI)
          ========================================================================= */}
@@ -487,14 +498,14 @@ export const PerbelanjaanPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-white uppercase tracking-wider">
-                  PERUNTUKAN DIBELANJAKAN KESELURUHAN (STATUS PROGRAM: TANGGUNG DAN SELESAI)
+                  PERUNTUKAN DIBELANJAKAN KESELURUHAN — TAHUN {selectedFinanceYear}
                 </h2>
                 <span className="text-[10px] bg-teal-400 text-slate-950 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                   Autofill Automatik
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Pengiraan automatik jumlah amaun semua Bahagian/Sumber Kewangan bagi program berstatus TANGGUNG dan SELESAI.
+                Pengiraan automatik jumlah amaun semua Bahagian/Sumber Kewangan Tahun {selectedFinanceYear} bagi program berstatus TANGGUNG dan SELESAI.
               </p>
             </div>
           </div>
@@ -601,10 +612,10 @@ export const PerbelanjaanPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
               <Layers className="w-4 h-4 text-slate-600" />
-              <span>Pecahan Terperinci Mengikut Bahagian / Sumber Kewangan</span>
+              <span>Pecahan Terperinci Mengikut Bahagian / Sumber Kewangan (Tahun {selectedFinanceYear})</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Setiap bahagian menyenaraikan program yang telah disempurnakan dengan pecahan belanja sebenar mengikut OS.
+              Setiap bahagian menyenaraikan program Tahun {selectedFinanceYear} yang telah disempurnakan dengan pecahan belanja sebenar mengikut OS.
             </p>
           </div>
         </div>
@@ -614,7 +625,7 @@ export const PerbelanjaanPage: React.FC = () => {
             key={sk}
             bahagianIndex={idx + 1}
             sumberKewangan={sk}
-            programs={programs}
+            programs={yearPrograms}
             viewProgramDetail={viewProgramDetail}
           />
         ))}

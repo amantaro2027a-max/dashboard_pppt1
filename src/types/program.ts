@@ -47,6 +47,8 @@ export interface ProgramItem {
   pengurusNama: string; // e.g. 'WAN AZROI BIN WAN JAMAL'
   pengurusBersamaId: string; // e.g. 'Pegawai 2'
   pengurusBersamaNama: string; // e.g. 'SITI BINTI SAMAD'
+  urusSetiaId?: string; // e.g. 'IAB003'
+  urusSetiaNama?: string; // e.g. 'AHMAD BIN ALI'
   pusat: PusatType;
   jabatan: string;
   sumberKewangan: SumberKewangan;
@@ -214,6 +216,8 @@ export interface AdminUser {
   jabatanAccess?: Record<string, AccessMode>; // Per-department 'view' | 'edit' permission
   allowedPages?: string[]; // Legacy & convenience list of authorized pages
   pageAccess?: Record<string, AccessMode>; // Per-page 'view' | 'edit' permission
+  emel?: string; // Official email editable by user
+  noHp?: string; // Mobile phone number editable by user
   photoUrl?: string; // Base64 passport photo uploaded by user
   isActive?: boolean; // Account active/deactivated status
   lastLoginAt?: string; // Last successful login timestamp (Asia/Kuala_Lumpur)
@@ -311,6 +315,7 @@ export interface OsAllocation {
 export interface FasaPeruntukanRecord {
   id: string; // e.g. 'fasa_1', 'fasa_2'
   nama: string; // e.g. 'PERUNTUKAN FASA 1'
+  tahun?: number; // e.g. 2026
   allocations: Record<string, OsAllocation>;
   updatedAt?: string;
 }
@@ -333,6 +338,7 @@ export interface SubwaranRecord {
   namaPtj: PtjOption;
   ptjLain?: string;
   tarikhSubWaran: string; // YYYY-MM-DD
+  tahun?: number; // e.g. 2026
   os21000: number;
   os24000: number;
   os27000: number;

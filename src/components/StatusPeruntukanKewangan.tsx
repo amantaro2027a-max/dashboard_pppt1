@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatRM } from '../utils/formatters';
+import { getFasaYear, getSubwaranYear } from '../utils/financeYear';
 import {
   Wallet,
   ArrowDownLeft,
@@ -23,7 +24,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
   } = useProgramContext();
 
   // Pengiraan tepat mengikut arahan:
-  // 1. Card PERUNTUKAN DITERIMA ambil data daripada Page PERUNTUKAN (semua fasa)
+  // 1. Card PERUNTUKAN DITERIMA ambil data daripada Page PERUNTUKAN (mengikut tapisan tahun)
   // 2. Card PERUNTUKAN DIBELANJAKAN ambil data daripada Page PERBELANJAAN (status: SELESAI & TANGGUNG)
   // 3. Card BAKI PERUNTUKAN = (PERUNTUKAN DITERIMA) - (PERUNTUKAN DIBELANJAKAN) - (data daripada Page Subwaran)
   const calc = useMemo(() => {
@@ -32,6 +33,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
     const targetSkList = filters.sumberKewangan ? [filters.sumberKewangan] : (sumberKewanganList || []);
 
     (fasaPeruntukanList || []).forEach((fasa) => {
+      if (filters.tahun && String(getFasaYear(fasa)) !== filters.tahun) return;
       targetSkList.forEach((sk) => {
         const alloc = fasa.allocations?.[sk];
         if (alloc) {
@@ -60,6 +62,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
     // 3. Data daripada Page Subwaran (rujukan)
     let s21 = 0, s24 = 0, s27 = 0, s29 = 0;
     (subwaranList || []).forEach((sub) => {
+      if (filters.tahun && String(getSubwaranYear(sub)) !== filters.tahun) return;
       if (!filters.sumberKewangan || sub.sumberKewangan === filters.sumberKewangan) {
         s21 += Number(sub.os21000) || 0;
         s24 += Number(sub.os24000) || 0;
@@ -119,13 +122,16 @@ export const StatusPeruntukanKewangan: React.FC = () => {
       {/* Group Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 mb-6 border-b border-emerald-200/70">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="w-7 h-7 rounded-md bg-emerald-600 text-white flex items-center justify-center shadow-xs">
               <Wallet className="w-4 h-4" />
             </div>
             <h2 className="text-base font-bold text-emerald-950 uppercase tracking-tight">
               STATUS PERUNTUKAN KEWANGAN
             </h2>
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+              {filters.tahun ? `Tahun ${filters.tahun}` : 'Semua Tahun'}
+            </span>
           </div>
           <p className="text-xs text-emerald-800/80 mt-1">
             Ringkasan status peruntukan diterima, perbelanjaan semasa, dan baki peruntukan mengikut Objek Sebagai (OS)

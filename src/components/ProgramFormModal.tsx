@@ -43,6 +43,7 @@ export const ProgramFormModal: React.FC = () => {
   const [bilanganPeserta, setBilanganPeserta] = useState<number>(30);
   const [pengurusId, setPengurusId] = useState(PEGAWAI_LIST[0].id);
   const [pengurusBersamaId, setPengurusBersamaId] = useState(PEGAWAI_LIST[1].id);
+  const [urusSetiaId, setUrusSetiaId] = useState('');
   const [pusat, setPusat] = useState<string>(PUSAT_LIST[0]);
   const [jabatan, setJabatan] = useState('');
   const [sumberKewangan, setSumberKewangan] = useState<string>(SUMBER_KEWANGAN_LIST[0]);
@@ -103,6 +104,7 @@ export const ProgramFormModal: React.FC = () => {
       setBilanganPeserta(programToEdit.bilanganPeserta);
       setPengurusId(programToEdit.pengurusId);
       setPengurusBersamaId(programToEdit.pengurusBersamaId);
+      setUrusSetiaId(programToEdit.urusSetiaId || '');
       setPusat(programToEdit.pusat);
       setJabatan(programToEdit.jabatan);
       setSumberKewangan(programToEdit.sumberKewangan);
@@ -128,6 +130,7 @@ export const ProgramFormModal: React.FC = () => {
       setBilanganPeserta(0);
       setPengurusId('');
       setPengurusBersamaId('');
+      setUrusSetiaId('');
       if (!isSuperAdmin && editableJabatans.length === 1) {
         const singleJab = editableJabatans[0];
         const foundPusat =
@@ -172,19 +175,47 @@ export const ProgramFormModal: React.FC = () => {
     }
   };
 
-  // Dynamic Pengurus Bersama list excluding currently selected Pengurus
-  const availablePengurusBersama = useMemo(() => {
-    return pegawaiList.filter((p) => p.id !== pengurusId);
-  }, [pengurusId, pegawaiList]);
+  // Dynamic mutual-exclusion lists: each officer can hold ONLY 1 role (Pengurus OR Pengurus Bersama OR Urus Setia)
+  const availablePengurus = useMemo(() => {
+    return pegawaiList.filter((p) => p.id !== pengurusBersamaId && p.id !== urusSetiaId);
+  }, [pegawaiList, pengurusBersamaId, urusSetiaId]);
 
-  // When Pengurus changes, if Pengurus Bersama equals it, select next available
+  const availablePengurusBersama = useMemo(() => {
+    return pegawaiList.filter((p) => p.id !== pengurusId && p.id !== urusSetiaId);
+  }, [pegawaiList, pengurusId, urusSetiaId]);
+
+  const availableUrusSetia = useMemo(() => {
+    return pegawaiList.filter((p) => p.id !== pengurusId && p.id !== pengurusBersamaId);
+  }, [pegawaiList, pengurusId, pengurusBersamaId]);
+
+  // Clear conflicting selections automatically if a role changes
   const handlePengurusChange = (newPengurusId: string) => {
     setPengurusId(newPengurusId);
-    if (pengurusBersamaId === newPengurusId) {
-      const nextPegawai = pegawaiList.find((p) => p.id !== newPengurusId);
-      if (nextPegawai) {
-        setPengurusBersamaId(nextPegawai.id);
-      }
+    if (newPengurusId && pengurusBersamaId === newPengurusId) {
+      setPengurusBersamaId('');
+    }
+    if (newPengurusId && urusSetiaId === newPengurusId) {
+      setUrusSetiaId('');
+    }
+  };
+
+  const handlePengurusBersamaChange = (newPbId: string) => {
+    setPengurusBersamaId(newPbId);
+    if (newPbId && pengurusId === newPbId) {
+      setPengurusId('');
+    }
+    if (newPbId && urusSetiaId === newPbId) {
+      setUrusSetiaId('');
+    }
+  };
+
+  const handleUrusSetiaChange = (newUsId: string) => {
+    setUrusSetiaId(newUsId);
+    if (newUsId && pengurusId === newUsId) {
+      setPengurusId('');
+    }
+    if (newUsId && pengurusBersamaId === newUsId) {
+      setPengurusBersamaId('');
     }
   };
 
@@ -328,6 +359,14 @@ export const ProgramFormModal: React.FC = () => {
       setErrorMsg('Pengurus dan Pengurus Bersama tidak boleh merupakan pegawai yang sama.');
       return;
     }
+    if (urusSetiaId && pengurusId === urusSetiaId) {
+      setErrorMsg('Pengurus dan Urus Setia tidak boleh merupakan pegawai yang sama.');
+      return;
+    }
+    if (urusSetiaId && pengurusBersamaId && urusSetiaId === pengurusBersamaId) {
+      setErrorMsg('Pengurus Bersama dan Urus Setia tidak boleh merupakan pegawai yang sama.');
+      return;
+    }
 
     // REQUIREMENT: Apabila STATUS PROGRAM = SELESAI atau TANGGUNG dipilih, Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi
     if (isSelesaiOrTanggung) {
@@ -346,6 +385,7 @@ export const ProgramFormModal: React.FC = () => {
 
     const pengurusObj = pegawaiList.find((p) => p.id === pengurusId);
     const pengurusBersamaObj = pegawaiList.find((p) => p.id === pengurusBersamaId);
+    const urusSetiaObj = pegawaiList.find((p) => p.id === urusSetiaId);
 
     const startDate = new Date(tarikhMula);
     const tahun = !isNaN(startDate.getFullYear()) ? startDate.getFullYear() : 2026;
@@ -366,6 +406,8 @@ export const ProgramFormModal: React.FC = () => {
       pengurusNama: pengurusObj ? pengurusObj.nama : pengurusId,
       pengurusBersamaId,
       pengurusBersamaNama: pengurusBersamaObj ? pengurusBersamaObj.nama : pengurusBersamaId,
+      urusSetiaId,
+      urusSetiaNama: urusSetiaObj ? urusSetiaObj.nama : urusSetiaId,
       pusat,
       jabatan,
       sumberKewangan,
@@ -564,43 +606,66 @@ export const ProgramFormModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 4: Pengurus & Pengurus Bersama (Kecualikan Pengurus) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50/80 rounded-lg border border-slate-200">
-              <div>
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Pengurus *
-                </label>
-                <select
-                  value={pengurusId}
-                  onChange={(e) => handlePengurusChange(e.target.value)}
-                  className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
-                >
-                  <option value="">-- Sila Pilih Pengurus --</option>
-                  {pegawaiList.map((peg) => (
-                    <option key={peg.id} value={peg.id}>
-                      {peg.id} - {peg.nama}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Row 4: Pengurus, Pengurus Bersama & Urus Setia (Eksklusif - 1 pegawai 1 peranan sahaja) */}
+            <div className="p-3.5 bg-slate-50/80 rounded-lg border border-slate-200 space-y-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                    Pengurus *
+                  </label>
+                  <select
+                    value={pengurusId}
+                    onChange={(e) => handlePengurusChange(e.target.value)}
+                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
+                  >
+                    <option value="">-- Sila Pilih Pengurus --</option>
+                    {availablePengurus.map((peg) => (
+                      <option key={peg.id} value={peg.id}>
+                        {peg.id} - {peg.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
-                  Pengurus Bersama (Kecuali {pengurusId || 'Pengurus'})
-                </label>
-                <select
-                  value={pengurusBersamaId}
-                  onChange={(e) => setPengurusBersamaId(e.target.value)}
-                  className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
-                >
-                  <option value="">-- Sila Pilih Pengurus Bersama --</option>
-                  {availablePengurusBersama.map((peg) => (
-                    <option key={peg.id} value={peg.id}>
-                      {peg.id} - {peg.nama}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                    Pengurus Bersama
+                  </label>
+                  <select
+                    value={pengurusBersamaId}
+                    onChange={(e) => handlePengurusBersamaChange(e.target.value)}
+                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
+                  >
+                    <option value="">-- Sila Pilih Pengurus Bersama --</option>
+                    {availablePengurusBersama.map((peg) => (
+                      <option key={peg.id} value={peg.id}>
+                        {peg.id} - {peg.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px] mb-1">
+                    Urus Setia
+                  </label>
+                  <select
+                    value={urusSetiaId}
+                    onChange={(e) => handleUrusSetiaChange(e.target.value)}
+                    className="w-full py-2 px-3 bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-900"
+                  >
+                    <option value="">-- Sila Pilih Urus Setia --</option>
+                    {availableUrusSetia.map((peg) => (
+                      <option key={peg.id} value={peg.id}>
+                        {peg.id} - {peg.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+              <p className="text-[11px] text-slate-500">
+                * Penapisan automatik: Setiap pegawai hanya boleh memegang satu (1) peranan sahaja bagi program ini (Pengurus, Pengurus Bersama, atau Urus Setia).
+              </p>
             </div>
 
             {/* Row 5: Tarikh, Tempoh & Hari */}

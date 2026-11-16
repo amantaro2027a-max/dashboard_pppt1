@@ -187,7 +187,7 @@ export const ProgramDetailModal: React.FC = () => {
               <Building className="w-3.5 h-3.5" />
               <span>Pegawai Pengurus & Struktur Organisasi</span>
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200/80 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200/80 text-xs">
               <div>
                 <span className="text-slate-500 block text-[11px] uppercase font-semibold">
                   Pengurus:
@@ -214,7 +214,21 @@ export const ProgramDetailModal: React.FC = () => {
                 )}
               </div>
 
-              <div className="sm:col-span-2 pt-2 border-t border-slate-200">
+              <div>
+                <span className="text-slate-500 block text-[11px] uppercase font-semibold">
+                  Urus Setia:
+                </span>
+                <div className="font-bold text-slate-900 mt-0.5">
+                  {currentProg.urusSetiaNama || 'Tiada'}
+                </div>
+                {currentProg.urusSetiaId && (
+                  <div className="text-[11px] text-slate-500">
+                    ({currentProg.urusSetiaId})
+                  </div>
+                )}
+              </div>
+
+              <div className="sm:col-span-3 pt-2 border-t border-slate-200">
                 <span className="text-slate-500 block text-[11px] uppercase font-semibold">
                   Pusat:
                 </span>
@@ -223,7 +237,7 @@ export const ProgramDetailModal: React.FC = () => {
                 </div>
               </div>
 
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-3">
                 <span className="text-slate-500 block text-[11px] uppercase font-semibold">
                   Jabatan:
                 </span>

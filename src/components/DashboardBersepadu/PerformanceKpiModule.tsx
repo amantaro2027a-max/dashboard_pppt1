@@ -15,13 +15,17 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { ProgramItem } from '../../types/program';
+import { FasaPeruntukanRecord, ProgramItem } from '../../types/program';
 import { formatNumber, formatRM } from '../../utils/formatters';
+import { getFasaYear, getProgramYear } from '../../utils/financeYear';
 
 interface PerformanceKpiModuleProps {
   programs: ProgramItem[];
   allPrograms: ProgramItem[];
   totalAllocationPeruntukanPage?: number;
+  fasaPeruntukanList?: FasaPeruntukanRecord[];
+  filterSumber?: string;
+  filterOsCode?: string;
   onOpenDrillDown: (title: string, filteredList: ProgramItem[]) => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
@@ -31,6 +35,9 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
   programs,
   allPrograms,
   totalAllocationPeruntukanPage,
+  fasaPeruntukanList,
+  filterSumber = 'SEMUA',
+  filterOsCode = 'SEMUA',
   onOpenDrillDown,
   isExpanded = false,
   onToggleExpand,
@@ -104,7 +111,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
     // Group all available programs by year
     const yearMap: Record<string, { count: number; completed: number; peserta: number; alloc: number }> = {};
     allPrograms.forEach((p) => {
-      const yr = String(p.tahun || '2026');
+      const yr = String(getProgramYear(p));
       if (!yearMap[yr]) yearMap[yr] = { count: 0, completed: 0, peserta: 0, alloc: 0 };
       yearMap[yr].count++;
       if ((p.statusProgram || '').trim().toUpperCase() === 'SELESAI') {
@@ -114,8 +121,40 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
       yearMap[yr].alloc += Number(p.jumlahRm) || 0;
     });
 
-    // Gunakan Peruntukan Rasmi dari Page Peruntukan jika tersedia untuk tahun semasa (2026)
-    if (totalAllocationPeruntukanPage && yearMap['2026']) {
+    // Gunakan Peruntukan Rasmi dari Page Peruntukan mengikut setiap tahun jika tersedia
+    if (fasaPeruntukanList && fasaPeruntukanList.length > 0) {
+      const fasaAllocByYear: Record<string, number> = {};
+      fasaPeruntukanList.forEach((fasa) => {
+        if (!fasa.allocations) return;
+        const fYr = String(getFasaYear(fasa));
+        let fSum = 0;
+        Object.entries(fasa.allocations).forEach(([sk, alloc]) => {
+          if (filterSumber !== 'SEMUA' && sk !== filterSumber) return;
+          if (filterOsCode === 'SEMUA') {
+            fSum +=
+              (alloc.os21000 || 0) +
+              (alloc.os24000 || 0) +
+              (alloc.os27000 || 0) +
+              (alloc.os29000 || 0);
+          } else if (filterOsCode === 'OS21000') {
+            fSum += alloc.os21000 || 0;
+          } else if (filterOsCode === 'OS24000') {
+            fSum += alloc.os24000 || 0;
+          } else if (filterOsCode === 'OS27000') {
+            fSum += alloc.os27000 || 0;
+          } else if (filterOsCode === 'OS29000') {
+            fSum += alloc.os29000 || 0;
+          }
+        });
+        fasaAllocByYear[fYr] = (fasaAllocByYear[fYr] || 0) + fSum;
+      });
+
+      Object.entries(fasaAllocByYear).forEach(([yr, val]) => {
+        if (yearMap[yr] && val > 0) {
+          yearMap[yr].alloc = val;
+        }
+      });
+    } else if (totalAllocationPeruntukanPage && yearMap['2026']) {
       yearMap['2026'].alloc = totalAllocationPeruntukanPage;
     }
 
@@ -135,7 +174,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
       deptDistribution: Object.entries(deptCountMap).sort((a, b) => b[1].count - a[1].count),
       yearDistribution: Object.entries(yearMap).sort((a, b) => b[0].localeCompare(a[0])),
     };
-  }, [programs, allPrograms, totalAllocationPeruntukanPage]);
+  }, [programs, allPrograms, totalAllocationPeruntukanPage, fasaPeruntukanList, filterSumber, filterOsCode]);
 
   return (
     <div className="space-y-8 mb-12">

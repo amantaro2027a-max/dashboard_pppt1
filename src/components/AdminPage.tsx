@@ -222,13 +222,9 @@ export const AdminPage: React.FC = () => {
   const [isPegawaiFormOpen, setIsPegawaiFormOpen] = useState(false);
   const [editingPegawaiId, setEditingPegawaiId] = useState<string | null>(null);
   const [pegawaiFormNama, setPegawaiFormNama] = useState('');
-  const [pegawaiFormPusat, setPegawaiFormPusat] = useState(pusatList[0] || '');
-  const [pegawaiFormJabatan, setPegawaiFormJabatan] = useState(
-    (jabatanMap[pusatList[0]] && jabatanMap[pusatList[0]][0]) || ''
-  );
-  const [pegawaiFormJawatan, setPegawaiFormJawatan] = useState(
-    jawatanList[0] || 'PENSYARAH'
-  );
+  const [pegawaiFormPusat, setPegawaiFormPusat] = useState('');
+  const [pegawaiFormJabatan, setPegawaiFormJabatan] = useState('');
+  const [pegawaiFormJawatan, setPegawaiFormJawatan] = useState('');
   const [pegawaiFormEmel, setPegawaiFormEmel] = useState('');
   const [pegawaiFormNoHp, setPegawaiFormNoHp] = useState('');
 
@@ -828,6 +824,8 @@ export const AdminPage: React.FC = () => {
         'Pengurus Nama': p.pengurusNama,
         'Pengurus Bersama ID': p.pengurusBersamaId || '',
         'Pengurus Bersama Nama': p.pengurusBersamaNama || '',
+        'Urus Setia ID': p.urusSetiaId || '',
+        'Urus Setia Nama': p.urusSetiaNama || '',
         'Sumber Kewangan': p.sumberKewangan,
         'OS21000 (RM)': p.os21000,
         'OS24000 (RM)': p.os24000,
@@ -994,6 +992,8 @@ export const AdminPage: React.FC = () => {
               pengurusNama: row['Pengurus Nama'] || row['pengurusNama'] || '',
               pengurusBersamaId: row['Pengurus Bersama ID'] || row['pengurusBersamaId'] || '',
               pengurusBersamaNama: row['Pengurus Bersama Nama'] || row['pengurusBersamaNama'] || '',
+              urusSetiaId: row['Urus Setia ID'] || row['urusSetiaId'] || '',
+              urusSetiaNama: row['Urus Setia Nama'] || row['urusSetiaNama'] || '',
               sumberKewangan: row['Sumber Kewangan'] || row['sumberKewangan'] || 'IAB - LATIHAN',
               os21000: os21,
               os24000: os24,
@@ -1487,20 +1487,9 @@ export const AdminPage: React.FC = () => {
   const handleOpenAddPegawai = () => {
     setEditingPegawaiId(null);
     setPegawaiFormNama('');
-    const initialJawatan = jawatanList[0] || 'PENSYARAH';
-    setPegawaiFormJawatan(initialJawatan);
-    if (isSpecialDirector(initialJawatan)) {
-      setPegawaiFormPusat('TIDAK BERKENAAN');
-      setPegawaiFormJabatan('TIDAK BERKENAAN');
-    } else if (isKetuaPusat(initialJawatan)) {
-      const p = pusatList[0] || '';
-      setPegawaiFormPusat(p);
-      setPegawaiFormJabatan('TIDAK BERKENAAN');
-    } else {
-      const p = pusatList[0] || '';
-      setPegawaiFormPusat(p);
-      setPegawaiFormJabatan((jabatanMap[p] && jabatanMap[p][0]) || '');
-    }
+    setPegawaiFormJawatan('');
+    setPegawaiFormPusat('');
+    setPegawaiFormJabatan('');
     setPegawaiFormEmel('');
     setPegawaiFormNoHp('');
     setIsPegawaiFormOpen(true);
@@ -1509,19 +1498,19 @@ export const AdminPage: React.FC = () => {
   const handleEditPegawai = (peg: Pegawai) => {
     setEditingPegawaiId(peg.id);
     setPegawaiFormNama(peg.nama);
-    const jwt = peg.jawatan || jawatanList[0] || 'PENSYARAH';
+    const jwt = peg.jawatan || '';
     setPegawaiFormJawatan(jwt);
     if (isSpecialDirector(jwt)) {
       setPegawaiFormPusat('TIDAK BERKENAAN');
       setPegawaiFormJabatan('TIDAK BERKENAAN');
     } else if (isKetuaPusat(jwt)) {
-      const p = peg.pusat || pusatList[0] || '';
+      const p = peg.pusat || '';
       setPegawaiFormPusat(p);
       setPegawaiFormJabatan('TIDAK BERKENAAN');
     } else {
-      const p = peg.pusat || pusatList[0] || '';
+      const p = peg.pusat || '';
       setPegawaiFormPusat(p);
-      setPegawaiFormJabatan(peg.jabatan || (jabatanMap[p] && jabatanMap[p][0]) || '');
+      setPegawaiFormJabatan(peg.jabatan || '');
     }
     setPegawaiFormEmel(peg.emel || '');
     setPegawaiFormNoHp(peg.noHp || '');
@@ -1535,15 +1524,14 @@ export const AdminPage: React.FC = () => {
       setPegawaiFormJabatan('TIDAK BERKENAAN');
     } else if (isKetuaPusat(newJawatan)) {
       if (pegawaiFormPusat === 'TIDAK BERKENAAN') {
-        const p = pusatList[0] || '';
-        setPegawaiFormPusat(p);
+        setPegawaiFormPusat('');
       }
       setPegawaiFormJabatan('TIDAK BERKENAAN');
     } else {
-      const p = (pegawaiFormPusat === 'TIDAK BERKENAAN' ? pusatList[0] : pegawaiFormPusat) || '';
+      const p = pegawaiFormPusat === 'TIDAK BERKENAAN' ? '' : pegawaiFormPusat;
       setPegawaiFormPusat(p);
       if (pegawaiFormJabatan === 'TIDAK BERKENAAN') {
-        setPegawaiFormJabatan((jabatanMap[p] && jabatanMap[p][0]) || '');
+        setPegawaiFormJabatan('');
       }
     }
   };
@@ -1560,7 +1548,7 @@ export const AdminPage: React.FC = () => {
 
   const handleSavePegawai = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pegawaiFormNama.trim()) return;
+    if (!pegawaiFormNama.trim() || !pegawaiFormJawatan.trim()) return;
 
     const isDirector = isSpecialDirector(pegawaiFormJawatan);
     const isKP = isKetuaPusat(pegawaiFormJawatan);
@@ -2556,6 +2544,7 @@ export const AdminPage: React.FC = () => {
                               onChange={(e) => handleJawatanChangeInPegawaiForm(e.target.value)}
                               className="w-full py-2 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-900 font-semibold text-slate-900"
                             >
+                              <option value="">-- Sila Pilih Jawatan --</option>
                               {jawatanList.map((jwt) => (
                                 <option key={jwt} value={jwt}>
                                   {jwt}
@@ -2585,11 +2574,14 @@ export const AdminPage: React.FC = () => {
                               {isSpecialDirector(pegawaiFormJawatan) ? (
                                 <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
                               ) : (
-                                pusatList.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))
+                                <>
+                                  <option value="">-- Sila Pilih Pusat --</option>
+                                  {pusatList.map((p) => (
+                                    <option key={p} value={p}>
+                                      {p}
+                                    </option>
+                                  ))}
+                                </>
                               )}
                             </select>
                           </div>
@@ -2617,11 +2609,14 @@ export const AdminPage: React.FC = () => {
                               {isSpecialDirector(pegawaiFormJawatan) || isKetuaPusat(pegawaiFormJawatan) ? (
                                 <option value="TIDAK BERKENAAN">TIDAK BERKENAAN</option>
                               ) : (
-                                (jabatanMap[pegawaiFormPusat] || []).map((j) => (
-                                  <option key={j} value={j}>
-                                    {j}
-                                  </option>
-                                ))
+                                <>
+                                  <option value="">-- Sila Pilih Jabatan --</option>
+                                  {(jabatanMap[pegawaiFormPusat] || []).map((j) => (
+                                    <option key={j} value={j}>
+                                      {j}
+                                    </option>
+                                  ))}
+                                </>
                               )}
                             </select>
                           </div>

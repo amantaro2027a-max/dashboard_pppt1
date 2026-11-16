@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { OsAllocation, FasaPeruntukanRecord } from '../types/program';
 import { formatRMWithPrefix } from '../utils/formatters';
+import { getFasaYear } from '../utils/financeYear';
+import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Wallet,
   ShieldAlert,
@@ -410,11 +412,17 @@ export const PeruntukanPage: React.FC = () => {
     canEditPage,
     setActiveTab,
     sumberKewanganList,
+    selectedFinanceYear,
     fasaPeruntukanList,
     updateFasaPeruntukan,
     addFasaPeruntukan,
     deleteFasaPeruntukan,
   } = useProgramContext();
+
+  const yearFasaList = useMemo(
+    () => fasaPeruntukanList.filter((fasa) => getFasaYear(fasa) === selectedFinanceYear),
+    [fasaPeruntukanList, selectedFinanceYear]
+  );
 
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -443,7 +451,7 @@ export const PeruntukanPage: React.FC = () => {
       let s27 = 0;
       let s29 = 0;
 
-      fasaPeruntukanList.forEach((fasa) => {
+      yearFasaList.forEach((fasa) => {
         const alloc = fasa.allocations?.[sk];
         if (alloc) {
           s21 += alloc.os21000 || 0;
@@ -478,7 +486,7 @@ export const PeruntukanPage: React.FC = () => {
         grand: grand21 + grand24 + grand27 + grand29,
       },
     };
-  }, [sumberKewanganList, fasaPeruntukanList]);
+  }, [sumberKewanganList, yearFasaList]);
 
   // Handle Save specific Fasa
   const handleSaveFasa = (fasaId: string, allocations: Record<string, OsAllocation>) => {
@@ -501,12 +509,12 @@ export const PeruntukanPage: React.FC = () => {
   // Handle Add New Fasa
   const handleAddNewFasa = () => {
     if (!canEdit) return;
-    const newFasaNum = fasaPeruntukanList.length + 1;
-    const res = addFasaPeruntukan(`PERUNTUKAN FASA ${newFasaNum}`);
+    const newFasaNum = yearFasaList.length + 1;
+    const res = addFasaPeruntukan(`PERUNTUKAN FASA ${newFasaNum}`, selectedFinanceYear);
     if (res.success) {
       setNotification({
         type: 'success',
-        message: `PERUNTUKAN FASA ${newFasaNum} berjaya ditambah! Anda kini boleh memasukkan peruntukan secara manual.`,
+        message: `PERUNTUKAN FASA ${newFasaNum} (Tahun ${selectedFinanceYear}) berjaya ditambah! Anda kini boleh memasukkan peruntukan secara manual.`,
       });
       setTimeout(() => setNotification(null), 4000);
     } else {
@@ -599,7 +607,7 @@ export const PeruntukanPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="bg-slate-800/90 border border-slate-700 px-4 py-2 rounded-lg text-right">
             <span className="text-[10px] text-slate-400 font-semibold uppercase block">
-              Peruntukan Keseluruhan
+              Peruntukan Keseluruhan ({selectedFinanceYear})
             </span>
             <span className="text-base font-bold text-emerald-400 font-mono">
               {formatRMWithPrefix(peruntukanKeseluruhan.grandTotals.grand)}
@@ -612,7 +620,7 @@ export const PeruntukanPage: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold text-slate-900 bg-white hover:bg-slate-100 rounded-lg shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 text-slate-900" />
-              <span>Tambah Fasa Baharu</span>
+              <span>Tambah Fasa Baharu ({selectedFinanceYear})</span>
             </button>
           ) : (
             <div className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-400/40 rounded-lg">
@@ -622,6 +630,9 @@ export const PeruntukanPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Synchronized Finance Year Filter / Tabs */}
+      <FinanceYearTabs accentColor="emerald" />
 
       {/* Global Notification Banner */}
       {notification && (
@@ -658,14 +669,14 @@ export const PeruntukanPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-white uppercase tracking-wider">
-                  PERUNTUKAN KESELURUHAN
+                  PERUNTUKAN KESELURUHAN — TAHUN {selectedFinanceYear}
                 </h2>
                 <span className="text-[10px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded font-bold uppercase tracking-wider">
                   Autofill Automatik
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Pengiraan automatik jumlah amaun semua Fasa yang direkodkan (Fasa 1, Fasa 2 dan seterusnya).
+                Pengiraan automatik jumlah amaun semua Fasa Tahun {selectedFinanceYear} ({yearFasaList.length} fasa direkodkan).
               </p>
             </div>
           </div>
@@ -771,7 +782,7 @@ export const PeruntukanPage: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-slate-600" />
-              <span>Agihan Peruntukan Mengikut Fasa</span>
+              <span>Agihan Peruntukan Mengikut Fasa (Tahun {selectedFinanceYear})</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Setiap fasa boleh disembunyikan (collapse/hide) dan mempunyai fungsi kemaskini &amp; simpan tersendiri.
@@ -789,17 +800,34 @@ export const PeruntukanPage: React.FC = () => {
           )}
         </div>
 
-        {fasaPeruntukanList.map((fasa) => (
-          <FasaCard
-            key={fasa.id}
-            fasa={fasa}
-            sumberKewanganList={sumberKewanganList}
-            onSave={handleSaveFasa}
-            onRequestDelete={(targetFasa) => setFasaToDelete(targetFasa)}
-            canDelete={canEdit && fasa.id !== 'fasa_1' && fasa.id !== 'fasa_2'}
-            canEdit={canEdit}
-          />
-        ))}
+        {yearFasaList.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center mb-6">
+            <p className="text-xs font-semibold text-slate-600">
+              Tiada fasa peruntukan direkodkan bagi <strong>Tahun {selectedFinanceYear}</strong> setakat ini.
+            </p>
+            {canEdit && (
+              <button
+                onClick={handleAddNewFasa}
+                className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah PERUNTUKAN FASA 1 ({selectedFinanceYear})</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          yearFasaList.map((fasa) => (
+            <FasaCard
+              key={fasa.id}
+              fasa={fasa}
+              sumberKewanganList={sumberKewanganList}
+              onSave={handleSaveFasa}
+              onRequestDelete={(targetFasa) => setFasaToDelete(targetFasa)}
+              canDelete={canEdit && fasa.id !== 'fasa_1' && fasa.id !== 'fasa_2'}
+              canEdit={canEdit}
+            />
+          ))
+        )}
 
         {/* Prominent Add Next Phase Button */}
         {canEdit && (

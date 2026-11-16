@@ -8,7 +8,6 @@ import {
   PEGAWAI_LIST,
   NEGERI_LIST,
   BULAN_LIST,
-  TAHUN_LIST,
   STATUS_PROGRAM_LIST,
   SUMBER_KEWANGAN_LIST,
 } from '../data/constants';
@@ -37,6 +36,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     pegawaiList,
     sumberKewanganList,
     statusProgramList,
+    availableFinanceYears,
   } = useProgramContext();
 
   // Show/Hide state for filter controls (default: sembunyi penapis)
@@ -314,7 +314,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className="w-full text-xs py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800"
             >
               <option value="">Semua Tahun</option>
-              {TAHUN_LIST.map((yr) => (
+              {availableFinanceYears.map((yr) => (
                 <option key={yr} value={yr.toString()}>
                   {yr}
                 </option>
