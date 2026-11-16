@@ -36,6 +36,7 @@ export const SelamatDatangPage: React.FC = () => {
 
   // Real-time Date & Time
   const [now, setNow] = useState<Date>(() => new Date());
+  const [showPhotoControls, setShowPhotoControls] = useState(false);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
@@ -455,10 +456,7 @@ export const SelamatDatangPage: React.FC = () => {
         <div className="px-6 py-8 sm:px-12 sm:py-10">
           {/* 1. Centered Heading: SELAMAT DATANG */}
           <div className="text-center pb-6 border-b border-slate-100">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Institut Aminuddin Baki · Kementerian Pendidikan
-            </p>
-            <h2 className="mt-1.5 text-2xl sm:text-3xl font-extrabold tracking-wide text-slate-900 uppercase">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-wide text-slate-900 uppercase">
               SELAMAT DATANG
             </h2>
           </div>
@@ -512,33 +510,46 @@ export const SelamatDatangPage: React.FC = () => {
               />
             </div>
 
-            {/* Subtle Upload / Remove Photo Controls */}
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            {/* Subtle Upload / Remove Photo Controls (Hidden by default) */}
+            <div className="mt-2.5 flex flex-col items-center gap-2">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingPhoto}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors cursor-pointer"
+                onClick={() => setShowPhotoControls((prev) => !prev)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>
-                  {isUploadingPhoto
-                    ? 'Memproses...'
-                    : profileInfo.photoUrl
-                    ? 'Tukar Gambar Pasport'
-                    : 'Muat Naik Gambar Pasport'}
-                </span>
+                <Camera className="w-3 h-3" />
+                <span>{showPhotoControls ? 'Sembunyi Pilihan Foto' : 'Kemaskini Foto'}</span>
               </button>
 
-              {profileInfo.photoUrl && (
-                <button
-                  type="button"
-                  onClick={handleRemovePhoto}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Padam Foto</span>
-                </button>
+              {showPhotoControls && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>
+                      {isUploadingPhoto
+                        ? 'Memproses...'
+                        : profileInfo.photoUrl
+                        ? 'Tukar Gambar Pasport'
+                        : 'Muat Naik Gambar Pasport'}
+                    </span>
+                  </button>
+
+                  {profileInfo.photoUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Padam Foto</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 

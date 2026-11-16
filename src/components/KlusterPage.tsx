@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
+import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
 import * as XLSX from 'xlsx';
 import {
   Layers,
@@ -113,7 +114,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
   }, [klusterMap, resolvedKlusterName, targetKlusterKey, pusatList]);
 
   // Filters
-  const [filterTahun, setFilterTahun] = useState<string>('SEMUA');
+  const [filterTahun, setFilterTahun] = useState<string>(() => String(getCurrentFinanceYear()));
   const [selectedPusatFilter, setSelectedPusatFilter] = useState<string>('SEMUA');
   const [officerSearch, setOfficerSearch] = useState('');
   const [officerPusatFilter, setOfficerPusatFilter] = useState('SEMUA');
@@ -123,9 +124,9 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
   const [drilldownModal, setDrilldownModal] = useState<{ title: string; subtitle: string; list: ProgramItem[] } | null>(null);
 
   const availableYears = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>([String(getCurrentFinanceYear())]);
     programs.forEach((p) => {
-      if (p.tahun) set.add(String(p.tahun));
+      set.add(String(getProgramYear(p)));
     });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
   }, [programs]);
@@ -162,7 +163,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     const pusSet = new Set(effectivePusats);
     return programs.filter((p) => {
       const matchKluster = pusSet.has(p.pusat) || jabSet.has(p.jabatan);
-      const matchYear = filterTahun === 'SEMUA' || String(p.tahun) === filterTahun;
+      const matchYear = filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun;
       return matchKluster && matchYear;
     });
   }, [programs, effectivePusats, allJabatansUnderKluster, filterTahun]);

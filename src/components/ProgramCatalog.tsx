@@ -22,6 +22,7 @@ export const ProgramCatalog: React.FC = () => {
     isSuperAdmin,
     getPageAccessMode,
     getAuthorizedJabatanList,
+    filterScope,
     pegawaiList,
     setActiveTab,
   } = useProgramContext();
@@ -43,17 +44,23 @@ export const ProgramCatalog: React.FC = () => {
   );
 
   // User/Admin Access Filter:
-  // Selepas log masuk, hanya memaparkan Katalog program di bawah JABATAN DIBERI AKSES,
-  // atau di mana user/admin sebagai pengurus atau pengurus bersama.
+  // Selepas log masuk, memaparkan Katalog program mengikut Level ID / Jabatan diberi akses
   const accessiblePrograms = useMemo(() => {
     if (!currentUser) return [];
 
-    // Super Admin mempunyai akses penuh
-    if (isSuperAdmin) {
+    // Super Admin, Pengarah & TPP/TPL mempunyai akses penuh untuk menapis semua
+    if (
+      isSuperAdmin ||
+      currentUser.levelId === 'PENGARAH' ||
+      currentUser.levelId === 'TPP_TPL'
+    ) {
       return filteredPrograms;
     }
 
-    const allowed = authorizedJabatans;
+    const allowed =
+      currentUser.levelId === 'KETUA_PUSAT'
+        ? Array.from(new Set([...authorizedJabatans, ...filterScope.allowedJabatans]))
+        : authorizedJabatans;
 
     const userNameNorm = (currentUser.name || '').trim().toUpperCase();
     const userIdNorm = (currentUser.id || '').trim().toUpperCase();
@@ -66,6 +73,15 @@ export const ProgramCatalog: React.FC = () => {
     const pegNamaNorm = matchedPegawai?.nama?.trim().toUpperCase();
 
     return filteredPrograms.filter((prog) => {
+      // Syarat A0: Ketua Pusat dibenarkan melihat semua program di bawah Pusatnya
+      if (
+        currentUser.levelId === 'KETUA_PUSAT' &&
+        prog.pusat &&
+        filterScope.allowedPusats.includes(prog.pusat)
+      ) {
+        return true;
+      }
+
       // Syarat A: Di bawah JABATAN DIBERI AKSES
       if (prog.jabatan && allowed.includes(prog.jabatan)) {
         return true;
@@ -97,7 +113,7 @@ export const ProgramCatalog: React.FC = () => {
 
       return false;
     });
-  }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, pegawaiList]);
+  }, [filteredPrograms, currentUser, isSuperAdmin, authorizedJabatans, filterScope, pegawaiList]);
 
   const sortedPrograms = useMemo(() => {
     const list = [...accessiblePrograms];

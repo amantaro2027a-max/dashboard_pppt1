@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
+import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
 import * as XLSX from 'xlsx';
 import {
   Globe,
@@ -58,7 +59,7 @@ export const IabAllPage: React.FC = () => {
   const pageMode = getPageAccessMode('IAB ALL');
   const canAccess = Boolean(currentUser) && (isSuperAdmin || pageMode !== 'none');
 
-  const [filterTahun, setFilterTahun] = useState<string>('SEMUA');
+  const [filterTahun, setFilterTahun] = useState<string>(() => String(getCurrentFinanceYear()));
   const [filterKluster, setFilterKluster] = useState<string>('SEMUA');
   const [officerSearch, setOfficerSearch] = useState('');
   const [officerKlusterFilter, setOfficerKlusterFilter] = useState('SEMUA');
@@ -69,9 +70,9 @@ export const IabAllPage: React.FC = () => {
   const [drilldownModal, setDrilldownModal] = useState<{ title: string; subtitle: string; list: ProgramItem[] } | null>(null);
 
   const availableYears = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>([String(getCurrentFinanceYear())]);
     programs.forEach((p) => {
-      if (p.tahun) set.add(String(p.tahun));
+      set.add(String(getProgramYear(p)));
     });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
   }, [programs]);
@@ -114,7 +115,7 @@ export const IabAllPage: React.FC = () => {
 
   // Year-filtered programs
   const yearPrograms = useMemo(
-    () => programs.filter((p) => filterTahun === 'SEMUA' || String(p.tahun) === filterTahun),
+    () => programs.filter((p) => filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun),
     [programs, filterTahun]
   );
 

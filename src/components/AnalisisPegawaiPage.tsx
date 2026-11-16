@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatNumber, getStatusConfig } from '../utils/formatters';
@@ -79,6 +79,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
     statusProgramList,
     currentUser,
     getPageAccessMode,
+    filterScope,
     viewProgramDetail,
     logActivity,
   } = useProgramContext();
@@ -88,14 +89,35 @@ export const AnalisisPegawaiPage: React.FC = () => {
     Boolean(currentUser) && getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
 
   // 6 Slicer States + Search + Display Mode
-  const [slicerPusat, setSlicerPusat] = useState<string>('');
-  const [slicerJabatan, setSlicerJabatan] = useState<string>('');
+  const [slicerPusat, setSlicerPusat] = useState<string>(() => filterScope.lockedPusat || '');
+  const [slicerJabatan, setSlicerJabatan] = useState<string>(() => filterScope.lockedJabatan || '');
   const [slicerJawatan, setSlicerJawatan] = useState<string>('');
   const [slicerStatus, setSlicerStatus] = useState<string>('');
   const [slicerPengurus, setSlicerPengurus] = useState<string>('');
   const [slicerPengurusBersama, setSlicerPengurusBersama] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyWithPrograms, setOnlyWithPrograms] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (filterScope.lockedPusat) {
+      setSlicerPusat(filterScope.lockedPusat);
+    } else if (
+      filterScope.isPusatRestricted &&
+      slicerPusat &&
+      !filterScope.allowedPusats.includes(slicerPusat)
+    ) {
+      setSlicerPusat('');
+    }
+    if (filterScope.lockedJabatan) {
+      setSlicerJabatan(filterScope.lockedJabatan);
+    } else if (
+      filterScope.isJabatanRestricted &&
+      slicerJabatan &&
+      !filterScope.allowedJabatans.includes(slicerJabatan)
+    ) {
+      setSlicerJabatan('');
+    }
+  }, [filterScope]);
 
   // Sorting & Pagination
   const [sortKey, setSortKey] = useState<SortKey>('totalCount');
@@ -110,15 +132,19 @@ export const AnalisisPegawaiPage: React.FC = () => {
     items: ProgramItem[];
   } | null>(null);
 
-  // Available options for slicers
+  // Available options for slicers (scoped by Level ID)
   const availablePusat = useMemo(() => {
+    if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
+      return [...filterScope.allowedPusats].sort();
+    }
     const set = new Set<string>(pusatList);
     pegawaiList.forEach((pg) => pg.pusat && set.add(pg.pusat));
     programs.forEach((p) => p.pusat && set.add(p.pusat));
     return Array.from(set).filter(Boolean).sort();
-  }, [pusatList, pegawaiList, programs]);
+  }, [pusatList, pegawaiList, programs, filterScope]);
 
   const availableJabatan = useMemo(() => {
+    let list: string[];
     if (slicerPusat && jabatanMap[slicerPusat]) {
       const fromMap = jabatanMap[slicerPusat] || [];
       const fromData = new Set<string>(fromMap);
@@ -128,14 +154,24 @@ export const AnalisisPegawaiPage: React.FC = () => {
       programs
         .filter((p) => p.pusat === slicerPusat && p.jabatan)
         .forEach((p) => fromData.add(p.jabatan));
-      return Array.from(fromData).filter(Boolean).sort();
+      list = Array.from(fromData).filter(Boolean).sort();
+    } else {
+      const set = new Set<string>();
+      Object.values(jabatanMap || {}).forEach((items) => items.forEach((j) => set.add(j)));
+      pegawaiList.forEach((pg) => pg.jabatan && set.add(pg.jabatan));
+      programs.forEach((p) => p.jabatan && set.add(p.jabatan));
+      list = Array.from(set).filter(Boolean).sort();
     }
-    const set = new Set<string>();
-    Object.values(jabatanMap || {}).forEach((list) => list.forEach((j) => set.add(j)));
-    pegawaiList.forEach((pg) => pg.jabatan && set.add(pg.jabatan));
-    programs.forEach((p) => p.jabatan && set.add(p.jabatan));
-    return Array.from(set).filter(Boolean).sort();
-  }, [slicerPusat, jabatanMap, pegawaiList, programs]);
+    list = list.filter((j) => {
+      const u = j.trim().toUpperCase();
+      return u !== 'SEMUA JABATAN' && !u.includes('SEMUA JABATAN');
+    });
+    if (filterScope.isJabatanRestricted && filterScope.allowedJabatans.length > 0) {
+      const scoped = list.filter((j) => filterScope.allowedJabatans.includes(j));
+      return scoped.length > 0 ? scoped : [...filterScope.allowedJabatans].sort();
+    }
+    return list;
+  }, [slicerPusat, jabatanMap, pegawaiList, programs, filterScope]);
 
   const availableJawatan = useMemo(() => {
     const set = new Set<string>(jawatanList);
@@ -196,6 +232,20 @@ export const AnalisisPegawaiPage: React.FC = () => {
   // Step 1: Filter Programs using the Program-related slicers (Pusat, Jabatan, Status, Pengurus, Pengurus Bersama, Jawatan)
   const filteredProgramsBySlicers = useMemo(() => {
     return programs.filter((p) => {
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.includes(p.pusat)
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.includes(p.jabatan)
+      ) {
+        return false;
+      }
       if (slicerPusat && (p.pusat || '').trim().toUpperCase() !== slicerPusat.toUpperCase()) {
         return false;
       }
@@ -249,6 +299,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
     });
   }, [
     programs,
+    filterScope,
     slicerPusat,
     slicerJabatan,
     slicerStatus,
@@ -329,6 +380,24 @@ export const AnalisisPegawaiPage: React.FC = () => {
       utamaPrograms.forEach((p) => allProgsMap.set(p.id, p));
       bersamaPrograms.forEach((p) => allProgsMap.set(p.id, p));
       const allProgs = Array.from(allProgsMap.values());
+
+      // Enforce Level ID Pusat & Jabatan scope on officer rows
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.some((ap) => ap.trim().toUpperCase() === off.pusat) &&
+        allProgs.length === 0
+      ) {
+        return;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.some((aj) => aj.trim().toUpperCase() === off.jabatan) &&
+        allProgs.length === 0
+      ) {
+        return;
+      }
 
       // Check Pusat & Jabatan slicer against officer profile OR matched programs
       if (slicerPusat) {
@@ -434,6 +503,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
   }, [
     pegawaiList,
     programs,
+    filterScope,
     filteredProgramsBySlicers,
     slicerPusat,
     slicerJabatan,
@@ -538,32 +608,83 @@ export const AnalisisPegawaiPage: React.FC = () => {
   );
 
   const jawatanBreakdown = useMemo(() => {
-    const map: Record<string, { officers: number; progs: number; selesai: number; alloc: number }> = {};
+    const map: Record<
+      string,
+      {
+        officers: number;
+        progById: Map<string, ProgramItem>;
+        progByName: Map<string, ProgramItem>;
+      }
+    > = {};
     officerAnalytics.forEach((o) => {
       const j = o.jawatan || 'LAIN-LAIN';
-      if (!map[j]) map[j] = { officers: 0, progs: 0, selesai: 0, alloc: 0 };
+      if (!map[j]) map[j] = { officers: 0, progById: new Map(), progByName: new Map() };
       map[j].officers += 1;
-      map[j].progs += o.totalCount;
-      map[j].selesai += o.selesaiCount;
-      map[j].alloc += o.totalPeruntukan;
+      o.allPrograms.forEach((p) => {
+        map[j].progById.set(p.id, p);
+        const nameKey = (p.namaProgram || '').trim().toUpperCase() || p.id;
+        if (!map[j].progByName.has(nameKey)) {
+          map[j].progByName.set(nameKey, p);
+        }
+      });
     });
     return Object.entries(map)
-      .map(([jawatan, v]) => ({ jawatan, ...v }))
+      .map(([jawatan, v]) => {
+        const uniqueProgs = Array.from(v.progById.values());
+        const uniqueNamedProgs = Array.from(v.progByName.values());
+        const selesai = uniqueProgs.filter(
+          (p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI'
+        ).length;
+        const alloc = uniqueNamedProgs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+        return {
+          jawatan,
+          officers: v.officers,
+          progs: uniqueProgs.length,
+          selesai,
+          alloc,
+        };
+      })
       .sort((a, b) => b.progs - a.progs || b.officers - a.officers);
   }, [officerAnalytics]);
 
   const jabatanBreakdown = useMemo(() => {
-    const map: Record<string, { officers: number; progs: number; alloc: number; belanja: number }> = {};
+    const map: Record<
+      string,
+      {
+        officers: number;
+        progById: Map<string, ProgramItem>;
+        progByName: Map<string, ProgramItem>;
+      }
+    > = {};
     officerAnalytics.forEach((o) => {
       const j = o.jabatan || 'TIDAK DINYATAKAN';
-      if (!map[j]) map[j] = { officers: 0, progs: 0, alloc: 0, belanja: 0 };
+      if (!map[j]) map[j] = { officers: 0, progById: new Map(), progByName: new Map() };
       map[j].officers += 1;
-      map[j].progs += o.totalCount;
-      map[j].alloc += o.totalPeruntukan;
-      map[j].belanja += o.totalBelanja;
+      o.allPrograms.forEach((p) => {
+        map[j].progById.set(p.id, p);
+        const nameKey = (p.namaProgram || '').trim().toUpperCase() || p.id;
+        if (!map[j].progByName.has(nameKey)) {
+          map[j].progByName.set(nameKey, p);
+        }
+      });
     });
     return Object.entries(map)
-      .map(([jabatan, v]) => ({ jabatan, ...v }))
+      .map(([jabatan, v]) => {
+        const uniqueProgs = Array.from(v.progById.values());
+        const uniqueNamedProgs = Array.from(v.progByName.values());
+        const alloc = uniqueNamedProgs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
+        const belanja = uniqueNamedProgs.reduce(
+          (sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0),
+          0
+        );
+        return {
+          jabatan,
+          officers: v.officers,
+          progs: uniqueProgs.length,
+          alloc,
+          belanja,
+        };
+      })
       .sort((a, b) => b.progs - a.progs || b.officers - a.officers);
   }, [officerAnalytics]);
 
@@ -601,8 +722,8 @@ export const AnalisisPegawaiPage: React.FC = () => {
   };
 
   const handleResetSlicers = () => {
-    setSlicerPusat('');
-    setSlicerJabatan('');
+    setSlicerPusat(filterScope.lockedPusat || '');
+    setSlicerJabatan(filterScope.lockedJabatan || '');
     setSlicerJawatan('');
     setSlicerStatus('');
     setSlicerPengurus('');
@@ -679,7 +800,7 @@ export const AnalisisPegawaiPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-blue-700" />
             <h2 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Slicer Analisis Pegawai Mengikut Program
+              Analisis Pegawai Mengikut Program
             </h2>
             <span className="text-xs text-slate-500">
               · {summaryStats.totalOfficers} pegawai · {summaryStats.totalProgs} rekod program
@@ -734,16 +855,24 @@ export const AnalisisPegawaiPage: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 mt-3.5">
           {/* 1. Pusat */}
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">1. Pusat</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1">
+              1. Pusat {filterScope.lockedPusat ? '(Dikunci)' : ''}
+            </label>
             <select
               value={slicerPusat}
               onChange={(e) => {
+                if (filterScope.lockedPusat) return;
                 setSlicerPusat(e.target.value);
-                setSlicerJabatan('');
+                if (!filterScope.lockedJabatan) setSlicerJabatan('');
               }}
-              className="w-full text-xs font-medium py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={Boolean(filterScope.lockedPusat)}
+              className={`w-full text-xs font-medium py-2 px-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                filterScope.lockedPusat
+                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
+                  : 'bg-slate-50 focus:bg-white'
+              }`}
             >
-              <option value="">Semua Pusat</option>
+              {!filterScope.lockedPusat && <option value="">Semua Pusat</option>}
               {availablePusat.map((p) => (
                 <option key={p} value={p}>
                   {p}
@@ -754,13 +883,23 @@ export const AnalisisPegawaiPage: React.FC = () => {
 
           {/* 2. Jabatan */}
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">2. Jabatan</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1">
+              2. Jabatan {filterScope.lockedJabatan ? '(Dikunci)' : ''}
+            </label>
             <select
               value={slicerJabatan}
-              onChange={(e) => setSlicerJabatan(e.target.value)}
-              className="w-full text-xs font-medium py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => {
+                if (filterScope.lockedJabatan) return;
+                setSlicerJabatan(e.target.value);
+              }}
+              disabled={Boolean(filterScope.lockedJabatan)}
+              className={`w-full text-xs font-medium py-2 px-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                filterScope.lockedJabatan
+                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
+                  : 'bg-slate-50 focus:bg-white'
+              }`}
             >
-              <option value="">Semua Jabatan</option>
+              {!filterScope.lockedJabatan && <option value="">Semua Jabatan</option>}
               {availableJabatan.map((j) => (
                 <option key={j} value={j}>
                   {j}

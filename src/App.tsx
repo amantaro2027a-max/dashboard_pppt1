@@ -35,6 +35,12 @@ import { getUserBannerInfo } from './utils/formatters';
 const DashboardContent: React.FC = () => {
   const { activeTab, currentUser, isSuperAdmin, pegawaiList } = useProgramContext();
 
+  React.useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [activeTab]);
+
   const bannerInfo = React.useMemo(
     () => getUserBannerInfo(currentUser, pegawaiList),
     [currentUser, pegawaiList]

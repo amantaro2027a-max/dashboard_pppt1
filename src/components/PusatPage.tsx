@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatRMWithPrefix, formatNumber, getStatusConfig } from '../utils/formatters';
+import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
 import * as XLSX from 'xlsx';
 import {
   Building2,
@@ -76,7 +77,7 @@ export const PusatPage: React.FC = () => {
   }, [getAuthorizedPusatList, isSuperAdmin, pusatList, programs]);
 
   const [selectedPusat, setSelectedPusat] = useState<string>('');
-  const [filterTahun, setFilterTahun] = useState<string>('SEMUA');
+  const [filterTahun, setFilterTahun] = useState<string>(() => String(getCurrentFinanceYear()));
   const [officerSearch, setOfficerSearch] = useState<string>('');
   const [officerSortKey, setOfficerSortKey] = useState<'id' | 'nama' | 'jabatan' | 'jawatan' | 'progCount'>('id');
   const [officerSortDir, setOfficerSortDir] = useState<'asc' | 'desc'>('asc');
@@ -96,7 +97,10 @@ export const PusatPage: React.FC = () => {
   }, [authorizedPusatList, selectedPusat]);
 
   const availableYears = useMemo(() => {
-    const set = new Set<string>(programs.map((p) => String(p.tahun || '2026')));
+    const set = new Set<string>([
+      String(getCurrentFinanceYear()),
+      ...programs.map((p) => String(getProgramYear(p))),
+    ]);
     return Array.from(set).sort().reverse();
   }, [programs]);
 
@@ -105,7 +109,7 @@ export const PusatPage: React.FC = () => {
     if (!selectedPusat) return [];
     return programs.filter((p) => {
       if (p.pusat !== selectedPusat) return false;
-      if (filterTahun !== 'SEMUA' && String(p.tahun) !== filterTahun) return false;
+      if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) return false;
       return true;
     });
   }, [programs, selectedPusat, filterTahun]);

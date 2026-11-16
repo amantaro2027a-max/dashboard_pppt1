@@ -1317,7 +1317,9 @@ export const AdminPage: React.FC = () => {
     if (res.success) {
       setUserActionMsg({
         type: 'success',
-        text: `ID "${newAdminId.toUpperCase()}" (${getAdminLevelLabel(newAdminLevelId)}) untuk "${newAdminName}" berjaya didaftarkan! (Kata laluan: ${effectivePass})`,
+        text:
+          res.message ||
+          `ID "${newAdminId.toUpperCase()}" (${getAdminLevelLabel(newAdminLevelId)}) untuk "${newAdminName}" berjaya didaftarkan! (Kata laluan: ${effectivePass})`,
       });
       setSelectedPegawaiIdForAdmin('');
       setNewAdminLevelId('URUS_SETIA');
@@ -3319,7 +3321,7 @@ export const AdminPage: React.FC = () => {
                                         onClick={() => {
                                           requestDeleteConfirm(
                                             'Padam Akaun Admin',
-                                            `Adakah anda pasti ingin memadamkan ID "${user.id}" (${user.name})? Tindakan ini tidak boleh diundur.`,
+                                            `Adakah anda pasti ingin memadamkan ID "${user.id}" (${user.name}) daripada sistem? Akses pengguna ini akan dibuang serta-merta. (Nota: Akaun Auth ${user.id.toLowerCase()}@iab.internal kekal dalam Firebase Authentication; jika ID yang sama dicipta semula kemudian, masukkan kata laluan asalnya untuk pautan automatik atau padamnya di Firebase Console → Authentication → Users.)`,
                                             () => {
                                               deleteAdminUser(user.id);
                                             }

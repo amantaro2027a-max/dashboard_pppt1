@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { AnnouncementBoard } from './DashboardBersepadu/AnnouncementBoard';
@@ -27,7 +27,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
-import { getFasaYear, getProgramYear } from '../utils/financeYear';
+import { getCurrentFinanceYear, getFasaYear, getProgramYear } from '../utils/financeYear';
 
 export const DashboardBersepaduPage: React.FC = () => {
   const {
@@ -42,6 +42,7 @@ export const DashboardBersepaduPage: React.FC = () => {
     viewProgramDetail,
     currentUser,
     getPageAccessMode,
+    filterScope,
   } = useProgramContext();
 
   // Granular Page Permission Check
@@ -83,15 +84,29 @@ export const DashboardBersepaduPage: React.FC = () => {
     });
   };
 
-  // Local state for Bersepadu Dynamic Filtering
-  const [filterTahun, setFilterTahun] = useState<string>('SEMUA');
+  // Local state for Bersepadu Dynamic Filtering (Default Tahun = Tahun Semasa)
+  const [filterTahun, setFilterTahun] = useState<string>(() => String(getCurrentFinanceYear()));
   const [filterStatus, setFilterStatus] = useState<string>('SEMUA');
   const [filterJenis, setFilterJenis] = useState<string>('SEMUA');
-  const [filterJabatan, setFilterJabatan] = useState<string>('SEMUA');
+  const [filterJabatan, setFilterJabatan] = useState<string>(() => filterScope.lockedJabatan || 'SEMUA');
   const [filterPengurus, setFilterPengurus] = useState<string>('SEMUA');
   const [filterOsCode, setFilterOsCode] = useState<string>('SEMUA');
   const [filterSumber, setFilterSumber] = useState<string>('SEMUA');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  useEffect(() => {
+    if (filterScope.lockedJabatan) {
+      setFilterJabatan(filterScope.lockedJabatan);
+    } else if (
+      filterScope.isJabatanRestricted &&
+      filterJabatan !== 'SEMUA' &&
+      !filterScope.allowedJabatans.includes(filterJabatan)
+    ) {
+      setFilterJabatan('SEMUA');
+    } else if (!filterScope.isJabatanRestricted && !filterScope.lockedJabatan) {
+      // Keep user selection unless resetting on explicit logout/role change handled separately
+    }
+  }, [filterScope]);
 
   // Drill-Down Modal state
   const [drillDownModal, setDrillDownModal] = useState<{
@@ -121,11 +136,18 @@ export const DashboardBersepaduPage: React.FC = () => {
     const list: string[] = [];
     Object.values(jabatanMap || {}).forEach((jList) => {
       jList.forEach((j) => {
+        if (!j) return;
+        const u = j.trim().toUpperCase();
+        if (u === 'SEMUA JABATAN' || u.includes('SEMUA JABATAN')) return;
         if (!list.includes(j)) list.push(j);
       });
     });
+    if (filterScope.isJabatanRestricted && filterScope.allowedJabatans.length > 0) {
+      const scoped = list.filter((j) => filterScope.allowedJabatans.includes(j));
+      return scoped.length > 0 ? scoped : filterScope.allowedJabatans;
+    }
     return list;
-  }, [jabatanMap]);
+  }, [jabatanMap, filterScope]);
 
   const availablePengurus = useMemo(() => {
     const map = new Map<string, string>();
@@ -141,6 +163,20 @@ export const DashboardBersepaduPage: React.FC = () => {
   // Filtered Programs calculation
   const filteredPrograms = useMemo(() => {
     return programs.filter((p) => {
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.includes(p.pusat)
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.includes(p.jabatan)
+      ) {
+        return false;
+      }
       if (filterTahun !== 'SEMUA' && String(getProgramYear(p)) !== filterTahun) {
         return false;
       }
@@ -188,6 +224,7 @@ export const DashboardBersepaduPage: React.FC = () => {
     });
   }, [
     programs,
+    filterScope,
     filterTahun,
     filterStatus,
     filterJenis,
@@ -227,10 +264,10 @@ export const DashboardBersepaduPage: React.FC = () => {
   }, [fasaPeruntukanList, filterTahun, filterSumber, filterOsCode]);
 
   const handleResetFilters = () => {
-    setFilterTahun('SEMUA');
+    setFilterTahun(String(getCurrentFinanceYear()));
     setFilterStatus('SEMUA');
     setFilterJenis('SEMUA');
-    setFilterJabatan('SEMUA');
+    setFilterJabatan(filterScope.lockedJabatan || 'SEMUA');
     setFilterPengurus('SEMUA');
     setFilterOsCode('SEMUA');
     setFilterSumber('SEMUA');
@@ -381,14 +418,19 @@ export const DashboardBersepaduPage: React.FC = () => {
           {/* 4. Jabatan */}
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-              Jabatan
+              Jabatan {filterScope.lockedJabatan ? '(Dikunci)' : ''}
             </label>
             <select
               value={filterJabatan}
               onChange={(e) => setFilterJabatan(e.target.value)}
-              className="w-full text-xs font-semibold py-1.5 px-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none truncate"
+              disabled={Boolean(filterScope.lockedJabatan)}
+              className={`w-full text-xs font-semibold py-1.5 px-2 border border-slate-200 rounded-lg focus:outline-none truncate ${
+                filterScope.lockedJabatan
+                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed'
+                  : 'bg-slate-50 focus:bg-white'
+              }`}
             >
-              <option value="SEMUA">Semua Jabatan</option>
+              {!filterScope.lockedJabatan && <option value="SEMUA">Semua Jabatan</option>}
               {availableDepartments.map((j) => (
                 <option key={j} value={j}>
                   {j}

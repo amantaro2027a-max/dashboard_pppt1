@@ -12,6 +12,7 @@ import {
   SUMBER_KEWANGAN_LIST,
 } from '../data/constants';
 import { PusatType } from '../types/program';
+import { getCurrentFinanceYear } from '../utils/financeYear';
 import { Search, X, Filter, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface FilterBarProps {
@@ -37,10 +38,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     sumberKewanganList,
     statusProgramList,
     availableFinanceYears,
+    filterScope,
   } = useProgramContext();
+
+  const currentFinanceYearStr = useMemo(() => String(getCurrentFinanceYear()), []);
 
   // Show/Hide state for filter controls (default: sembunyi penapis)
   const [isExpanded, setIsExpanded] = useState(false);
+
+  const availablePusat = useMemo(() => {
+    if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
+      return pusatList.filter((p) => filterScope.allowedPusats.includes(p));
+    }
+    return pusatList;
+  }, [pusatList, filterScope]);
 
   // Dynamic Jabatan options based on selected Pusat (Kecualikan "SEMUA JABATAN DI IAB" atau "SEMUA JABATAN")
   const availableJabatan = useMemo(() => {
@@ -51,7 +62,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       const all = Object.values(jabatanMap).flat();
       list = Array.from(new Set(all));
     }
-    return list.filter((j) => {
+    let filtered = list.filter((j) => {
       if (!j) return false;
       const upper = j.trim().toUpperCase();
       return (
@@ -60,7 +71,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         !upper.includes('SEMUA JABATAN')
       );
     });
-  }, [filters.pusat, jabatanMap]);
+    if (filterScope.isJabatanRestricted && filterScope.allowedJabatans.length > 0) {
+      const scoped = filtered.filter((j) => filterScope.allowedJabatans.includes(j));
+      filtered = scoped.length > 0 ? scoped : filterScope.allowedJabatans;
+    }
+    return filtered;
+  }, [filters.pusat, jabatanMap, filterScope]);
 
   // Dynamic Pengurus Bersama options excluding the currently selected Pengurus
   const availablePengurusBersama = useMemo(() => {
@@ -72,22 +88,22 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     );
   }, [filters.pengurus, pegawaiList]);
 
-  // Count active filters (excluding default empty values)
+  // Count active filters (excluding default empty values and locked role scopes)
   const activeFilterCount = useMemo(() => {
     let count = 0;
-    if (!hidePusatJabatan && filters.pusat) count++;
-    if (!hidePusatJabatan && filters.jabatan) count++;
+    if (!hidePusatJabatan && filters.pusat && !filterScope.lockedPusat) count++;
+    if (!hidePusatJabatan && filters.jabatan && !filterScope.lockedJabatan) count++;
     if (filters.jenisProgram) count++;
     if (filters.pengurus) count++;
     if (filters.pengurusBersama) count++;
     if (filters.negeri) count++;
     if (filters.sumberKewangan) count++;
-    if (showTahunBulan && filters.tahun) count++;
+    if (showTahunBulan && filters.tahun && filters.tahun !== currentFinanceYearStr) count++;
     if (showTahunBulan && filters.bulan) count++;
     if (showStatusFilter && filters.status) count++;
     if (filters.searchQuery) count++;
     return count;
-  }, [filters, showTahunBulan, showStatusFilter, hidePusatJabatan]);
+  }, [filters, showTahunBulan, showStatusFilter, hidePusatJabatan, filterScope, currentFinanceYearStr]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-4 sm:p-5 shadow-xs mb-6">
@@ -169,15 +185,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {!hidePusatJabatan && (
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
-              Pusat
+              Pusat {filterScope.lockedPusat ? '(Dikunci)' : ''}
             </label>
             <select
               value={filters.pusat}
               onChange={(e) => setFilter('pusat', e.target.value)}
-              className="w-full text-xs py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800"
+              disabled={Boolean(filterScope.lockedPusat)}
+              className={`w-full text-xs py-2 px-2.5 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 ${
+                filterScope.lockedPusat
+                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed font-semibold'
+                  : 'bg-slate-50 focus:bg-white'
+              }`}
             >
-              <option value="">Semua Pusat</option>
-              {pusatList.map((pusat) => (
+              {!filterScope.lockedPusat && <option value="">Semua Pusat</option>}
+              {(availablePusat.length > 0 ? availablePusat : filterScope.allowedPusats).map((pusat) => (
                 <option key={pusat} value={pusat}>
                   {pusat}
                 </option>
@@ -190,14 +211,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {!hidePusatJabatan && (
           <div>
             <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">
-              Jabatan {filters.pusat ? '(Ditapis mengikut Pusat)' : ''}
+              Jabatan {filterScope.lockedJabatan ? '(Dikunci)' : filters.pusat ? '(Ditapis mengikut Pusat)' : ''}
             </label>
             <select
               value={filters.jabatan}
               onChange={(e) => setFilter('jabatan', e.target.value)}
-              className="w-full text-xs py-2 px-2.5 bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800"
+              disabled={Boolean(filterScope.lockedJabatan)}
+              className={`w-full text-xs py-2 px-2.5 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 text-slate-800 ${
+                filterScope.lockedJabatan
+                  ? 'bg-slate-100 text-slate-600 cursor-not-allowed font-semibold'
+                  : 'bg-slate-50 focus:bg-white'
+              }`}
             >
-              <option value="">Semua Jabatan</option>
+              {!filterScope.lockedJabatan && <option value="">Semua Jabatan</option>}
               {availableJabatan.map((jabatan) => (
                 <option key={jabatan} value={jabatan}>
                   {jabatan}

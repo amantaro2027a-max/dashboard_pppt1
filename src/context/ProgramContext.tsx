@@ -34,6 +34,7 @@ import { formatRM } from '../utils/formatters';
 import {
   getCurrentFinanceYear,
   getFasaYear,
+  getProgramYear,
   getSubwaranYear,
   computeAvailableFinanceYears,
 } from '../utils/financeYear';
@@ -102,6 +103,16 @@ interface FlashCardGroup2Stats {
   bilanganBatal: number;
 }
 
+export interface FilterScope {
+  levelId?: AdminLevelId;
+  isPusatRestricted: boolean;
+  isJabatanRestricted: boolean;
+  allowedPusats: string[];
+  allowedJabatans: string[];
+  lockedPusat: string | null;
+  lockedJabatan: string | null;
+}
+
 interface ProgramContextType {
   // Programs & Filtering
   programs: ProgramItem[];
@@ -160,6 +171,7 @@ interface ProgramContextType {
   getEditableJabatans: () => string[];
   getAuthorizedPusatList: () => string[];
   getAuthorizedJabatanList: () => string[];
+  filterScope: FilterScope;
 
   // Master Data
   klusterList: string[];
@@ -266,7 +278,7 @@ const defaultFilters: ProgramFilterState = {
   pengurus: '',
   pengurusBersama: '',
   negeri: '',
-  tahun: '',
+  tahun: String(getCurrentFinanceYear()),
   bulan: '',
   status: '',
   sumberKewangan: '',
@@ -1892,6 +1904,198 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return Array.from(set);
   };
 
+  const filterScope = useMemo<FilterScope>(() => {
+    const emptyScope: FilterScope = {
+      levelId: currentUser?.levelId,
+      isPusatRestricted: false,
+      isJabatanRestricted: false,
+      allowedPusats: [],
+      allowedJabatans: [],
+      lockedPusat: null,
+      lockedJabatan: null,
+    };
+    if (!currentUser) return emptyScope;
+    if (
+      isSuperAdmin ||
+      currentUser.levelId === 'PENGARAH' ||
+      currentUser.levelId === 'TPP_TPL'
+    ) {
+      return emptyScope;
+    }
+
+    const isInvalidPusat = (p?: string) => {
+      const u = (p || '').trim().toUpperCase();
+      return !u || u === '-' || u === 'TIDAK BERKENAAN' || u === 'SEMUA PUSAT';
+    };
+    const isInvalidJabatan = (j?: string) => {
+      const u = (j || '').trim().toUpperCase();
+      return (
+        !u ||
+        u === '-' ||
+        u === 'TIDAK BERKENAAN' ||
+        u === 'SEMUA JABATAN' ||
+        u === 'SEMUA JABATAN DI IAB' ||
+        u.includes('SEMUA JABATAN')
+      );
+    };
+
+    const matchedPeg = pegawaiList.find(
+      (p) =>
+        (currentUser.name && p.nama?.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && p.id?.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+
+    if (currentUser.levelId === 'KETUA_PUSAT') {
+      const pusatSet = new Set<string>();
+      if (!isInvalidPusat(currentUser.pusat)) pusatSet.add(currentUser.pusat!.trim());
+      if (!isInvalidPusat(matchedPeg?.pusat)) pusatSet.add(matchedPeg!.pusat!.trim());
+      if (pusatSet.size === 0) {
+        const userJab =
+          (!isInvalidJabatan(matchedPeg?.jabatan) && matchedPeg?.jabatan) ||
+          (!isInvalidJabatan(currentUser.jabatan) && currentUser.jabatan) ||
+          '';
+        if (userJab) {
+          for (const [pus, jabs] of Object.entries(jabatanMap)) {
+            if ((jabs || []).some((j) => j.trim().toUpperCase() === userJab.trim().toUpperCase())) {
+              pusatSet.add(pus);
+            }
+          }
+        }
+      }
+      if (pusatSet.size === 0) {
+        getAuthorizedPusatList()
+          .filter((p) => !isInvalidPusat(p))
+          .forEach((p) => pusatSet.add(p));
+      }
+
+      const allowedPusats = Array.from(pusatSet);
+      const allowedPusatsUpper = new Set(allowedPusats.map((p) => p.trim().toUpperCase()));
+
+      const jabSet = new Set<string>();
+      allowedPusats.forEach((pus) => {
+        (jabatanMap[pus] || []).forEach((j) => {
+          if (!isInvalidJabatan(j)) jabSet.add(j);
+        });
+      });
+      programs.forEach((p) => {
+        if (p.pusat && allowedPusatsUpper.has(p.pusat.trim().toUpperCase()) && !isInvalidJabatan(p.jabatan)) {
+          jabSet.add(p.jabatan);
+        }
+      });
+      pegawaiList.forEach((pg) => {
+        if (pg.pusat && allowedPusatsUpper.has(pg.pusat.trim().toUpperCase()) && !isInvalidJabatan(pg.jabatan)) {
+          jabSet.add(pg.jabatan!);
+        }
+      });
+      if (jabSet.size === 0) {
+        getAuthorizedJabatanList()
+          .filter((j) => !isInvalidJabatan(j))
+          .forEach((j) => jabSet.add(j));
+      }
+
+      const allowedJabatans = Array.from(jabSet);
+      return {
+        levelId: currentUser.levelId,
+        isPusatRestricted: allowedPusats.length > 0,
+        isJabatanRestricted: allowedJabatans.length > 0,
+        allowedPusats,
+        allowedJabatans,
+        lockedPusat: allowedPusats.length === 1 ? allowedPusats[0] : null,
+        lockedJabatan: null,
+      };
+    }
+
+    if (currentUser.levelId === 'KETUA_JABATAN') {
+      const jabSet = new Set<string>();
+      if (!isInvalidJabatan(matchedPeg?.jabatan)) {
+        jabSet.add(matchedPeg!.jabatan!.trim());
+      } else if (!isInvalidJabatan(currentUser.jabatan)) {
+        currentUser.jabatan!
+          .split(',')
+          .map((s) => s.trim())
+          .filter((j) => !isInvalidJabatan(j))
+          .forEach((j) => jabSet.add(j));
+      }
+      if (jabSet.size === 0) {
+        getAuthorizedJabatanList()
+          .filter((j) => !isInvalidJabatan(j))
+          .forEach((j) => jabSet.add(j));
+      }
+
+      const allowedJabatans = Array.from(jabSet);
+      const allowedJabsUpper = new Set(allowedJabatans.map((j) => j.trim().toUpperCase()));
+
+      const pusatSet = new Set<string>();
+      Object.entries(jabatanMap).forEach(([pus, jabs]) => {
+        if ((jabs || []).some((j) => allowedJabsUpper.has(j.trim().toUpperCase()))) {
+          if (!isInvalidPusat(pus)) pusatSet.add(pus);
+        }
+      });
+      if (pusatSet.size === 0 && !isInvalidPusat(matchedPeg?.pusat)) {
+        pusatSet.add(matchedPeg!.pusat!.trim());
+      }
+      if (pusatSet.size === 0 && !isInvalidPusat(currentUser.pusat)) {
+        pusatSet.add(currentUser.pusat!.trim());
+      }
+
+      const allowedPusats = Array.from(pusatSet);
+      return {
+        levelId: currentUser.levelId,
+        isPusatRestricted: allowedPusats.length > 0,
+        isJabatanRestricted: allowedJabatans.length > 0,
+        allowedPusats,
+        allowedJabatans,
+        lockedPusat: allowedPusats.length === 1 ? allowedPusats[0] : null,
+        lockedJabatan: allowedJabatans.length === 1 ? allowedJabatans[0] : null,
+      };
+    }
+
+    return emptyScope;
+  }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, programs, pusatList]);
+
+  const prevLockedScopeRef = useRef<{
+    userId?: string;
+    lockedPusat: string | null;
+    lockedJabatan: string | null;
+  }>({ lockedPusat: null, lockedJabatan: null });
+
+  useEffect(() => {
+    const userId = currentUser?.id;
+    const prev = prevLockedScopeRef.current;
+    setFilters((curr) => {
+      let nextPusat = curr.pusat;
+      let nextJabatan = curr.jabatan;
+
+      if (filterScope.lockedPusat) {
+        nextPusat = filterScope.lockedPusat;
+      } else if (filterScope.isPusatRestricted) {
+        if (nextPusat && !filterScope.allowedPusats.includes(nextPusat)) {
+          nextPusat = '';
+        }
+      } else if (prev.userId !== userId && prev.lockedPusat) {
+        nextPusat = '';
+      }
+
+      if (filterScope.lockedJabatan) {
+        nextJabatan = filterScope.lockedJabatan;
+      } else if (filterScope.isJabatanRestricted) {
+        if (nextJabatan && !filterScope.allowedJabatans.includes(nextJabatan)) {
+          nextJabatan = '';
+        }
+      } else if (prev.userId !== userId && prev.lockedJabatan) {
+        nextJabatan = '';
+      }
+
+      if (nextPusat === curr.pusat && nextJabatan === curr.jabatan) return curr;
+      return { ...curr, pusat: nextPusat, jabatan: nextJabatan };
+    });
+    prevLockedScopeRef.current = {
+      userId,
+      lockedPusat: filterScope.lockedPusat,
+      lockedJabatan: filterScope.lockedJabatan,
+    };
+  }, [currentUser?.id, filterScope]);
+
   const createAdminUser = async (
     userData: Omit<AdminUser, 'createdAt'>
   ): Promise<{ success: boolean; message?: string }> => {
@@ -1910,32 +2114,67 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const resolvedPassword = (userData.password || '123').trim() || '123';
 
     let provisionedUid = '';
+    let relinkedExistingAuth = false;
+    const authEmail = idToAuthEmail(cleanId);
+    const desiredAuthPass = toFirebaseAuthPassword(resolvedPassword);
+
     try {
       const cred = await createUserWithEmailAndPassword(
         secondaryAuth,
-        idToAuthEmail(cleanId),
-        toFirebaseAuthPassword(resolvedPassword)
+        authEmail,
+        desiredAuthPass
       );
       provisionedUid = cred.user.uid;
       await signOut(secondaryAuth).catch(() => {});
     } catch (err: any) {
       if (err?.code === 'auth/email-already-in-use') {
-        return {
-          success: false,
-          message: `Akaun Firebase Auth untuk "${cleanId}" sudah wujud.`,
-        };
-      }
-      if (err?.code === 'auth/operation-not-allowed') {
+        try {
+          // Cubaan 1: Pautkan semula menggunakan kata laluan yang dimasukkan sekarang
+          const signCred = await signInWithEmailAndPassword(
+            secondaryAuth,
+            authEmail,
+            desiredAuthPass
+          );
+          provisionedUid = signCred.user.uid;
+          relinkedExistingAuth = true;
+        } catch {
+          // Cubaan 2: Jika kata laluan baharu berbeza daripada '123', cuba kata laluan lalai '123' dan kemaskini kata laluan
+          if (resolvedPassword !== '123') {
+            try {
+              const fallbackCred = await signInWithEmailAndPassword(
+                secondaryAuth,
+                authEmail,
+                toFirebaseAuthPassword('123')
+              );
+              await updatePassword(fallbackCred.user, desiredAuthPass);
+              provisionedUid = fallbackCred.user.uid;
+              relinkedExistingAuth = true;
+            } catch {
+              // Kedua-dua cubaan gagal — pengguna terdahulu telah menukar kata laluan tersuai sendiri
+            }
+          }
+        } finally {
+          await signOut(secondaryAuth).catch(() => {});
+        }
+
+        if (!provisionedUid) {
+          return {
+            success: false,
+            message: `Akaun Firebase Auth untuk "${cleanId}" (${authEmail}) sudah wujud daripada pendaftaran terdahulu dengan kata laluan tersuai yang berbeza. Sila masukkan kata laluan terdahulu akaun "${cleanId}" untuk memautkan semula secara automatik, ATAU padam "${authEmail}" di Firebase Console → Authentication → Users dahulu.`,
+          };
+        }
+      } else if (err?.code === 'auth/operation-not-allowed') {
         return {
           success: false,
           message:
             'Sila aktifkan kaedah log masuk Email/Password dalam Firebase Console terlebih dahulu.',
         };
+      } else {
+        return {
+          success: false,
+          message: `Gagal mencipta akaun Firebase Auth: ${err?.message || 'Ralat tidak diketahui'}`,
+        };
       }
-      return {
-        success: false,
-        message: `Gagal mencipta akaun Firebase Auth: ${err?.message || 'Ralat tidak diketahui'}`,
-      };
     }
 
     const newUser: AdminUser = {
@@ -1965,12 +2204,22 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     logActivity({
       action_type: 'ADMIN_ACTION',
       module_name: 'Portal Admin',
-      activity_description: `Created Firebase Auth user account "${newUser.name}" (${cleanId}) with role ${getAdminLevelLabel(resolvedLevelId, resolvedRole)}`,
+      activity_description: `${
+        relinkedExistingAuth ? 'Re-linked existing' : 'Created'
+      } Firebase Auth user account "${newUser.name}" (${cleanId}) with role ${getAdminLevelLabel(
+        resolvedLevelId,
+        resolvedRole
+      )}`,
       record_id: cleanId,
       status: 'SUCCESS',
     });
 
-    return { success: true };
+    return {
+      success: true,
+      message: relinkedExistingAuth
+        ? `ID "${cleanId}" (${newUser.name}) berjaya diwujudkan semula & dipautkan dengan akaun Firebase Auth sedia ada! (Kata laluan: ${resolvedPassword})`
+        : undefined,
+    };
   };
 
   const updateAdminUser = (
@@ -2432,17 +2681,41 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Filter handlers
   const setFilter = (key: keyof ProgramFilterState, value: string) => {
     setFilters((prev) => {
-      const updated = { ...prev, [key]: value };
+      let nextValue = value;
+      if (key === 'pusat') {
+        if (filterScope.lockedPusat) {
+          nextValue = filterScope.lockedPusat;
+        } else if (
+          filterScope.isPusatRestricted &&
+          nextValue &&
+          !filterScope.allowedPusats.includes(nextValue)
+        ) {
+          return prev;
+        }
+      }
+      if (key === 'jabatan') {
+        if (filterScope.lockedJabatan) {
+          nextValue = filterScope.lockedJabatan;
+        } else if (
+          filterScope.isJabatanRestricted &&
+          nextValue &&
+          !filterScope.allowedJabatans.includes(nextValue)
+        ) {
+          return prev;
+        }
+      }
 
-      if (key === 'pusat' && value) {
-        const allowedJabatan = jabatanMap[value] || [];
-        if (prev.jabatan && !allowedJabatan.includes(prev.jabatan)) {
+      const updated = { ...prev, [key]: nextValue };
+
+      if (key === 'pusat' && nextValue) {
+        const allowedJabatan = jabatanMap[nextValue] || [];
+        if (prev.jabatan && !allowedJabatan.includes(prev.jabatan) && !filterScope.lockedJabatan) {
           updated.jabatan = '';
         }
       }
 
-      if (key === 'pengurus' && value) {
-        if (prev.pengurusBersama === value) {
+      if (key === 'pengurus' && nextValue) {
+        if (prev.pengurusBersama === nextValue) {
           updated.pengurusBersama = '';
         }
       }
@@ -2468,12 +2741,31 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const resetFilters = () => {
-    setFilters(defaultFilters);
+    setFilters({
+      ...defaultFilters,
+      tahun: String(getCurrentFinanceYear()),
+      pusat: filterScope.lockedPusat || '',
+      jabatan: filterScope.lockedJabatan || '',
+    });
   };
 
   // Filtered Programs
   const filteredPrograms = useMemo(() => {
     return programs.filter((p) => {
+      if (
+        filterScope.isPusatRestricted &&
+        filterScope.allowedPusats.length > 0 &&
+        !filterScope.allowedPusats.includes(p.pusat)
+      ) {
+        return false;
+      }
+      if (
+        filterScope.isJabatanRestricted &&
+        filterScope.allowedJabatans.length > 0 &&
+        !filterScope.allowedJabatans.includes(p.jabatan)
+      ) {
+        return false;
+      }
       if (filters.pusat && p.pusat !== filters.pusat) return false;
       if (filters.jabatan && p.jabatan !== filters.jabatan) return false;
       if (filters.jenisProgram && p.jenisProgram !== filters.jenisProgram) return false;
@@ -2491,7 +2783,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
 
       if (filters.negeri && p.negeri !== filters.negeri) return false;
-      if (filters.tahun && p.tahun.toString() !== filters.tahun) return false;
+      if (filters.tahun && String(getProgramYear(p)) !== filters.tahun) return false;
       if (filters.bulan && p.bulan.toString() !== filters.bulan) return false;
       if (filters.status && p.statusProgram !== filters.status) return false;
       if (filters.sumberKewangan && p.sumberKewangan !== filters.sumberKewangan) return false;
@@ -2518,7 +2810,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       return true;
     });
-  }, [programs, filters]);
+  }, [programs, filters, filterScope]);
 
   // Flash Card Group 1 Stats
   const group1Stats = useMemo<FlashCardGroup1Stats>(() => {
@@ -4395,6 +4687,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         getEditableJabatans,
         getAuthorizedPusatList,
         getAuthorizedJabatanList,
+        filterScope,
         klusterList,
         klusterMap,
         getKlusterForPusat,
