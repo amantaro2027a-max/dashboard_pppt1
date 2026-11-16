@@ -525,9 +525,17 @@ export const ProgramDetailModal: React.FC = () => {
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
-          <div className="text-xs text-slate-500">
-            Daftar Program Institut Aminuddin Baki (IAB)
+        <div className="px-6 py-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between gap-3">
+          <div className="text-xs text-slate-600">
+            Program ini telah didaftar oleh{' '}
+            <strong className="text-slate-900 uppercase">
+              {currentProg.didaftarOleh || currentProg.pengurusNama || 'PENTADBIR SISTEM IAB'}
+            </strong>{' '}
+            pada{' '}
+            <strong className="text-slate-900 tabular-nums">
+              {currentProg.tarikhDaftar || '-'}
+            </strong>
+            .
           </div>
 
           <div className="flex items-center gap-2">

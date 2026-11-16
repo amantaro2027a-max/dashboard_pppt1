@@ -76,6 +76,28 @@ export const Header: React.FC = () => {
       iconBg: 'bg-emerald-100 text-emerald-700',
     },
     {
+      id: 'admin',
+      label: 'Admin',
+      desc: 'Pusat kawalan pendaftaran & akaun pentadbir',
+      icon: ShieldCheck,
+      iconBg: 'bg-rose-100 text-rose-700',
+      hasActiveSession: !!currentUser,
+    },
+    {
+      id: 'monitoring',
+      label: 'Admin Monitoring Dashboard',
+      desc: 'Log aktiviti pengguna, analitik keselamatan & laporan audit',
+      icon: Activity,
+      iconBg: 'bg-slate-900 text-white',
+    },
+    {
+      id: 'pengiraan',
+      label: 'Pengiraan Bajet',
+      desc: 'Kalkulator bajet makan minum, dobi & pakej hotel',
+      icon: Calculator,
+      iconBg: 'bg-amber-100 text-amber-700',
+    },
+    {
       id: 'dashboard',
       label: 'Dashboard Program',
       desc: 'Pemantauan statistik perancangan & status program',
@@ -140,13 +162,6 @@ export const Header: React.FC = () => {
       iconBg: 'bg-teal-100 text-teal-700',
     },
     {
-      id: 'pengiraan',
-      label: 'Pengiraan Bajet',
-      desc: 'Kalkulator bajet makan minum, dobi & pakej hotel',
-      icon: Calculator,
-      iconBg: 'bg-amber-100 text-amber-700',
-    },
-    {
       id: 'peruntukan',
       label: 'Peruntukan',
       desc: 'Penetapan peruntukan fasa mengikut kod OS',
@@ -173,21 +188,6 @@ export const Header: React.FC = () => {
       desc: 'Peruntukan − Belanja − Subwaran = Baki Bersih',
       icon: Scale,
       iconBg: 'bg-sky-100 text-sky-700',
-    },
-    {
-      id: 'monitoring',
-      label: 'Admin Monitoring Dashboard',
-      desc: 'Log aktiviti pengguna, analitik keselamatan & laporan audit',
-      icon: Activity,
-      iconBg: 'bg-slate-900 text-white',
-    },
-    {
-      id: 'admin',
-      label: 'Admin',
-      desc: 'Pusat kawalan pendaftaran & akaun pentadbir',
-      icon: ShieldCheck,
-      iconBg: 'bg-rose-100 text-rose-700',
-      hasActiveSession: !!currentUser,
     },
   ];
 

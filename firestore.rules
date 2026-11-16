@@ -90,7 +90,7 @@ service cloud.firestore {
           'os21000', 'os24000', 'os27000', 'os29000', 'jumlahRm',
           'os21000Belanja', 'os24000Belanja', 'os27000Belanja', 'os29000Belanja', 'jumlahBelanjaRm',
           'os21000Penjimatan', 'os24000Penjimatan', 'os27000Penjimatan', 'os29000Penjimatan', 'jumlahPenjimatanRm',
-          'statusProgram', 'tahun', 'bulan', 'catatan', 'rekodPindaan'
+          'statusProgram', 'tahun', 'bulan', 'catatan', 'didaftarOleh', 'tarikhDaftar', 'rekodPindaan'
         ])
         && data.namaProgram is string && data.namaProgram.size() >= 1 && data.namaProgram.size() <= 400
         && data.pusat is string && data.pusat.size() <= 250
@@ -100,6 +100,8 @@ service cloud.firestore {
         && (!('urusSetiaId' in data) || (data.urusSetiaId is string && data.urusSetiaId.size() <= 100))
         && (!('urusSetiaNama' in data) || (data.urusSetiaNama is string && data.urusSetiaNama.size() <= 200))
         && (!('catatan' in data) || (data.catatan is string && data.catatan.size() <= 2000))
+        && (!('didaftarOleh' in data) || (data.didaftarOleh is string && data.didaftarOleh.size() <= 200))
+        && (!('tarikhDaftar' in data) || (data.tarikhDaftar is string && data.tarikhDaftar.size() <= 64))
         && (!('rekodPindaan' in data) || (data.rekodPindaan is list && data.rekodPindaan.size() <= 200));
     }
 
@@ -129,6 +131,7 @@ service cloud.firestore {
         && data.createdAt is string && data.createdAt.size() <= 64
         && (!('authUid' in data) || (data.authUid is string && data.authUid.size() <= 128))
         && (!('firebaseAuthSynced' in data) || data.firebaseAuthSynced is bool)
+        && (!('password' in data) || (data.password is string && data.password.size() <= 128))
         && (!('isActive' in data) || data.isActive is bool)
         && (!('emel' in data) || (data.emel is string && data.emel.size() <= 200))
         && (!('noHp' in data) || (data.noHp is string && data.noHp.size() <= 50))
@@ -261,7 +264,7 @@ service cloud.firestore {
           isSignedIn() &&
           (authEmailMatchesId(adminId) || (existing().keys().hasAny(['authUid']) && existing().authUid == request.auth.uid)) &&
           incoming().diff(existing()).affectedKeys().hasOnly(['photoUrl', 'noHp', 'emel', 'lastLoginAt', 'authUid', 'firebaseAuthSynced', 'password']) &&
-          (!('password' in incoming().diff(existing()).affectedKeys()) || !('password' in incoming()))
+          (!('password' in incoming().diff(existing()).affectedKeys()) || (incoming().password is string && incoming().password.size() >= 1 && incoming().password.size() <= 128))
         )
       );
       allow delete: if isSuperAdmin() && isValidId(adminId) && adminId != 'AMAN';

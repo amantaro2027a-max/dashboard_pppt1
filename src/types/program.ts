@@ -74,6 +74,8 @@ export interface ProgramItem {
   tahun: number;
   bulan: number; // 1-12
   catatan?: string;
+  didaftarOleh?: string;
+  tarikhDaftar?: string;
   rekodPindaan?: RekodPindaanBK04[];
 }
 

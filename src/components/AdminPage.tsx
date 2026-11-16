@@ -1385,7 +1385,14 @@ export const AdminPage: React.FC = () => {
       user.levelId || (user.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'KETUA_JABATAN');
     setEditAdminLevelId(resolvedLevel);
     setEditAdminName(user.name);
-    setEditAdminPassword(user.password || '');
+    setEditAdminPassword(
+      user.password ||
+        (user.id.toUpperCase() === 'AMAN' && currentUser?.id.toUpperCase() === 'AMAN'
+          ? currentUser.password || ''
+          : !user.firebaseAuthSynced
+          ? '123'
+          : '')
+    );
     setEditAdminPusat(user.pusat || pusatList[0] || '');
     setEditAdminJabatan(user.jabatan || '');
 
@@ -1470,9 +1477,18 @@ export const AdminPage: React.FC = () => {
       primaryJabatan = '';
     }
 
+    const trimmedPassword = editAdminPassword.trim();
+    if (!trimmedPassword) {
+      setEditAdminMsg({
+        type: 'error',
+        text: 'Kata Laluan wajib diisi dan tidak boleh dibiarkan kosong.',
+      });
+      return;
+    }
+
     const res = updateAdminUser(editingAdminUser.id, {
       name: editAdminName.trim(),
-      ...(editAdminPassword.trim() ? { password: editAdminPassword.trim() } : {}),
+      password: trimmedPassword,
       role: finalLevel === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN',
       levelId: finalLevel,
       pusat: finalLevel === 'SUPER_ADMIN' ? '' : editAdminPusat,
@@ -3570,10 +3586,20 @@ export const AdminPage: React.FC = () => {
                             <input
                               type="text"
                               required
+                              placeholder="Masukkan kata laluan semasa / baharu"
                               value={editAdminPassword}
                               onChange={(e) => setEditAdminPassword(e.target.value)}
-                              className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-mono"
+                              className={`w-full py-2 px-3 bg-white border rounded-md focus:outline-none focus:ring-1 font-mono ${
+                                !editAdminPassword.trim()
+                                  ? 'border-rose-400 focus:ring-rose-600'
+                                  : 'border-slate-300 focus:ring-slate-900'
+                              }`}
                             />
+                            {!editAdminPassword.trim() && (
+                              <p className="text-[10px] text-rose-600 font-semibold mt-1">
+                                Kata Laluan tidak boleh kosong untuk menyimpan kemaskini.
+                              </p>
+                            )}
                           </div>
                         </div>
 

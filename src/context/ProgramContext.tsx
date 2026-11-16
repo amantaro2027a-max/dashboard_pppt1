@@ -1161,7 +1161,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               loaded.push(docSnap.data() as AdminUser);
             });
             if (!loaded.some((u) => u.id.toUpperCase() === 'AMAN')) {
-              loaded.unshift({ ...INITIAL_ADMIN_USERS[0], password: '' });
+              loaded.unshift({ ...INITIAL_ADMIN_USERS[0] });
             }
             setAdminUsers(loaded);
           }
@@ -1699,11 +1699,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const { timestamp } = getMalaysiaTimestampParts();
     const updatedUser: AdminUser = {
       ...profile,
+      password: cleanPass,
       authUid: fbUid,
       firebaseAuthSynced: true,
       lastLoginAt: timestamp,
     };
-    delete updatedUser.password;
 
     setCurrentUser(updatedUser);
     setAdminUsers((prev) => {
@@ -1719,7 +1719,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     setDoc(
       doc(db, 'admins', updatedUser.id),
-      { authUid: fbUid, firebaseAuthSynced: true, lastLoginAt: timestamp, password: deleteField() },
+      { authUid: fbUid, firebaseAuthSynced: true, lastLoginAt: timestamp, password: cleanPass },
       { merge: true }
     ).catch(() => {});
 
@@ -2341,6 +2341,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const newUser: AdminUser = {
       ...userData,
       id: cleanId,
+      password: resolvedPassword,
       authUid: provisionedUid,
       firebaseAuthSynced: true,
       name: userData.name.trim(),
@@ -2349,7 +2350,6 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isActive: userData.isActive !== false,
       createdAt: new Date().toISOString().slice(0, 10),
     };
-    delete newUser.password;
 
     setAdminUsers((prev) => [...prev, newUser]);
 
@@ -2406,9 +2406,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ? 'ADMIN'
         : updated.role || target.role;
 
+    const nextPassword =
+      updated.password !== undefined ? updated.password.trim() : target.password;
+    if (updated.password !== undefined && !nextPassword) {
+      return { success: false, message: 'Kata Laluan wajib diisi dan tidak boleh kosong.' };
+    }
+
     const modifiedUser: AdminUser = {
       ...target,
       ...updated,
+      ...(nextPassword ? { password: nextPassword } : {}),
       role: nextRole,
       levelId: id.toUpperCase() === 'AMAN' ? 'SUPER_ADMIN' : nextLevelId,
       name: updated.name !== undefined ? updated.name.trim() : target.name,
@@ -2432,6 +2439,31 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (modifiedUser.authUid) {
       syncAuthUserRuleDoc(modifiedUser.authUid, modifiedUser).catch(() => {});
+    }
+
+    // Sync password changes to Firebase Authentication if password was updated
+    if (nextPassword && nextPassword !== target.password) {
+      if (id.toUpperCase() === currentUser.id.toUpperCase() && auth.currentUser) {
+        updatePassword(auth.currentUser, toFirebaseAuthPassword(nextPassword)).catch(() => {});
+      } else if (target.authUid || target.firebaseAuthSynced) {
+        const prevCandidates = Array.from(
+          new Set([target.password, '123', id.toUpperCase() === 'AMAN' ? 'AMAN' : ''].filter(Boolean))
+        ) as string[];
+        (async () => {
+          for (const prevPass of prevCandidates) {
+            try {
+              const cred = await signInWithEmailAndPassword(
+                secondaryAuth,
+                idToAuthEmail(id),
+                toFirebaseAuthPassword(prevPass)
+              );
+              await updatePassword(cred.user, toFirebaseAuthPassword(nextPassword));
+              await signOut(secondaryAuth).catch(() => {});
+              break;
+            } catch {}
+          }
+        })();
+      }
     }
 
     const hasSemuaEdit = Object.entries(modifiedUser.jabatanAccess || {}).some(
@@ -2512,12 +2544,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       };
     }
 
-    const updatedUser: AdminUser = { ...currentUser };
-    delete updatedUser.password;
+    const updatedUser: AdminUser = { ...currentUser, password: cleanNewPass };
     setCurrentUser(updatedUser);
+    setAdminUsers((prev) =>
+      prev.map((u) => (u.id === currentUser.id ? { ...u, password: cleanNewPass } : u))
+    );
     setDoc(
       doc(db, 'admins', currentUser.id),
-      { firebaseAuthSynced: true, password: deleteField() },
+      { firebaseAuthSynced: true, password: cleanNewPass },
       { merge: true }
     ).catch(() => {});
 
@@ -2658,8 +2692,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // In pure client-side Option A (Firebase Auth without backend Admin SDK),
     // legacy unsynced users can still be provisioned with the reset password, while
     // already-synced users update their password themselves or via Firebase Console.
+    const cleanResetPass = (newPassword || '123').trim() || '123';
+
     if (!target.firebaseAuthSynced && !target.authUid) {
-      const cleanResetPass = (newPassword || '123').trim() || '123';
       try {
         const cred = await createUserWithEmailAndPassword(
           secondaryAuth,
@@ -2668,12 +2703,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
         const newUid = cred.user.uid;
         await signOut(secondaryAuth).catch(() => {});
-        const syncedUser: AdminUser = { ...target, authUid: newUid, firebaseAuthSynced: true };
-        delete syncedUser.password;
+        const syncedUser: AdminUser = {
+          ...target,
+          password: cleanResetPass,
+          authUid: newUid,
+          firebaseAuthSynced: true,
+        };
         setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? syncedUser : u)));
         await setDoc(
           doc(db, 'admins', targetUserId),
-          { authUid: newUid, firebaseAuthSynced: true, password: deleteField() },
+          { authUid: newUid, firebaseAuthSynced: true, password: cleanResetPass },
           { merge: true }
         );
         await syncAuthUserRuleDoc(newUid, syncedUser);
@@ -2695,6 +2734,38 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             message: `Gagal menetapkan semula kata laluan: ${err?.message || 'Ralat Firebase Auth'}`,
           };
         }
+      }
+    }
+
+    if (target.password) {
+      try {
+        const signCred = await signInWithEmailAndPassword(
+          secondaryAuth,
+          idToAuthEmail(target.id),
+          toFirebaseAuthPassword(target.password)
+        );
+        await updatePassword(signCred.user, toFirebaseAuthPassword(cleanResetPass));
+        await signOut(secondaryAuth).catch(() => {});
+        const resetUser: AdminUser = { ...target, password: cleanResetPass, firebaseAuthSynced: true };
+        setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? resetUser : u)));
+        await setDoc(
+          doc(db, 'admins', targetUserId),
+          { password: cleanResetPass, firebaseAuthSynced: true },
+          { merge: true }
+        );
+        logActivity({
+          action_type: 'PASSWORD_RESET',
+          module_name: 'Portal Admin',
+          activity_description: `Reset password to "${cleanResetPass}" for "${target.name}" (${targetUserId})`,
+          record_id: targetUserId,
+          status: 'SUCCESS',
+        });
+        return {
+          success: true,
+          message: `Kata laluan bagi "${targetUserId}" berjaya ditetapkan semula kepada "${cleanResetPass}".`,
+        };
+      } catch {
+        await signOut(secondaryAuth).catch(() => {});
       }
     }
 
@@ -2726,7 +2797,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         await syncAuthUserRuleDoc(firebaseUser.uid, user).catch(() => {});
         await setDoc(
           doc(db, 'admins', user.id),
-          { authUid: firebaseUser.uid, firebaseAuthSynced: true, password: deleteField() },
+          {
+            authUid: firebaseUser.uid,
+            firebaseAuthSynced: true,
+            ...(user.password ? { password: user.password } : {}),
+          },
           { merge: true }
         ).catch(() => {});
         syncedCount++;
@@ -2748,11 +2823,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         );
         const uid = cred.user.uid;
         await signOut(secondaryAuth).catch(() => {});
-        const nextUser: AdminUser = { ...user, authUid: uid, firebaseAuthSynced: true };
-        delete nextUser.password;
+        const nextUser: AdminUser = { ...user, password: rawPass, authUid: uid, firebaseAuthSynced: true };
         await setDoc(
           doc(db, 'admins', user.id),
-          { authUid: uid, firebaseAuthSynced: true, password: deleteField() },
+          { authUid: uid, firebaseAuthSynced: true, password: rawPass },
           { merge: true }
         );
         await syncAuthUserRuleDoc(uid, nextUser);
@@ -2767,11 +2841,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             );
             const uid = signCred.user.uid;
             await signOut(secondaryAuth).catch(() => {});
-            const nextUser: AdminUser = { ...user, authUid: uid, firebaseAuthSynced: true };
-            delete nextUser.password;
+            const nextUser: AdminUser = { ...user, password: rawPass, authUid: uid, firebaseAuthSynced: true };
             await setDoc(
               doc(db, 'admins', user.id),
-              { authUid: uid, firebaseAuthSynced: true, password: deleteField() },
+              { authUid: uid, firebaseAuthSynced: true, password: rawPass },
               { merge: true }
             );
             await syncAuthUserRuleDoc(uid, nextUser);
@@ -3173,11 +3246,26 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
+    const matchedRegistrar = pegawaiList.find(
+      (pg) =>
+        (currentUser.name && pg.nama?.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
+        (currentUser.id && pg.id?.trim().toUpperCase() === currentUser.id.trim().toUpperCase())
+    );
+    const registrarName = (matchedRegistrar?.nama || currentUser.name || currentUser.id || '')
+      .trim()
+      .toUpperCase();
+    const nowParts = getMalaysiaTimestampParts();
+    const [yyyy, mm, dd] = nowParts.malaysia_date.split('-');
+    const registrarDate =
+      dd && mm && yyyy ? `${dd}/${mm}/${yyyy}` : nowParts.malaysia_datetime_display;
+
     const newId = `prog-${Date.now()}`;
     const newProg: ProgramItem = sanitizeProgramExpenditure({
       ...data,
       namaProgram: data.namaProgram.toUpperCase(),
       kodProgram: data.kodProgram.toUpperCase(),
+      didaftarOleh: data.didaftarOleh || registrarName,
+      tarikhDaftar: data.tarikhDaftar || registrarDate,
       id: newId,
     });
 

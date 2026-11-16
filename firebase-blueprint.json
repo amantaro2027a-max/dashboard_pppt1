@@ -44,6 +44,8 @@
         "tahun": { "type": "number" },
         "bulan": { "type": "number" },
         "catatan": { "type": "string", "maxLength": 2000 },
+        "didaftarOleh": { "type": "string", "maxLength": 200 },
+        "tarikhDaftar": { "type": "string", "maxLength": 64 },
         "rekodPindaan": { "type": "array" }
       },
       "required": ["namaProgram", "pusat", "jabatan", "statusProgram"]
