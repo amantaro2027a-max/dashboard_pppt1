@@ -677,6 +677,45 @@ export const AdminPage: React.FC = () => {
     return list.sort();
   }, [jabatanMap]);
 
+  // Filtered Jabatan & Pegawai options for Daftar ID Pengguna Baharu (1-8 cascading order)
+  const jabatanOptionsForNewAdmin = useMemo(() => {
+    const base =
+      newAdminPusat && jabatanMap[newAdminPusat]
+        ? [...jabatanMap[newAdminPusat]]
+        : Array.from(new Set(Object.values(jabatanMap).flat()));
+    const extras = new Set<string>(base);
+    pegawaiList.forEach((pg) => {
+      if (newAdminPusat && pg.pusat !== newAdminPusat) return;
+      if (pg.jabatan && !extras.has(pg.jabatan)) {
+        extras.add(pg.jabatan);
+      }
+    });
+    return Array.from(extras).filter(Boolean);
+  }, [newAdminPusat, jabatanMap, pegawaiList]);
+
+  const pegawaiOptionsForNewAdmin = useMemo(() => {
+    return pegawaiList.filter((pg) => {
+      if (
+        newAdminPusat &&
+        newAdminPusat !== 'SEMUA PUSAT' &&
+        newAdminPusat !== 'TIDAK BERKENAAN'
+      ) {
+        const pusJabs = jabatanMap[newAdminPusat] || [];
+        const matchPusat =
+          pg.pusat === newAdminPusat || (pg.jabatan && pusJabs.includes(pg.jabatan));
+        if (!matchPusat) return false;
+      }
+      if (
+        newAdminJabatan &&
+        newAdminJabatan !== 'SEMUA JABATAN' &&
+        newAdminJabatan !== 'TIDAK BERKENAAN'
+      ) {
+        if (pg.jabatan !== newAdminJabatan) return false;
+      }
+      return true;
+    });
+  }, [pegawaiList, newAdminPusat, newAdminJabatan, jabatanMap]);
+
   // If not logged in, render the login page (placed after all hooks)
   if (!currentUser) {
     return <AdminLogin />;
@@ -1188,44 +1227,6 @@ export const AdminPage: React.FC = () => {
     );
   };
 
-  // Filtered Jabatan & Pegawai options for Daftar ID Pengguna Baharu (1-8 cascading order)
-  const jabatanOptionsForNewAdmin = useMemo(() => {
-    const base =
-      newAdminPusat && jabatanMap[newAdminPusat]
-        ? [...jabatanMap[newAdminPusat]]
-        : Array.from(new Set(Object.values(jabatanMap).flat()));
-    const extras = new Set<string>(base);
-    pegawaiList.forEach((pg) => {
-      if (newAdminPusat && pg.pusat !== newAdminPusat) return;
-      if (pg.jabatan && !extras.has(pg.jabatan)) {
-        extras.add(pg.jabatan);
-      }
-    });
-    return Array.from(extras).filter(Boolean);
-  }, [newAdminPusat, jabatanMap, pegawaiList]);
-
-  const pegawaiOptionsForNewAdmin = useMemo(() => {
-    return pegawaiList.filter((pg) => {
-      if (
-        newAdminPusat &&
-        newAdminPusat !== 'SEMUA PUSAT' &&
-        newAdminPusat !== 'TIDAK BERKENAAN'
-      ) {
-        const pusJabs = jabatanMap[newAdminPusat] || [];
-        const matchPusat =
-          pg.pusat === newAdminPusat || (pg.jabatan && pusJabs.includes(pg.jabatan));
-        if (!matchPusat) return false;
-      }
-      if (
-        newAdminJabatan &&
-        newAdminJabatan !== 'SEMUA JABATAN' &&
-        newAdminJabatan !== 'TIDAK BERKENAAN'
-      ) {
-        if (pg.jabatan !== newAdminJabatan) return false;
-      }
-      return true;
-    });
-  }, [pegawaiList, newAdminPusat, newAdminJabatan, jabatanMap]);
 
   // When Super Admin selects Pegawai from Dropdown in "Pengurusan ID Admin",
   // autofill ID Pengguna Admin, default password '123', and tick matching Jabatan as 'view' only by default

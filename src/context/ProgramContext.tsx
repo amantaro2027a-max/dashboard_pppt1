@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   AdminUser,
   FinancialSectionStats,
@@ -1172,8 +1172,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
               signOut(auth).catch(() => {});
               return;
             }
-            setCurrentUser(selfProfile);
-            setAdminUsers([selfProfile]);
+            setCurrentUser((prev) =>
+              prev && JSON.stringify(prev) === JSON.stringify(selfProfile) ? prev : selfProfile
+            );
+            setAdminUsers((prev) =>
+              prev.length === 1 && JSON.stringify(prev[0]) === JSON.stringify(selfProfile)
+                ? prev
+                : [selfProfile]
+            );
           }
         },
         () => {}
@@ -1526,7 +1532,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Automatic inactivity session timeout (30 minutes while logged in)
   useEffect(() => {
-    if (!currentUser) return;
+    const activeUserId = currentUser?.id;
+    if (!activeUserId) return;
     let timeoutHandle: ReturnType<typeof setTimeout>;
     const TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -1554,7 +1561,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       clearTimeout(timeoutHandle);
       events.forEach((ev) => window.removeEventListener(ev, resetInactivityTimer));
     };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Helper to sync trusted RBAC record into auth_users/{uid} (for Firestore security rules)
   const syncAuthUserRuleDoc = async (uid: string, user: AdminUser) => {
@@ -1825,7 +1832,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return getJabatanAccessMode(jabatanName) === 'edit';
   };
 
-  const getEditableJabatans = (): string[] => {
+  const getEditableJabatans = useCallback((): string[] => {
     const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
       (j) => j && j !== 'SEMUA JABATAN'
     );
@@ -1838,9 +1845,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         .map(([j]) => j);
     }
     return [];
-  };
+  }, [jabatanMap, currentUser, isSuperAdmin]);
 
-  const getAuthorizedJabatanList = (): string[] => {
+  const getAuthorizedJabatanList = useCallback((): string[] => {
     const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
       (j) => j && j !== 'SEMUA JABATAN'
     );
@@ -1876,9 +1883,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       set.add(matchedPeg.jabatan);
     }
     return Array.from(set);
-  };
+  }, [jabatanMap, currentUser, isSuperAdmin, pegawaiList]);
 
-  const getAuthorizedPusatList = (): string[] => {
+  const getAuthorizedPusatList = useCallback((): string[] => {
     if (!currentUser) return [];
     if (isSuperAdmin) return pusatList;
 
@@ -1903,7 +1910,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     });
     return Array.from(set);
-  };
+  }, [currentUser, isSuperAdmin, pusatList, pegawaiList, getAuthorizedJabatanList, jabatanMap]);
 
   const filterScope = useMemo<FilterScope>(() => {
     const emptyScope: FilterScope = {
