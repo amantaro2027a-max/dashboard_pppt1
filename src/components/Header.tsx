@@ -192,12 +192,12 @@ export const Header: React.FC = () => {
   ];
 
   const visibleMenuItems = allMenuItems.filter((item) => {
-    // 1. Dashboard Program & Pengiraan Bajet dibenarkan untuk akses pelawat dari Laman Utama
-    if (item.id === 'dashboard' || item.id === 'pengiraan') {
+    // 1. Pengiraan Bajet dibenarkan untuk akses pelawat dari Laman Utama (Dashboard Program disembunyikan daripada pelawat)
+    if (item.id === 'pengiraan') {
       return true;
     }
 
-    // 2. Untuk pelawat / mod viewer (tiada log masuk), hanya Dashboard Program & Pengiraan Bajet sahaja
+    // 2. Untuk pelawat / mod viewer (tiada log masuk), hanya Pengiraan Bajet sahaja
     if (!currentUser) {
       return false;
     }
@@ -214,6 +214,7 @@ export const Header: React.FC = () => {
 
     // 4. Pengguna selain Super Admin tidak dibenarkan melihat Portal Pengurusan Pentadbir (Admin)
     if (item.id === 'admin') return false;
+    if (item.id === 'dashboard') return getPageAccessMode('DASHBOARD PROGRAM') !== 'none';
     if (item.id === 'bersepadu') return getPageAccessMode('DASHBOARD BERSEPADU') !== 'none';
     if (item.id === 'perincian') return getPageAccessMode('PERINCIAN PROGRAM') !== 'none';
     if (item.id === 'analisisPegawai') return getPageAccessMode('ANALISIS PEGAWAI') !== 'none';
@@ -233,7 +234,7 @@ export const Header: React.FC = () => {
 
   const handleLogout = () => {
     logout();
-    setActiveTab('dashboard');
+    setActiveTab('admin');
   };
 
   return (

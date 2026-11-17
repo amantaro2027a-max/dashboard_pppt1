@@ -3,10 +3,10 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ChevronRight } from 'lucide-react';
 
 export const WelcomePage: React.FC = () => {
-  const { setActiveTab } = useProgramContext();
+  const { currentUser, setActiveTab } = useProgramContext();
 
   const handleEnter = () => {
-    setActiveTab('dashboard');
+    setActiveTab(currentUser ? 'selamatDatang' : 'admin');
   };
 
   const posterSrc = `${import.meta.env.BASE_URL}assets/aistudio/Malaysian_Education_Portal_Welcome_Poster_7357b827.png`;
@@ -30,7 +30,7 @@ export const WelcomePage: React.FC = () => {
           <button
             type="button"
             onClick={handleEnter}
-            aria-label="Masuk ke Dashboard Program"
+            aria-label={currentUser ? 'Masuk ke Portal IAB' : 'Log Masuk ke Portal IAB'}
             className="group relative cursor-pointer outline-none transition-all duration-300 transform hover:scale-105 active:scale-95 focus:scale-105"
             style={{
               width: '44%',
@@ -58,7 +58,9 @@ export const WelcomePage: React.FC = () => {
             onClick={handleEnter}
             className="text-[11px] text-white/90 hover:text-white underline tracking-wide py-1 px-3 cursor-pointer"
           >
-            Klik di sini atau butang di atas untuk terus ke Dashboard Program &rarr;
+            {currentUser
+              ? 'Klik di sini atau butang di atas untuk terus ke Portal →'
+              : 'Klik di sini atau butang di atas untuk Log Masuk ke Portal →'}
           </button>
         </div>
       </div>

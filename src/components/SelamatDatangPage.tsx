@@ -33,6 +33,7 @@ export const SelamatDatangPage: React.FC = () => {
     changeOwnPassword,
     viewProgramDetail,
     setActiveTab,
+    getPageAccessMode,
   } = useProgramContext();
 
   // Real-time Date & Time
@@ -826,10 +827,33 @@ export const SelamatDatangPage: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => {
+                if (getPageAccessMode('DASHBOARD PROGRAM') !== 'none') {
+                  setActiveTab('dashboard');
+                  return;
+                }
+                const fallbackOrder: Array<{ tab: any; key: string }> = [
+                  { tab: 'bersepadu', key: 'DASHBOARD BERSEPADU' },
+                  { tab: 'perincian', key: 'PERINCIAN PROGRAM' },
+                  { tab: 'analisisPegawai', key: 'ANALISIS PEGAWAI' },
+                  { tab: 'iabAll', key: 'IAB ALL' },
+                  { tab: 'klusterProfesional', key: 'KLUSTER KHIDMAT PROFESIONAL' },
+                  { tab: 'klusterLatihan', key: 'KLUSTER KHIDMAT LATIHAN' },
+                  { tab: 'pusat', key: 'PUSAT' },
+                  { tab: 'jabatan', key: 'JABATAN' },
+                  { tab: 'peruntukan', key: 'PERUNTUKAN' },
+                  { tab: 'perbelanjaan', key: 'PERBELANJAAN' },
+                  { tab: 'subwaran', key: 'SUBWARAN' },
+                  { tab: 'baki', key: 'BAKI PERUNTUKAN' },
+                  { tab: 'monitoring', key: 'ADMIN MONITORING DASHBOARD' },
+                  { tab: 'pengiraan', key: 'PENGIRAAN BAJET' },
+                ];
+                const firstPermitted = fallbackOrder.find((item) => getPageAccessMode(item.key) !== 'none');
+                setActiveTab(firstPermitted ? firstPermitted.tab : 'pengiraan');
+              }}
               className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-xs sm:text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <span>Masuk ke Dashboard Program</span>
+              <span>Masuk ke</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

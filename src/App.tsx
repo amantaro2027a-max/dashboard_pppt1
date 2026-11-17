@@ -30,10 +30,14 @@ import { JabatanPage } from './components/JabatanPage';
 import { KlusterPage } from './components/KlusterPage';
 import { IabAllPage } from './components/IabAllPage';
 import { AdminMonitoringPage } from './components/AdminMonitoringPage';
+import { AdminLogin } from './components/AdminLogin';
+import { NotificationModal } from './components/NotificationModal';
 import { getUserBannerInfo } from './utils/formatters';
 
+import { Lock, ArrowRight } from 'lucide-react';
+
 const DashboardContent: React.FC = () => {
-  const { activeTab, currentUser, isSuperAdmin, pegawaiList } = useProgramContext();
+  const { activeTab, currentUser, isSuperAdmin, pegawaiList, getPageAccessMode, setActiveTab } = useProgramContext();
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -53,50 +57,54 @@ const DashboardContent: React.FC = () => {
         <ProgramDetailModal />
         <ProgramFormModal />
         <ExportModal />
+        <NotificationModal />
       </>
     );
   }
+
+  const isLoginView = !currentUser && (activeTab === 'admin' || activeTab === 'dashboard');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       <div>
         <Header />
 
-        {/* Page Hero Banner */}
-        <section className="bg-white border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-              <div className="w-full">
-                {/* Baris 1: Pengguna: ... */}
-                <div className="text-xs sm:text-sm tracking-wide leading-relaxed">
-                  <span className="text-black font-black">Pengguna: </span>
-                  <span className="text-blue-600 font-black">{bannerInfo.nama}</span>
-                </div>
+        {/* Page Hero Banner (disembunyikan pada halaman Log Masuk pelawat) */}
+        {!isLoginView && (
+          <section className="bg-white border-b border-slate-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div className="w-full">
+                  {/* Baris 1: Pengguna: ... */}
+                  <div className="text-xs sm:text-sm tracking-wide leading-relaxed">
+                    <span className="text-black font-black">Pengguna: </span>
+                    <span className="text-blue-600 font-black">{bannerInfo.nama}</span>
+                  </div>
 
-                {/* Baris 2: Jawatan: ... */}
-                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">Jawatan: </span>
-                  <span className="text-blue-600 font-black">{bannerInfo.jawatan}</span>
-                </div>
+                  {/* Baris 2: Jawatan: ... */}
+                  <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                    <span className="text-black font-black">Jawatan: </span>
+                    <span className="text-blue-600 font-black">{bannerInfo.jawatan}</span>
+                  </div>
 
-                {/* Baris 3: Pusat: ... */}
-                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">Pusat:</span>
-                  {bannerInfo.pusat ? (
-                    <span className="text-blue-600 font-black"> {bannerInfo.pusat}</span>
-                  ) : null}
-                </div>
+                  {/* Baris 3: Jabatan: ... */}
+                  <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                    <span className="text-black font-black">Jabatan:</span>
+                    {bannerInfo.jabatan ? (
+                      <span className="text-blue-600 font-black"> {bannerInfo.jabatan}</span>
+                    ) : null}
+                  </div>
 
-                {/* Baris 4: Jabatan: ... */}
-                <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
-                  <span className="text-black font-black">Jabatan:</span>
-                  {bannerInfo.jabatan ? (
-                    <span className="text-blue-600 font-black"> {bannerInfo.jabatan}</span>
-                  ) : null}
-                </div>
+                  {/* Baris 4: Pusat: ... */}
+                  <div className="text-xs sm:text-sm tracking-wide leading-relaxed mt-0.5">
+                    <span className="text-black font-black">Pusat:</span>
+                    {bannerInfo.pusat ? (
+                      <span className="text-blue-600 font-black"> {bannerInfo.pusat}</span>
+                    ) : null}
+                  </div>
 
-                <div className="pt-3 border-t border-slate-100 mt-3">
-                  <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  <div className="pt-3 border-t border-slate-100 mt-3">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                     {activeTab === 'selamatDatang'
                       ? 'Selamat Datang — Profil Pegawai & Akaun'
                       : activeTab === 'dashboard'
@@ -174,11 +182,12 @@ const DashboardContent: React.FC = () => {
                     ? 'Pusat kawalan pendaftaran & kemaskini program, pengurusan akaun ID Admin mengikut Jabatan, serta kemaskini data induk (Master Data).'
                     : 'Halaman pengurusan pentadbir hanya boleh diakses oleh Super Admin sahaja.'}
                 </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Main Content Area */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -186,23 +195,54 @@ const DashboardContent: React.FC = () => {
             /* HALAMAN SELAMAT DATANG SELEPAS LOG MASUK */
             <SelamatDatangPage />
           ) : activeTab === 'dashboard' ? (
-            /* PAGE 1 – DASHBOARD PROGRAM PUSAT (VIEW ONLY) */
-            <div>
-              {/* Filter Bar with Sumber Kewangan */}
-              <FilterBar showTahunBulan={true} showStatusFilter={true} />
+            !currentUser ? (
+              <AdminLogin />
+            ) : getPageAccessMode('DASHBOARD PROGRAM') === 'none' ? (
+              <div className="max-w-4xl mx-auto py-16 px-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 shadow-sm text-center">
+                  <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-rose-50">
+                    <Lock className="w-8 h-8" />
+                  </div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">
+                    Akses Dihadkan · Pengguna Diberi Kebenaran Sahaja
+                  </span>
+                  <h2 className="text-2xl font-black text-slate-900 mt-4 tracking-tight">
+                    Dashboard Program (IAB)
+                  </h2>
+                  <p className="text-slate-600 text-sm max-w-lg mx-auto mt-2 leading-relaxed">
+                    Anda tidak mempunyai kebenaran untuk mengakses halaman <strong>Dashboard Program</strong>. Sila hubungi Super Admin untuk menetapkan kebenaran dalam <strong>KEBENARAN VIEW/PAPAR PAGE</strong>.
+                  </p>
+                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('selamatDatang')}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+                    >
+                      <span>Kembali ke Selamat Datang</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* PAGE 1 – DASHBOARD PROGRAM PUSAT (VIEW ONLY) */
+              <div>
+                {/* Filter Bar with Sumber Kewangan */}
+                <FilterBar showTahunBulan={true} showStatusFilter={true} />
 
-              {/* Prestasi Pelaksanaan Program */}
-              <FlashCardsGroup1 />
+                {/* Prestasi Pelaksanaan Program */}
+                <FlashCardsGroup1 />
 
-              {/* STATUS PERUNTUKAN KEWANGAN (Group Baharu Latar Soft Green) */}
-              <StatusPeruntukanKewangan />
+                {/* STATUS PERUNTUKAN KEWANGAN (Group Baharu Latar Soft Green) */}
+                <StatusPeruntukanKewangan />
 
-              {/* Status Pelaksanaan Program */}
-              <FlashCardsGroup2 />
+                {/* Status Pelaksanaan Program */}
+                <FlashCardsGroup2 />
 
-              {/* Analytics & Distribution Visualisations */}
-              <DashboardCharts />
-            </div>
+                {/* Analytics & Distribution Visualisations */}
+                <DashboardCharts />
+              </div>
+            )
           ) : activeTab === 'bersepadu' ? (
             /* PAGE 2 – DASHBOARD BERSEPADU & ANALITIK EKSEKUTIF PPPT */
             <DashboardBersepaduPage />
@@ -256,6 +296,7 @@ const DashboardContent: React.FC = () => {
       <ProgramDetailModal />
       <ProgramFormModal />
       <ExportModal />
+      <NotificationModal />
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 mt-12 py-6 text-center text-xs text-slate-500">

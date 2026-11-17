@@ -118,6 +118,13 @@ export interface FilterScope {
   lockedJabatan: string | null;
 }
 
+export interface NotificationPopupState {
+  isOpen: boolean;
+  type: 'success' | 'error';
+  title: string;
+  message: string;
+}
+
 interface ProgramContextType {
   // Programs & Filtering
   programs: ProgramItem[];
@@ -192,33 +199,33 @@ interface ProgramContextType {
   jawatanList: string[];
 
   // Master Data Mutations
-  addKluster: (namaKluster: string) => void;
-  updateKluster: (oldKluster: string, newKluster: string) => void;
-  deleteKluster: (namaKluster: string) => void;
+  addKluster: (namaKluster: string) => { success: boolean; message?: string };
+  updateKluster: (oldKluster: string, newKluster: string) => { success: boolean; message?: string };
+  deleteKluster: (namaKluster: string) => { success: boolean; message?: string };
 
   addPegawai: (pegawai: Pegawai) => void;
   updatePegawai: (id: string, updated: Partial<Pegawai>) => void;
   deletePegawai: (id: string) => void;
 
-  addPusat: (namaPusat: string, kluster?: string) => void;
-  updatePusat: (oldPusat: string, newPusat: string, newKluster?: string) => void;
-  deletePusat: (pusat: string) => void;
+  addPusat: (namaPusat: string, kluster?: string) => { success: boolean; message?: string };
+  updatePusat: (oldPusat: string, newPusat: string, newKluster?: string) => { success: boolean; message?: string };
+  deletePusat: (pusat: string) => { success: boolean; message?: string };
 
-  addJabatan: (pusat: string, namaJabatan: string) => void;
-  updateJabatan: (pusat: string, oldJabatan: string, newJabatan: string) => void;
-  deleteJabatan: (pusat: string, namaJabatan: string) => void;
+  addJabatan: (pusat: string, namaJabatan: string) => { success: boolean; message?: string };
+  updateJabatan: (pusat: string, oldJabatan: string, newJabatan: string) => { success: boolean; message?: string };
+  deleteJabatan: (pusat: string, namaJabatan: string) => { success: boolean; message?: string };
 
-  addSumberKewangan: (nama: string) => void;
-  updateSumberKewangan: (oldNama: string, newNama: string) => void;
-  deleteSumberKewangan: (nama: string) => void;
+  addSumberKewangan: (nama: string) => { success: boolean; message?: string };
+  updateSumberKewangan: (oldNama: string, newNama: string) => { success: boolean; message?: string };
+  deleteSumberKewangan: (nama: string) => { success: boolean; message?: string };
 
-  addStatusProgram: (nama: string) => void;
-  updateStatusProgram: (oldNama: string, newNama: string) => void;
-  deleteStatusProgram: (nama: string) => void;
+  addStatusProgram: (nama: string) => { success: boolean; message?: string };
+  updateStatusProgram: (oldNama: string, newNama: string) => { success: boolean; message?: string };
+  deleteStatusProgram: (nama: string) => { success: boolean; message?: string };
 
-  addJawatan: (nama: string) => void;
-  updateJawatan: (oldNama: string, newNama: string) => void;
-  deleteJawatan: (nama: string) => void;
+  addJawatan: (nama: string) => { success: boolean; message?: string };
+  updateJawatan: (oldNama: string, newNama: string) => { success: boolean; message?: string };
+  deleteJawatan: (nama: string) => { success: boolean; message?: string };
 
   // Bulk Import Master Data (Super Admin)
   importKlusterBulk: (items: string[]) => { success: boolean; added: number; message?: string };
@@ -276,6 +283,11 @@ interface ProgramContextType {
 
   // Firebase Live Status
   firebaseStatus: 'connecting' | 'connected' | 'offline';
+
+  // Global Pop-up Notification Dialog
+  notificationPopup: NotificationPopupState;
+  showNotification: (opts: { type: 'success' | 'error'; title: string; message: string }) => void;
+  closeNotification: () => void;
 }
 
 const defaultFilters: ProgramFilterState = {
@@ -770,6 +782,29 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
   const [activeTab, setActiveTabState] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+
+  const [notificationPopup, setNotificationPopup] = useState<NotificationPopupState>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+
+  const showNotification = useCallback(
+    (opts: { type: 'success' | 'error'; title: string; message: string }) => {
+      setNotificationPopup({
+        isOpen: true,
+        type: opts.type,
+        title: opts.title,
+        message: opts.message,
+      });
+    },
+    []
+  );
+
+  const closeNotification = useCallback(() => {
+    setNotificationPopup((prev) => ({ ...prev, isOpen: false }));
+  }, []);
 
   // Activity Logs, Security Alerts & Session Metadata
   const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => {
@@ -1498,11 +1533,12 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Wrapper for setActiveTab that logs navigation & page duration automatically
   const setActiveTab: ProgramContextType['setActiveTab'] = (nextTab) => {
+    const resolvedTab = !currentUser && nextTab === 'dashboard' ? 'admin' : nextTab;
     const prevTab = pageVisitRef.current.tab;
     const nowMs = Date.now();
     const elapsedSec = Math.max(0, Math.round((nowMs - pageVisitRef.current.enteredAtMs) / 1000));
 
-    if (currentUser && prevTab && prevTab !== nextTab && elapsedSec >= 2) {
+    if (currentUser && prevTab && prevTab !== resolvedTab && elapsedSec >= 2) {
       logActivity({
         action_type: 'PAGE_DURATION',
         module_name: resolveModuleLabel(prevTab),
@@ -1513,27 +1549,27 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }
 
-    pageVisitRef.current = { tab: nextTab, enteredAtMs: nowMs };
-    setActiveTabState(nextTab);
+    pageVisitRef.current = { tab: resolvedTab, enteredAtMs: nowMs };
+    setActiveTabState(resolvedTab);
 
-    if (currentUser && prevTab !== nextTab) {
-      const targetIsSuperOnly = nextTab === 'admin';
+    if (currentUser && prevTab !== resolvedTab) {
+      const targetIsSuperOnly = resolvedTab === 'admin';
       const targetUserIsSuper =
         currentUser.role === 'SUPER_ADMIN' || currentUser.levelId === 'SUPER_ADMIN';
       if (targetIsSuperOnly && !targetUserIsSuper) {
         logActivity({
           action_type: 'UNAUTHORIZED_ACCESS',
-          module_name: resolveModuleLabel(nextTab),
-          activity_description: `Attempted unauthorized navigation to restricted module "${resolveModuleLabel(nextTab)}"`,
-          record_id: nextTab,
+          module_name: resolveModuleLabel(resolvedTab),
+          activity_description: `Attempted unauthorized navigation to restricted module "${resolveModuleLabel(resolvedTab)}"`,
+          record_id: resolvedTab,
           status: 'BLOCKED',
         });
       } else {
         logActivity({
           action_type: 'NAVIGATE',
-          module_name: resolveModuleLabel(nextTab),
-          activity_description: `Accessed ${resolveModuleLabel(nextTab)}`,
-          record_id: nextTab,
+          module_name: resolveModuleLabel(resolvedTab),
+          activity_description: `Accessed ${resolveModuleLabel(resolvedTab)}`,
+          record_id: resolvedTab,
           status: 'SUCCESS',
         });
       }
@@ -1756,8 +1792,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCurrentUser(null);
     sessionStorage.removeItem(STORAGE_SESSION);
     setSessionId(generateSessionId());
-    pageVisitRef.current = { tab: 'dashboard', enteredAtMs: Date.now() };
-    setActiveTabState('dashboard');
+    pageVisitRef.current = { tab: 'admin', enteredAtMs: Date.now() };
+    setActiveTabState('admin');
   };
 
   // Permission & Level Helpers
@@ -1768,9 +1804,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const getPageAccessMode = (pageKey: string): 'none' | AccessMode => {
     const key = pageKey.trim().toUpperCase();
-    // Default view-only unless logged in
+    // Default view-only unless logged in (Dashboard Program hidden from visitors)
     if (!currentUser) {
-      if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET') {
+      if (key === 'PENGIRAAN BAJET') {
         return 'view';
       }
       return 'none';
@@ -1799,8 +1835,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 'view';
     }
 
-    // Always allow viewing Dashboard Program and Pengiraan Bajet
-    if (key === 'DASHBOARD PROGRAM' || key === 'PENGIRAAN BAJET') {
+    // Always allow viewing Pengiraan Bajet
+    if (key === 'PENGIRAAN BAJET') {
       return 'view';
     }
 
@@ -3274,6 +3310,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Firestore persistence
     setDoc(doc(db, 'programs', newId), sanitizeData(newProg)).catch((err) => {
       handleFirestoreError(err, { operation: OperationType.CREATE, path: `programs/${newId}` });
+      showNotification({
+        type: 'error',
+        title: 'Ralat Menyimpan Program ke Awan',
+        message: `Gagal menyimpan rekod program "${newProg.namaProgram}" ke pangkalan data Firestore: ${err?.message || 'Ralat sambungan.'}`,
+      });
     });
 
     logActivity({
@@ -3284,7 +3325,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       status: 'SUCCESS',
     });
 
-    return { success: true };
+    return {
+      success: true,
+      message: `Program "${newProg.namaProgram}" (${newProg.kodProgram}) telah berjaya didaftarkan.`,
+    };
   };
 
   const updateProgram = (
@@ -3618,6 +3662,11 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       updatedItemsForSync.forEach((synced) => {
         updateDoc(doc(db, 'programs', synced.id), sanitizeData(synced)).catch((err) => {
           handleFirestoreError(err, { operation: OperationType.UPDATE, path: `programs/${synced.id}` });
+          showNotification({
+            type: 'error',
+            title: 'Ralat Kemaskini Pangkalan Data',
+            message: `Gagal mengemaskini rekod program "${target.namaProgram}" di pangkalan data Firestore: ${err?.message || 'Ralat sambungan.'}`,
+          });
         });
       });
       logActivity({
@@ -3631,7 +3680,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }
 
-    return { success: true };
+    return {
+      success: true,
+      message: `Maklumat program "${baseUpdated.namaProgram}" (${baseUpdated.kodProgram}) telah berjaya dikemaskini dan dicatatkan pada ruangan Rekod Perubahan Maklumat Program (BK04).`,
+    };
   };
 
   const deleteProgram = (id: string): { success: boolean; message?: string } => {
@@ -3860,9 +3912,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return '';
   };
 
-  const addKluster = (namaKluster: string) => {
+  const addKluster = (namaKluster: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Kluster IAB.' };
+    }
     const trimmed = namaKluster.trim().toUpperCase();
-    if (!trimmed || klusterList.includes(trimmed)) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Kluster IAB yang sah.' };
+    }
+    if (klusterList.includes(trimmed)) {
+      return { success: false, message: `Kluster IAB "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = [...klusterList, trimmed];
     const nextMap = { ...klusterMap, [trimmed]: klusterMap[trimmed] || [] };
     setKlusterList(nextList);
@@ -3875,11 +3935,23 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Kluster IAB "${trimmed}" telah berjaya didaftarkan.` };
   };
 
-  const updateKluster = (oldKluster: string, newKluster: string) => {
+  const updateKluster = (oldKluster: string, newKluster: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Kluster IAB.' };
+    }
     const trimmed = newKluster.trim().toUpperCase();
-    if (!trimmed || oldKluster === trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Kluster IAB yang sah.' };
+    }
+    if (oldKluster === trimmed) {
+      return { success: true, message: `Tiada perubahan dibuat pada Kluster IAB "${trimmed}".` };
+    }
+    if (klusterList.includes(trimmed)) {
+      return { success: false, message: `Kluster IAB "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = klusterList.map((k) => (k === oldKluster ? trimmed : k));
     const nextMap = { ...klusterMap };
     const pusats = nextMap[oldKluster] || [];
@@ -3895,9 +3967,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Kluster IAB "${oldKluster}" berjaya dikemaskini kepada "${trimmed}".` };
   };
 
-  const deleteKluster = (namaKluster: string) => {
+  const deleteKluster = (namaKluster: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Kluster IAB.' };
+    }
+    if (!klusterList.includes(namaKluster)) {
+      return { success: false, message: `Kluster IAB "${namaKluster}" tidak ditemui.` };
+    }
     const nextList = klusterList.filter((k) => k !== namaKluster);
     const nextMap = { ...klusterMap };
     delete nextMap[namaKluster];
@@ -3911,6 +3990,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: namaKluster,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Kluster IAB "${namaKluster}" telah berjaya dipadam.` };
   };
   const addPegawai = (peg: Pegawai) => {
     setPegawaiList((prev) => [...prev, peg]);
@@ -3975,11 +4055,19 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const addPusat = (namaPusat: string, kluster?: string) => {
+  const addPusat = (namaPusat: string, kluster?: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Pusat.' };
+    }
     const trimmed = namaPusat.trim().toUpperCase();
-    if (!trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Pusat yang sah.' };
+    }
+    if (pusatList.includes(trimmed)) {
+      return { success: false, message: `Pusat "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const targetKluster = (kluster || '').trim().toUpperCase();
-    const nextList = pusatList.includes(trimmed) ? pusatList : [...pusatList, trimmed];
+    const nextList = [...pusatList, trimmed];
     const nextJabMap = jabatanMap[trimmed] ? jabatanMap : { ...jabatanMap, [trimmed]: [] };
 
     const nextKlusterMap = { ...klusterMap };
@@ -4007,13 +4095,22 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Pusat "${trimmed}" telah berjaya didaftarkan.` };
   };
 
-  const updatePusat = (oldPusat: string, newPusat: string, newKluster?: string) => {
+  const updatePusat = (oldPusat: string, newPusat: string, newKluster?: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Pusat.' };
+    }
     const trimmed = newPusat.trim().toUpperCase();
-    if (!trimmed) return;
-    const targetKluster = (newKluster || '').trim().toUpperCase();
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Pusat yang sah.' };
+    }
     const isNameChanged = oldPusat !== trimmed;
+    if (isNameChanged && pusatList.includes(trimmed)) {
+      return { success: false, message: `Pusat "${trimmed}" sudah wujud dalam senarai.` };
+    }
+    const targetKluster = (newKluster || '').trim().toUpperCase();
 
     const nextList = isNameChanged
       ? Array.from(new Set(pusatList.map((p) => (p === oldPusat ? trimmed : p))))
@@ -4066,9 +4163,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         prev.map((peg) => (peg.pusat === oldPusat ? { ...peg, pusat: trimmed } : peg))
       );
     }
+    return { success: true, message: `Maklumat Pusat "${trimmed}" telah berjaya dikemaskini.` };
   };
 
-  const deletePusat = (pusat: string) => {
+  const deletePusat = (pusat: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Pusat.' };
+    }
+    if (!pusatList.includes(pusat)) {
+      return { success: false, message: `Pusat "${pusat}" tidak ditemui.` };
+    }
     const nextList = pusatList.filter((p) => p !== pusat);
     const nextMap = { ...jabatanMap };
     delete nextMap[pusat];
@@ -4091,13 +4195,24 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: pusat,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Pusat "${pusat}" telah berjaya dipadam.` };
   };
 
-  const addJabatan = (pusat: string, namaJabatan: string) => {
+  const addJabatan = (pusat: string, namaJabatan: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Jabatan.' };
+    }
+    if (!pusat.trim()) {
+      return { success: false, message: 'Sila pilih Pusat Induk terlebih dahulu.' };
+    }
     const trimmed = namaJabatan.trim().toUpperCase();
-    if (!trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Jabatan yang sah.' };
+    }
     const existing = jabatanMap[pusat] || [];
-    if (existing.includes(trimmed)) return;
+    if (existing.includes(trimmed)) {
+      return { success: false, message: `Jabatan "${trimmed}" sudah wujud di bawah "${pusat}".` };
+    }
     const nextMap = { ...jabatanMap, [pusat]: [...existing, trimmed] };
     setJabatanMap(nextMap);
     syncMasterDataToFirestore({ jabatanMap: nextMap });
@@ -4108,12 +4223,24 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Jabatan "${trimmed}" berjaya didaftarkan di bawah "${pusat}".` };
   };
 
-  const updateJabatan = (pusat: string, oldJabatan: string, newJabatan: string) => {
+  const updateJabatan = (pusat: string, oldJabatan: string, newJabatan: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Jabatan.' };
+    }
     const trimmed = newJabatan.trim().toUpperCase();
-    if (!trimmed || oldJabatan === trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Jabatan yang sah.' };
+    }
+    if (oldJabatan === trimmed) {
+      return { success: true, message: `Tiada perubahan dibuat pada Jabatan "${trimmed}".` };
+    }
     const list = jabatanMap[pusat] || [];
+    if (list.includes(trimmed)) {
+      return { success: false, message: `Jabatan "${trimmed}" sudah wujud di bawah "${pusat}".` };
+    }
     const nextMap = {
       ...jabatanMap,
       [pusat]: list.map((j) => (j === oldJabatan ? trimmed : j)),
@@ -4131,10 +4258,17 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPrograms((prev) =>
       prev.map((p) => (p.jabatan === oldJabatan ? { ...p, jabatan: trimmed } : p))
     );
+    return { success: true, message: `Jabatan "${oldJabatan}" berjaya dikemaskini kepada "${trimmed}".` };
   };
 
-  const deleteJabatan = (pusat: string, namaJabatan: string) => {
+  const deleteJabatan = (pusat: string, namaJabatan: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Jabatan.' };
+    }
     const list = jabatanMap[pusat] || [];
+    if (!list.includes(namaJabatan)) {
+      return { success: false, message: `Jabatan "${namaJabatan}" tidak ditemui di bawah "${pusat}".` };
+    }
     const nextMap = {
       ...jabatanMap,
       [pusat]: list.filter((j) => j !== namaJabatan),
@@ -4148,11 +4282,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: namaJabatan,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Jabatan "${namaJabatan}" telah berjaya dipadam.` };
   };
 
-  const addSumberKewangan = (nama: string) => {
+  const addSumberKewangan = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Sumber Kewangan.' };
+    }
     const trimmed = nama.trim().toUpperCase();
-    if (!trimmed || sumberKewanganList.includes(trimmed)) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Sumber Kewangan yang sah.' };
+    }
+    if (sumberKewanganList.includes(trimmed)) {
+      return { success: false, message: `Sumber Kewangan "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = [...sumberKewanganList, trimmed];
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
@@ -4163,11 +4306,23 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Sumber Kewangan "${trimmed}" telah berjaya didaftarkan.` };
   };
 
-  const updateSumberKewangan = (oldNama: string, newNama: string) => {
+  const updateSumberKewangan = (oldNama: string, newNama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Sumber Kewangan.' };
+    }
     const trimmed = newNama.trim().toUpperCase();
-    if (!trimmed || oldNama === trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Sumber Kewangan yang sah.' };
+    }
+    if (oldNama === trimmed) {
+      return { success: true, message: `Tiada perubahan dibuat pada Sumber Kewangan "${trimmed}".` };
+    }
+    if (sumberKewanganList.includes(trimmed)) {
+      return { success: false, message: `Sumber Kewangan "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = sumberKewanganList.map((s) => (s === oldNama ? trimmed : s));
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
@@ -4182,9 +4337,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPrograms((prev) =>
       prev.map((p) => (p.sumberKewangan === oldNama ? { ...p, sumberKewangan: trimmed } : p))
     );
+    return { success: true, message: `Sumber Kewangan "${oldNama}" berjaya dikemaskini kepada "${trimmed}".` };
   };
 
-  const deleteSumberKewangan = (nama: string) => {
+  const deleteSumberKewangan = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Sumber Kewangan.' };
+    }
+    if (!sumberKewanganList.includes(nama)) {
+      return { success: false, message: `Sumber Kewangan "${nama}" tidak ditemui.` };
+    }
     const nextList = sumberKewanganList.filter((s) => s !== nama);
     setSumberKewanganList(nextList);
     syncMasterDataToFirestore({ sumberKewanganList: nextList });
@@ -4195,11 +4357,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: nama,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Sumber Kewangan "${nama}" telah berjaya dipadam.` };
   };
 
-  const addStatusProgram = (nama: string) => {
+  const addStatusProgram = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Status Program.' };
+    }
     const trimmed = nama.trim().toUpperCase();
-    if (!trimmed || statusProgramList.includes(trimmed)) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Status Program yang sah.' };
+    }
+    if (statusProgramList.includes(trimmed)) {
+      return { success: false, message: `Status Program "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = [...statusProgramList, trimmed];
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
@@ -4210,11 +4381,23 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Status Program "${trimmed}" telah berjaya didaftarkan.` };
   };
 
-  const updateStatusProgram = (oldNama: string, newNama: string) => {
+  const updateStatusProgram = (oldNama: string, newNama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Status Program.' };
+    }
     const trimmed = newNama.trim().toUpperCase();
-    if (!trimmed || oldNama === trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Status Program yang sah.' };
+    }
+    if (oldNama === trimmed) {
+      return { success: true, message: `Tiada perubahan dibuat pada Status Program "${trimmed}".` };
+    }
+    if (statusProgramList.includes(trimmed)) {
+      return { success: false, message: `Status Program "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = statusProgramList.map((s) => (s === oldNama ? trimmed : s));
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
@@ -4229,9 +4412,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPrograms((prev) =>
       prev.map((p) => (p.statusProgram === oldNama ? { ...p, statusProgram: trimmed } : p))
     );
+    return { success: true, message: `Status Program "${oldNama}" berjaya dikemaskini kepada "${trimmed}".` };
   };
 
-  const deleteStatusProgram = (nama: string) => {
+  const deleteStatusProgram = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Status Program.' };
+    }
+    if (!statusProgramList.includes(nama)) {
+      return { success: false, message: `Status Program "${nama}" tidak ditemui.` };
+    }
     const nextList = statusProgramList.filter((s) => s !== nama);
     setStatusProgramList(nextList);
     syncMasterDataToFirestore({ statusProgramList: nextList });
@@ -4242,11 +4432,20 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: nama,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Status Program "${nama}" telah berjaya dipadam.` };
   };
 
-  const addJawatan = (nama: string) => {
+  const addJawatan = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Jawatan.' };
+    }
     const trimmed = nama.trim().toUpperCase();
-    if (!trimmed || jawatanList.includes(trimmed)) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Jawatan yang sah.' };
+    }
+    if (jawatanList.includes(trimmed)) {
+      return { success: false, message: `Jawatan "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = [...jawatanList, trimmed];
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
@@ -4257,11 +4456,23 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: trimmed,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Jawatan "${trimmed}" telah berjaya didaftarkan.` };
   };
 
-  const updateJawatan = (oldNama: string, newNama: string) => {
+  const updateJawatan = (oldNama: string, newNama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan mengemaskini Jawatan.' };
+    }
     const trimmed = newNama.trim().toUpperCase();
-    if (!trimmed || oldNama === trimmed) return;
+    if (!trimmed) {
+      return { success: false, message: 'Sila masukkan nama Jawatan yang sah.' };
+    }
+    if (oldNama === trimmed) {
+      return { success: true, message: `Tiada perubahan dibuat pada Jawatan "${trimmed}".` };
+    }
+    if (jawatanList.includes(trimmed)) {
+      return { success: false, message: `Jawatan "${trimmed}" sudah wujud dalam senarai.` };
+    }
     const nextList = jawatanList.map((j) => (j === oldNama ? trimmed : j));
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
@@ -4276,9 +4487,16 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPegawaiList((prev) =>
       prev.map((p) => (p.jawatan === oldNama ? { ...p, jawatan: trimmed } : p))
     );
+    return { success: true, message: `Jawatan "${oldNama}" berjaya dikemaskini kepada "${trimmed}".` };
   };
 
-  const deleteJawatan = (nama: string) => {
+  const deleteJawatan = (nama: string): { success: boolean; message?: string } => {
+    if (!currentUser || !isSuperAdmin) {
+      return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan memadam Jawatan.' };
+    }
+    if (!jawatanList.includes(nama)) {
+      return { success: false, message: `Jawatan "${nama}" tidak ditemui.` };
+    }
     const nextList = jawatanList.filter((j) => j !== nama);
     setJawatanList(nextList);
     syncMasterDataToFirestore({ jawatanList: nextList });
@@ -4289,6 +4507,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       record_id: nama,
       status: 'SUCCESS',
     });
+    return { success: true, message: `Jawatan "${nama}" telah berjaya dipadam.` };
   };
 
   // Bulk Import Master Data Functions (Super Admin)
@@ -5044,6 +5263,9 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         logActivity,
         updateAlertStatus,
         firebaseStatus,
+        notificationPopup,
+        showNotification,
+        closeNotification,
       }}
     >
       {children}

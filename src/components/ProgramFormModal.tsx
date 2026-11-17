@@ -32,6 +32,7 @@ export const ProgramFormModal: React.FC = () => {
     pegawaiList,
     sumberKewanganList,
     statusProgramList,
+    showNotification,
   } = useProgramContext();
 
   const [namaProgram, setNamaProgram] = useState('');
@@ -295,85 +296,98 @@ export const ProgramFormModal: React.FC = () => {
 
   if (!isFormOpen) return null;
 
+  const failValidation = (msg: string, isEditMode: boolean) => {
+    setErrorMsg(msg);
+    showNotification({
+      type: 'error',
+      title: isEditMode ? 'Gagal Mengemaskini Program' : 'Gagal Mendaftar Program',
+      message: msg,
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const isEditMode = Boolean(programToEdit);
 
     // Guard: Hanya Super Admin boleh edit program berstatus SELESAI
     if (programToEdit) {
       const editStatus = (programToEdit.statusProgram || '').trim().toUpperCase();
       if (editStatus === 'SELESAI' && !isSuperAdmin) {
-        setErrorMsg(
-          'Program berstatus SELESAI telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.'
+        failValidation(
+          'Program berstatus SELESAI telah dikunci dan hanya boleh dikemaskini oleh Super Admin sahaja.',
+          isEditMode
         );
         return;
       }
       if (!isSuperAdmin && !canEditProgram(programToEdit)) {
-        setErrorMsg(
-          'Akses Ditolak: Hanya Ketua Pusat (Pusat berkaitan), Ketua Jabatan (Jabatan berkaitan), atau Pengurus / Pengurus Bersama (program berkaitan) yang diberi kebenaran Edit sahaja boleh mengemaskini program ini.'
+        failValidation(
+          'Akses Ditolak: Hanya Ketua Pusat (Pusat berkaitan), Ketua Jabatan (Jabatan berkaitan), atau Pengurus / Pengurus Bersama (program berkaitan) yang diberi kebenaran Edit sahaja boleh mengemaskini program ini.',
+          isEditMode
         );
         return;
       }
     } else if (!isSuperAdmin && (!canEditFormByPage || !editableJabatans.includes(jabatan))) {
-      setErrorMsg(
-        `Mod Paparan Sahaja / Terhad: Akaun anda tidak mempunyai kebenaran menambah program bagi jabatan "${jabatan || '-'}".`
+      failValidation(
+        `Mod Paparan Sahaja / Terhad: Akaun anda tidak mempunyai kebenaran menambah program bagi jabatan "${jabatan || '-'}".`,
+        isEditMode
       );
       return;
     }
 
     if (!namaProgram.trim()) {
-      setErrorMsg('Sila masukkan Nama Program.');
+      failValidation('Sila masukkan Nama Program.', isEditMode);
       return;
     }
     if (!kodProgram.trim()) {
-      setErrorMsg('Sila masukkan Kod Program.');
+      failValidation('Sila masukkan Kod Program.', isEditMode);
       return;
     }
     if (!pusat) {
-      setErrorMsg('Sila pilih Pusat.');
+      failValidation('Sila pilih Pusat.', isEditMode);
       return;
     }
     if (!jabatan) {
-      setErrorMsg('Sila pilih Jabatan.');
+      failValidation('Sila pilih Jabatan.', isEditMode);
       return;
     }
     if (!jenisProgram) {
-      setErrorMsg('Sila pilih Jenis Program.');
+      failValidation('Sila pilih Jenis Program.', isEditMode);
       return;
     }
     if (!pengurusId) {
-      setErrorMsg('Sila pilih Pengurus.');
+      failValidation('Sila pilih Pengurus.', isEditMode);
       return;
     }
     if (!tarikhMula || !tarikhTamat) {
-      setErrorMsg('Sila pilih Tarikh Mula dan Tarikh Tamat.');
+      failValidation('Sila pilih Tarikh Mula dan Tarikh Tamat.', isEditMode);
       return;
     }
     if (!tempat.trim()) {
-      setErrorMsg('Sila masukkan Tempat / Lokasi Program.');
+      failValidation('Sila masukkan Tempat / Lokasi Program.', isEditMode);
       return;
     }
     if (!negeri) {
-      setErrorMsg('Sila pilih Negeri.');
+      failValidation('Sila pilih Negeri.', isEditMode);
       return;
     }
     if (!sumberKewangan) {
-      setErrorMsg('Sila pilih Sumber Kewangan.');
+      failValidation('Sila pilih Sumber Kewangan.', isEditMode);
       return;
     }
     if (!statusProgram) {
-      setErrorMsg('Sila pilih Status Program.');
+      failValidation('Sila pilih Status Program.', isEditMode);
       return;
     }
     if (pengurusBersamaId && pengurusId === pengurusBersamaId) {
-      setErrorMsg('Pengurus dan Pengurus Bersama tidak boleh merupakan pegawai yang sama.');
+      failValidation('Pengurus dan Pengurus Bersama tidak boleh merupakan pegawai yang sama.', isEditMode);
       return;
     }
     if (urusSetiaId && pengurusId === urusSetiaId) {
-      setErrorMsg('Pengurus dan Urus Setia tidak boleh merupakan pegawai yang sama.');
+      failValidation('Pengurus dan Urus Setia tidak boleh merupakan pegawai yang sama.', isEditMode);
       return;
     }
     if (urusSetiaId && pengurusBersamaId && urusSetiaId === pengurusBersamaId) {
-      setErrorMsg('Pengurus Bersama dan Urus Setia tidak boleh merupakan pegawai yang sama.');
+      failValidation('Pengurus Bersama dan Urus Setia tidak boleh merupakan pegawai yang sama.', isEditMode);
       return;
     }
 
@@ -385,8 +399,9 @@ export const ProgramFormModal: React.FC = () => {
         os27000Belanja === '' ||
         os29000Belanja === ''
       ) {
-        setErrorMsg(
-          `Status Program adalah ${statusProgram.toUpperCase()}. Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi.`
+        failValidation(
+          `Status Program adalah ${statusProgram.toUpperCase()}. Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi.`,
+          isEditMode
         );
         return;
       }
@@ -448,12 +463,24 @@ export const ProgramFormModal: React.FC = () => {
       : addProgram(programPayload);
 
     if (!res.success) {
-      setErrorMsg(res.message || 'Gagal menyimpan program.');
+      failValidation(
+        res.message || (isEditMode ? 'Gagal mengemaskini program.' : 'Gagal mendaftarkan program.'),
+        isEditMode
+      );
       return;
     }
 
     setIsFormOpen(false);
     setProgramToEdit(null);
+    showNotification({
+      type: 'success',
+      title: isEditMode ? 'Kemaskini Program Berjaya' : 'Program Berjaya Didaftarkan',
+      message:
+        res.message ||
+        (isEditMode
+          ? `Maklumat program "${programPayload.namaProgram}" (${programPayload.kodProgram}) telah berjaya dikemaskini dan dicatatkan pada ruangan Rekod Perubahan Maklumat Program (BK04).`
+          : `Program "${programPayload.namaProgram}" (${programPayload.kodProgram}) telah berjaya didaftarkan.`),
+    });
   };
 
   return (

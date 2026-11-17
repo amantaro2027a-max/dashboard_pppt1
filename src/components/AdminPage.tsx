@@ -115,6 +115,7 @@ export const AdminPage: React.FC = () => {
     importSumberKewanganBulk,
     importStatusProgramBulk,
     importJawatanBulk,
+    showNotification,
   } = useProgramContext();
 
   // Active sub-tab inside Admin portal
@@ -506,11 +507,15 @@ export const AdminPage: React.FC = () => {
             .map((r) => pickField(r, ['Nama Kluster', 'Kluster IAB', 'Kluster'], true))
             .filter(Boolean);
           const res = importKlusterBulk(items);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Kluster IAB berjaya: ${res.added} kluster baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport data Kluster IAB.' }
-          );
+          const msg = res.success
+            ? `Import Kluster IAB berjaya: ${res.added} kluster baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport data Kluster IAB.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Kluster IAB Berjaya' : 'Ralat Import Kluster IAB',
+            message: msg,
+          });
         } else if (category === 'pusat') {
           const items = rows
             .map((r) => ({
@@ -519,11 +524,15 @@ export const AdminPage: React.FC = () => {
             }))
             .filter((x) => Boolean(x.pusat));
           const res = importPusatBulk(items);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Pusat berjaya: ${res.added} pusat baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport data Pusat.' }
-          );
+          const msg = res.success
+            ? `Import Pusat berjaya: ${res.added} pusat baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport data Pusat.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Pusat Berjaya' : 'Ralat Import Pusat',
+            message: msg,
+          });
         } else if (category === 'jabatan') {
           const entries = rows
             .map((r) => ({
@@ -533,46 +542,68 @@ export const AdminPage: React.FC = () => {
             }))
             .filter((item) => item.jabatan);
           const res = importJabatanBulk(entries, selectedPusatForJabatan);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Jabatan berjaya: ${res.added} jabatan baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport data Jabatan.' }
-          );
+          const msg = res.success
+            ? `Import Jabatan berjaya: ${res.added} jabatan baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport data Jabatan.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Jabatan Berjaya' : 'Ralat Import Jabatan',
+            message: msg,
+          });
         } else if (category === 'sumber') {
           const items = rows
             .map((r) => pickField(r, ['Nama Sumber Kewangan', 'Sumber Kewangan', 'Sumber'], true))
             .filter(Boolean);
           const res = importSumberKewanganBulk(items);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Sumber Kewangan berjaya: ${res.added} rekod baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport Sumber Kewangan.' }
-          );
+          const msg = res.success
+            ? `Import Sumber Kewangan berjaya: ${res.added} rekod baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport Sumber Kewangan.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Sumber Kewangan Berjaya' : 'Ralat Import Sumber Kewangan',
+            message: msg,
+          });
         } else if (category === 'status') {
           const items = rows
             .map((r) => pickField(r, ['Status Program', 'Nama Status', 'Status'], true))
             .filter(Boolean);
           const res = importStatusProgramBulk(items);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Status Program berjaya: ${res.added} status baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport Status Program.' }
-          );
+          const msg = res.success
+            ? `Import Status Program berjaya: ${res.added} status baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport Status Program.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Status Program Berjaya' : 'Ralat Import Status Program',
+            message: msg,
+          });
         } else if (category === 'jawatan') {
           const items = rows
             .map((r) => pickField(r, ['Nama Jawatan', 'Jawatan'], true))
             .filter(Boolean);
           const res = importJawatanBulk(items);
-          setMasterIoMsg(
-            res.success
-              ? { type: 'success', text: `Import Jawatan berjaya: ${res.added} jawatan baharu ditambah daripada ${file.name}.` }
-              : { type: 'error', text: res.message || 'Gagal mengimport Jawatan.' }
-          );
+          const msg = res.success
+            ? `Import Jawatan berjaya: ${res.added} jawatan baharu ditambah daripada ${file.name}.`
+            : res.message || 'Gagal mengimport Jawatan.';
+          setMasterIoMsg({ type: res.success ? 'success' : 'error', text: msg });
+          showNotification({
+            type: res.success ? 'success' : 'error',
+            title: res.success ? 'Import Jawatan Berjaya' : 'Ralat Import Jawatan',
+            message: msg,
+          });
         }
         setTimeout(() => setMasterIoMsg(null), 6000);
       } catch (err) {
         console.error('Import Master Data Error:', err);
-        setMasterIoMsg({ type: 'error', text: 'Gagal membaca fail Excel/CSV. Pastikan format fail adalah sah.' });
+        const errMsg = 'Gagal membaca fail Excel/CSV. Pastikan format fail adalah sah.';
+        setMasterIoMsg({ type: 'error', text: errMsg });
+        showNotification({
+          type: 'error',
+          title: 'Ralat Membaca Fail Import',
+          message: errMsg,
+        });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -605,6 +636,7 @@ export const AdminPage: React.FC = () => {
 
   // REQUIREMENT: Pages available for permission assignment
   const AVAILABLE_PAGES = [
+    { key: 'DASHBOARD PROGRAM', label: 'DASHBOARD PROGRAM' },
     { key: 'DASHBOARD BERSEPADU', label: 'DASHBOARD BERSEPADU' },
     { key: 'IAB ALL', label: 'PAGE IAB ALL' },
     { key: 'KLUSTER KHIDMAT PROFESIONAL', label: 'PAGE KLUSTER KHIDMAT PROFESIONAL' },
@@ -740,13 +772,15 @@ export const AdminPage: React.FC = () => {
           >
             Kembali ke Selamat Datang
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('dashboard')}
-            className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-          >
-            Dashboard Program
-          </button>
+          {getPageAccessMode('DASHBOARD PROGRAM') !== 'none' && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('dashboard')}
+              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            >
+              Dashboard Program
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1243,16 +1277,18 @@ export const AdminPage: React.FC = () => {
       if (!newAdminJabatan && peg.jabatan) setNewAdminJabatan(peg.jabatan);
       setNewAdminPassword((prev) => prev || '123');
 
-      const cleanName = peg.nama.replace(/^(DR\.|ENCIK|PUAN|CIK|HAJI|HAJAH)\s+/i, '');
-      const initials = cleanName
-        .replace(/[^a-zA-Z0-9\s]/g, '')
-        .split(' ')
-        .filter(Boolean)
-        .slice(0, 3)
-        .join('_')
-        .toUpperCase();
-      const suggested = `ADMIN_${initials}`.slice(0, 15);
-      setNewAdminId(suggested);
+      const cleanName = peg.nama
+        .trim()
+        .replace(/^(DR\.?|ENCIK|PUAN|CIK|HAJI|HAJAH|TUAN|HJ\.?|HJH\.?)\s+/i, '');
+      const firstWord = (cleanName.split(/\s+/)[0] || '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase()
+        .slice(0, 20);
+      const fallbackWord = (peg.nama.trim().split(/\s+/)[0] || '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase()
+        .slice(0, 20);
+      setNewAdminId(firstWord || fallbackWord);
 
       // Default ticked Jabatan(s) set to 'view' (View Only by default)
       if (newAdminLevelId === 'KETUA_PUSAT' && effectivePusat && jabatanMap[effectivePusat]) {
@@ -1295,24 +1331,36 @@ export const AdminPage: React.FC = () => {
     setUserActionMsg(null);
 
     if (!newAdminName) {
-      setUserActionMsg({
+      const errMsg = 'Sila pilih Nama Penuh Pegawai Admin daripada senarai drop down.';
+      setUserActionMsg({ type: 'error', text: errMsg });
+      showNotification({
         type: 'error',
-        text: 'Sila pilih Nama Penuh Pegawai Admin daripada senarai drop down.',
+        title: 'Gagal Mewujudkan ID Pengguna',
+        message: errMsg,
       });
       return;
     }
 
     if (!newAdminId.trim()) {
-      setUserActionMsg({ type: 'error', text: 'Sila masukkan ID Pengguna.' });
+      const errMsg = 'Sila masukkan ID Pengguna.';
+      setUserActionMsg({ type: 'error', text: errMsg });
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mewujudkan ID Pengguna',
+        message: errMsg,
+      });
       return;
     }
 
     const effectivePass = newAdminPassword.trim() || '123';
 
     if (newAdminLevelId !== 'SUPER_ADMIN' && newAdminSelectedJabatans.length === 0) {
-      setUserActionMsg({
+      const errMsg = 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.';
+      setUserActionMsg({ type: 'error', text: errMsg });
+      showNotification({
         type: 'error',
-        text: 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.',
+        title: 'Gagal Mewujudkan ID Pengguna',
+        message: errMsg,
       });
       return;
     }
@@ -1343,10 +1391,14 @@ export const AdminPage: React.FC = () => {
       primaryJabatan = 'SEMUA JABATAN';
     }
 
+    const createdId = newAdminId.trim().toUpperCase();
+    const createdNama = newAdminName.trim();
+    const createdLevelLabel = getAdminLevelLabel(newAdminLevelId);
+
     const res = await createAdminUser({
-      id: newAdminId.trim().toUpperCase(),
+      id: createdId,
       password: effectivePass,
-      name: newAdminName.trim(),
+      name: createdNama,
       role: newAdminLevelId === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'ADMIN',
       levelId: newAdminLevelId,
       pusat: newAdminLevelId === 'SUPER_ADMIN' ? '' : (newAdminPusat || pusatList[0] || ''),
@@ -1358,11 +1410,17 @@ export const AdminPage: React.FC = () => {
     });
 
     if (res.success) {
+      const successBannerText =
+        res.message ||
+        `ID "${createdId}" (${createdLevelLabel}) untuk "${createdNama}" berjaya didaftarkan! (Kata laluan: ${effectivePass})`;
       setUserActionMsg({
         type: 'success',
-        text:
-          res.message ||
-          `ID "${newAdminId.toUpperCase()}" (${getAdminLevelLabel(newAdminLevelId)}) untuk "${newAdminName}" berjaya didaftarkan! (Kata laluan: ${effectivePass})`,
+        text: successBannerText,
+      });
+      showNotification({
+        type: 'success',
+        title: 'ID Pengguna Baharu Berjaya Diwujudkan',
+        message: `TAHNIAH!!! ID baharu telah berjaya diwujudkan.\n\nBerikut merupakan maklumat ID baharu pegawai:\nNama Pegawai: ${createdNama}\nPeranan ID: ${createdLevelLabel}\nID: ${createdId}\nKata laluan (default): ${effectivePass}`,
       });
       setSelectedPegawaiIdForAdmin('');
       setNewAdminLevelId('URUS_SETIA');
@@ -1374,7 +1432,13 @@ export const AdminPage: React.FC = () => {
       setNewAdminJabatanAccess({});
       setNewAdminPageAccess({});
     } else {
-      setUserActionMsg({ type: 'error', text: res.message || 'Gagal mendaftar admin.' });
+      const errMsg = res.message || 'Gagal mendaftar admin.';
+      setUserActionMsg({ type: 'error', text: errMsg });
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mewujudkan ID Pengguna',
+        message: errMsg,
+      });
     }
   };
 
@@ -1447,9 +1511,15 @@ export const AdminPage: React.FC = () => {
     const finalLevel: AdminLevelId = isEditingAman ? 'SUPER_ADMIN' : editAdminLevelId;
 
     if (finalLevel !== 'SUPER_ADMIN' && editAdminSelectedJabatans.length === 0) {
+      const errMsg = 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.';
       setEditAdminMsg({
         type: 'error',
-        text: 'Sila pilih sekurang-kurangnya satu Jabatan dalam Jabatan Diberi Akses.',
+        text: errMsg,
+      });
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mengemaskini ID Pengguna',
+        message: errMsg,
       });
       return;
     }
@@ -1479,9 +1549,15 @@ export const AdminPage: React.FC = () => {
 
     const trimmedPassword = editAdminPassword.trim();
     if (!trimmedPassword) {
+      const errMsg = 'Kata Laluan wajib diisi dan tidak boleh dibiarkan kosong.';
       setEditAdminMsg({
         type: 'error',
-        text: 'Kata Laluan wajib diisi dan tidak boleh dibiarkan kosong.',
+        text: errMsg,
+      });
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mengemaskini ID Pengguna',
+        message: errMsg,
       });
       return;
     }
@@ -1499,13 +1575,26 @@ export const AdminPage: React.FC = () => {
       pageAccess: finalPageAccess,
     });
     if (res.success) {
+      const savedId = editingAdminUser.id;
+      const successMsg = `Kemaskini ID "${savedId}" berjaya disimpan.`;
       setEditingAdminUser(null);
       setUserActionMsg({
         type: 'success',
-        text: `Kemaskini ID "${editingAdminUser.id}" berjaya disimpan.`,
+        text: successMsg,
+      });
+      showNotification({
+        type: 'success',
+        title: 'Kemaskini ID Pengguna Berjaya',
+        message: successMsg,
       });
     } else {
-      setEditAdminMsg({ type: 'error', text: res.message || 'Gagal mengemaskini maklumat admin.' });
+      const errMsg = res.message || 'Gagal mengemaskini maklumat admin.';
+      setEditAdminMsg({ type: 'error', text: errMsg });
+      showNotification({
+        type: 'error',
+        title: 'Gagal Mengemaskini ID Pengguna',
+        message: errMsg,
+      });
     }
   };
 
@@ -2965,7 +3054,7 @@ export const AdminPage: React.FC = () => {
                                 maxLength={20}
                                 value={newAdminId}
                                 onChange={(e) => setNewAdminId(e.target.value.toUpperCase().slice(0, 20))}
-                                placeholder="CTH: ADMIN_WAN"
+                                placeholder="CTH: WAN"
                                 className="w-full py-2 px-3 bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 uppercase font-mono"
                               />
                             </div>
@@ -3910,7 +3999,18 @@ export const AdminPage: React.FC = () => {
                                         'Padam Kluster IAB',
                                         `Adakah anda pasti ingin memadamkan kluster "${klu}"?`,
                                         () => {
-                                          deleteKluster(klu);
+                                          const res = deleteKluster(klu);
+                                          showNotification({
+                                            type: res.success ? 'success' : 'error',
+                                            title: res.success
+                                              ? 'Kluster IAB Berjaya Dipadam'
+                                              : 'Gagal Memadam Kluster IAB',
+                                            message:
+                                              res.message ||
+                                              (res.success
+                                                ? `Kluster IAB "${klu}" berjaya dipadam.`
+                                                : 'Gagal memadam Kluster IAB.'),
+                                          });
                                         }
                                       );
                                     }}
@@ -3955,15 +4055,37 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!klusterInput.trim()) return;
-                          if (editingKluster) {
-                            updateKluster(editingKluster, klusterInput.trim());
-                          } else {
-                            addKluster(klusterInput.trim());
+                          if (!klusterInput.trim()) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Kluster IAB',
+                              message: 'Sila masukkan Nama Kluster IAB.',
+                            });
+                            return;
+                          }
+                          const res = editingKluster
+                            ? updateKluster(editingKluster, klusterInput.trim())
+                            : addKluster(klusterInput.trim());
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingKluster
+                                ? 'Gagal Mengemaskini Kluster IAB'
+                                : 'Gagal Mendaftar Kluster IAB',
+                              message: res.message || 'Gagal menyimpan rekod Kluster IAB.',
+                            });
+                            return;
                           }
                           setIsKlusterModalOpen(false);
                           setEditingKluster(null);
                           setKlusterInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingKluster
+                              ? 'Kluster IAB Berjaya Dikemaskini'
+                              : 'Kluster IAB Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Kluster IAB berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >
@@ -4085,7 +4207,16 @@ export const AdminPage: React.FC = () => {
                                       'Padam Pusat',
                                       `Adakah anda pasti ingin memadamkan pusat "${p}" dan semua jabatannya?`,
                                       () => {
-                                        deletePusat(p);
+                                        const res = deletePusat(p);
+                                        showNotification({
+                                          type: res.success ? 'success' : 'error',
+                                          title: res.success ? 'Pusat Berjaya Dipadam' : 'Gagal Memadam Pusat',
+                                          message:
+                                            res.message ||
+                                            (res.success
+                                              ? `Pusat "${p}" berjaya dipadam.`
+                                              : 'Gagal memadam Pusat.'),
+                                        });
                                       }
                                     );
                                   }}
@@ -4129,15 +4260,33 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!pusatInput.trim()) return;
-                          if (editingPusat) {
-                            updatePusat(editingPusat, pusatInput.trim(), pusatKlusterInput);
-                          } else {
-                            addPusat(pusatInput.trim(), pusatKlusterInput);
+                          if (!pusatInput.trim()) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Pusat',
+                              message: 'Sila masukkan Nama Pusat.',
+                            });
+                            return;
+                          }
+                          const res = editingPusat
+                            ? updatePusat(editingPusat, pusatInput.trim(), pusatKlusterInput)
+                            : addPusat(pusatInput.trim(), pusatKlusterInput);
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingPusat ? 'Gagal Mengemaskini Pusat' : 'Gagal Mendaftar Pusat',
+                              message: res.message || 'Gagal menyimpan rekod Pusat.',
+                            });
+                            return;
                           }
                           setIsPusatModalOpen(false);
                           setEditingPusat(null);
                           setPusatInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingPusat ? 'Pusat Berjaya Dikemaskini' : 'Pusat Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Pusat berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >
@@ -4348,7 +4497,18 @@ export const AdminPage: React.FC = () => {
                                       'Padam Jabatan',
                                       `Adakah anda pasti ingin memadamkan jabatan "${jab}"?`,
                                       () => {
-                                        deleteJabatan(selectedPusatForJabatan, jab);
+                                        const res = deleteJabatan(selectedPusatForJabatan, jab);
+                                        showNotification({
+                                          type: res.success ? 'success' : 'error',
+                                          title: res.success
+                                            ? 'Jabatan Berjaya Dipadam'
+                                            : 'Gagal Memadam Jabatan',
+                                          message:
+                                            res.message ||
+                                            (res.success
+                                              ? `Jabatan "${jab}" berjaya dipadam.`
+                                              : 'Gagal memadam Jabatan.'),
+                                        });
                                       }
                                     );
                                   }}
@@ -4392,16 +4552,40 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!jabatanInput.trim() || !modalPusatForJabatan) return;
-                          if (editingJabatan) {
-                            updateJabatan(modalPusatForJabatan, editingJabatan, jabatanInput.trim());
-                          } else {
-                            addJabatan(modalPusatForJabatan, jabatanInput.trim());
+                          if (!jabatanInput.trim() || !modalPusatForJabatan) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Jabatan',
+                              message: !modalPusatForJabatan
+                                ? 'Sila pilih Nama Pusat terlebih dahulu.'
+                                : 'Sila masukkan Nama Jabatan.',
+                            });
+                            return;
+                          }
+                          const res = editingJabatan
+                            ? updateJabatan(modalPusatForJabatan, editingJabatan, jabatanInput.trim())
+                            : addJabatan(modalPusatForJabatan, jabatanInput.trim());
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingJabatan
+                                ? 'Gagal Mengemaskini Jabatan'
+                                : 'Gagal Mendaftar Jabatan',
+                              message: res.message || 'Gagal menyimpan rekod Jabatan.',
+                            });
+                            return;
                           }
                           setSelectedPusatForJabatan(modalPusatForJabatan);
                           setIsJabatanModalOpen(false);
                           setEditingJabatan(null);
                           setJabatanInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingJabatan
+                              ? 'Jabatan Berjaya Dikemaskini'
+                              : 'Jabatan Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Jabatan berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >
@@ -4557,7 +4741,18 @@ export const AdminPage: React.FC = () => {
                                     'Padam Sumber Kewangan',
                                     `Adakah anda pasti ingin memadamkan sumber "${sk}"?`,
                                     () => {
-                                      deleteSumberKewangan(sk);
+                                      const res = deleteSumberKewangan(sk);
+                                      showNotification({
+                                        type: res.success ? 'success' : 'error',
+                                        title: res.success
+                                          ? 'Sumber Kewangan Berjaya Dipadam'
+                                          : 'Gagal Memadam Sumber Kewangan',
+                                        message:
+                                          res.message ||
+                                          (res.success
+                                            ? `Sumber Kewangan "${sk}" berjaya dipadam.`
+                                            : 'Gagal memadam Sumber Kewangan.'),
+                                      });
                                     }
                                   );
                                 }}
@@ -4600,15 +4795,37 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!sumberInput.trim()) return;
-                          if (editingSumber) {
-                            updateSumberKewangan(editingSumber, sumberInput.trim());
-                          } else {
-                            addSumberKewangan(sumberInput.trim());
+                          if (!sumberInput.trim()) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Sumber Kewangan',
+                              message: 'Sila masukkan Nama Sumber Kewangan.',
+                            });
+                            return;
+                          }
+                          const res = editingSumber
+                            ? updateSumberKewangan(editingSumber, sumberInput.trim())
+                            : addSumberKewangan(sumberInput.trim());
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingSumber
+                                ? 'Gagal Mengemaskini Sumber Kewangan'
+                                : 'Gagal Mendaftar Sumber Kewangan',
+                              message: res.message || 'Gagal menyimpan rekod Sumber Kewangan.',
+                            });
+                            return;
                           }
                           setIsSumberModalOpen(false);
                           setEditingSumber(null);
                           setSumberInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingSumber
+                              ? 'Sumber Kewangan Berjaya Dikemaskini'
+                              : 'Sumber Kewangan Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Sumber Kewangan berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >
@@ -4716,7 +4933,18 @@ export const AdminPage: React.FC = () => {
                                     'Padam Status Program',
                                     `Adakah anda pasti ingin memadamkan status "${st}"?`,
                                     () => {
-                                      deleteStatusProgram(st);
+                                      const res = deleteStatusProgram(st);
+                                      showNotification({
+                                        type: res.success ? 'success' : 'error',
+                                        title: res.success
+                                          ? 'Status Program Berjaya Dipadam'
+                                          : 'Gagal Memadam Status Program',
+                                        message:
+                                          res.message ||
+                                          (res.success
+                                            ? `Status Program "${st}" berjaya dipadam.`
+                                            : 'Gagal memadam Status Program.'),
+                                      });
                                     }
                                   );
                                 }}
@@ -4759,15 +4987,37 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!statusInput.trim()) return;
-                          if (editingStatus) {
-                            updateStatusProgram(editingStatus, statusInput.trim());
-                          } else {
-                            addStatusProgram(statusInput.trim());
+                          if (!statusInput.trim()) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Status Program',
+                              message: 'Sila masukkan Nama Status Program.',
+                            });
+                            return;
+                          }
+                          const res = editingStatus
+                            ? updateStatusProgram(editingStatus, statusInput.trim())
+                            : addStatusProgram(statusInput.trim());
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingStatus
+                                ? 'Gagal Mengemaskini Status Program'
+                                : 'Gagal Mendaftar Status Program',
+                              message: res.message || 'Gagal menyimpan rekod Status Program.',
+                            });
+                            return;
                           }
                           setIsStatusModalOpen(false);
                           setEditingStatus(null);
                           setStatusInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingStatus
+                              ? 'Status Program Berjaya Dikemaskini'
+                              : 'Status Program Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Status Program berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >
@@ -4879,7 +5129,18 @@ export const AdminPage: React.FC = () => {
                                     'Padam Jawatan',
                                     `Adakah anda pasti ingin memadamkan jawatan "${jwt}"?`,
                                     () => {
-                                      deleteJawatan(jwt);
+                                      const res = deleteJawatan(jwt);
+                                      showNotification({
+                                        type: res.success ? 'success' : 'error',
+                                        title: res.success
+                                          ? 'Jawatan Berjaya Dipadam'
+                                          : 'Gagal Memadam Jawatan',
+                                        message:
+                                          res.message ||
+                                          (res.success
+                                            ? `Jawatan "${jwt}" berjaya dipadam.`
+                                            : 'Gagal memadam Jawatan.'),
+                                      });
                                     }
                                   );
                                 }}
@@ -4922,15 +5183,37 @@ export const AdminPage: React.FC = () => {
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (!jawatanInput.trim()) return;
-                          if (editingJawatan) {
-                            updateJawatan(editingJawatan, jawatanInput.trim());
-                          } else {
-                            addJawatan(jawatanInput.trim());
+                          if (!jawatanInput.trim()) {
+                            showNotification({
+                              type: 'error',
+                              title: 'Gagal Mendaftar Jawatan',
+                              message: 'Sila masukkan Nama Jawatan.',
+                            });
+                            return;
+                          }
+                          const res = editingJawatan
+                            ? updateJawatan(editingJawatan, jawatanInput.trim())
+                            : addJawatan(jawatanInput.trim());
+                          if (!res.success) {
+                            showNotification({
+                              type: 'error',
+                              title: editingJawatan
+                                ? 'Gagal Mengemaskini Jawatan'
+                                : 'Gagal Mendaftar Jawatan',
+                              message: res.message || 'Gagal menyimpan rekod Jawatan.',
+                            });
+                            return;
                           }
                           setIsJawatanModalOpen(false);
                           setEditingJawatan(null);
                           setJawatanInput('');
+                          showNotification({
+                            type: 'success',
+                            title: editingJawatan
+                              ? 'Jawatan Berjaya Dikemaskini'
+                              : 'Jawatan Berjaya Didaftarkan',
+                            message: res.message || 'Rekod Jawatan berjaya disimpan.',
+                          });
                         }}
                         className="p-5 space-y-4 text-xs"
                       >

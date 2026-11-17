@@ -479,7 +479,25 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 10. Komitmen Pesanan Tempatan (BELANJA SEBENAR STATUS TANGGUNG) */}
+        {/* 10. Perbelanjaan Sebenar Keseluruhan */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              Perbelanjaan Sebenar
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center">
+              <TrendingDown className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div>
+            <div className="text-lg sm:text-xl font-black text-rose-950 truncate" title={formatRM(totalActualExp)}>
+              {formatRM(totalActualExp)}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">Belanja sebenar program</p>
+          </div>
+        </div>
+
+        {/* 11. Komitmen Pesanan Tempatan (BELANJA SEBENAR STATUS TANGGUNG) */}
         <div
           onClick={() => onOpenDrillDown('Komitmen Pesanan Tempatan (Belanja Sebenar Status TANGGUNG)', upcomingTanggungList)}
           className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs hover:border-amber-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-amber-50/30"
@@ -503,7 +521,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 11. Baki Tersedia (PENJIMATAN BAKI BERSIH STATUS TANGGUNG) */}
+        {/* 12. Baki Tersedia (PENJIMATAN BAKI BERSIH STATUS TANGGUNG) */}
         <div
           onClick={() => onOpenDrillDown('Baki Bersih (Penjimatan Status TANGGUNG)', upcomingTanggungList)}
           className="bg-white p-4 rounded-xl border border-emerald-300 shadow-xs hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-emerald-50/40"
@@ -524,24 +542,6 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
               <span>Baki Bersih Tanggung</span>
               <span className="text-[10px] underline">Lihat &rarr;</span>
             </p>
-          </div>
-        </div>
-
-        {/* 12. Perbelanjaan Sebenar Keseluruhan */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Perbelanjaan Sebenar
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center">
-              <TrendingDown className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div>
-            <div className="text-lg sm:text-xl font-black text-rose-950 truncate" title={formatRM(totalActualExp)}>
-              {formatRM(totalActualExp)}
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1">Belanja sebenar program</p>
           </div>
         </div>
       </div>

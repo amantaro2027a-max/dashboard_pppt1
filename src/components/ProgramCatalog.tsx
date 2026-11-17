@@ -83,19 +83,24 @@ export const ProgramCatalog: React.FC = () => {
     const pegIdNorm = matchedPegawai?.id?.trim().toUpperCase();
     const pegNamaNorm = matchedPegawai?.nama?.trim().toUpperCase();
 
-    return uniqueFilteredPrograms.filter((prog) => {
-      // Syarat A0: Ketua Pusat dibenarkan melihat semua program di bawah Pusatnya
-      if (
-        currentUser.levelId === 'KETUA_PUSAT' &&
-        prog.pusat &&
-        filterScope.allowedPusats.includes(prog.pusat)
-      ) {
-        return true;
-      }
+    const isStaffOnlyScope =
+      currentUser.levelId === 'P_PB' || currentUser.levelId === 'URUS_SETIA';
 
-      // Syarat A: Di bawah JABATAN DIBERI AKSES
-      if (prog.jabatan && allowed.includes(prog.jabatan)) {
-        return true;
+    return uniqueFilteredPrograms.filter((prog) => {
+      if (!isStaffOnlyScope) {
+        // Syarat A0: Ketua Pusat dibenarkan melihat semua program di bawah Pusatnya
+        if (
+          currentUser.levelId === 'KETUA_PUSAT' &&
+          prog.pusat &&
+          filterScope.allowedPusats.includes(prog.pusat)
+        ) {
+          return true;
+        }
+
+        // Syarat A: Di bawah JABATAN DIBERI AKSES
+        if (prog.jabatan && allowed.includes(prog.jabatan)) {
+          return true;
+        }
       }
 
       // Syarat B: User/admin sebagai Pengurus program
@@ -185,10 +190,10 @@ export const ProgramCatalog: React.FC = () => {
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => setActiveTab(currentUser ? 'dashboard' : 'pengiraan')}
               className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
             >
-              <span>Kembali ke Dashboard Program</span>
+              <span>{currentUser ? 'Kembali ke Dashboard Program' : 'Kembali ke Pengiraan Bajet'}</span>
             </button>
           </div>
         </div>
@@ -201,15 +206,25 @@ export const ProgramCatalog: React.FC = () => {
       {/* 1. Filter by Pusat, Jabatan, Jenis Program, Pengurus, Pengurus Bersama, Negeri, Sumber Kewangan, Tahun, Bulan, Status (Sama seperti Page 1) */}
       <FilterBar showTahunBulan={true} showStatusFilter={true} />
 
-      {/* Maklumat Skop Akses jika pengguna log masuk dan ada penapisan jabatan */}
-      {currentUser && currentUser.role !== 'SUPER_ADMIN' && currentUser.allowedJabatans && currentUser.allowedJabatans.length > 0 && !currentUser.allowedJabatans.includes('SEMUA JABATAN') && (
+      {/* Maklumat Skop Akses jika pengguna log masuk dan ada penapisan jabatan/pegawai */}
+      {currentUser &&
+        !isSuperAdmin &&
+        currentUser.levelId !== 'PENGARAH' &&
+        currentUser.levelId !== 'TPP_TPL' &&
+        (currentUser.levelId === 'P_PB' ||
+          currentUser.levelId === 'URUS_SETIA' ||
+          (currentUser.allowedJabatans &&
+            currentUser.allowedJabatans.length > 0 &&
+            !currentUser.allowedJabatans.includes('SEMUA JABATAN'))) && (
         <div className="mb-4 px-3.5 py-2.5 bg-blue-50 border border-blue-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-blue-900">
           <div className="flex items-center gap-2">
             <span className="font-bold uppercase tracking-wider text-[10px] bg-blue-200 text-blue-950 px-2 py-0.5 rounded">
               Skop Akses Pengguna
             </span>
             <span>
-              Memaparkan katalog program di bawah jabatan diberi akses, atau di mana anda dilantik sebagai Pengurus / Pengurus Bersama.
+              {currentUser.levelId === 'P_PB' || currentUser.levelId === 'URUS_SETIA'
+                ? 'Memaparkan katalog program di mana anda dilantik sebagai Pengurus, Pengurus Bersama, atau Urus Setia sahaja.'
+                : 'Memaparkan katalog program di bawah jabatan diberi akses, atau di mana anda dilantik sebagai Pengurus / Pengurus Bersama / Urus Setia.'}
             </span>
           </div>
           <span className="font-semibold text-blue-800 tabular-nums shrink-0">

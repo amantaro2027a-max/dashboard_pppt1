@@ -41,11 +41,11 @@ export const AdminLogin: React.FC = () => {
           <div className="w-12 h-12 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center mx-auto mb-3 shadow-xs">
             <ShieldCheck className="w-6 h-6" />
           </div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-            Log Masuk Akaun Pengguna &amp; Pentadbir
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 uppercase text-center mb-1.5 tracking-tight">
+            LOG MASUK AKAUN PENGGUNA
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Dashboard Pusat · Institut Aminuddin Baki (IAB)
+          <p className="text-xs sm:text-sm font-medium text-slate-600 text-center leading-relaxed">
+            Sila masukkan ID Pengguna dan Kata Laluan untuk mengakses halaman dan maklumat mengikut tahap kebenaran anda.
           </p>
         </div>
 

@@ -1193,10 +1193,10 @@ export const AdminMonitoringPage: React.FC = () => {
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
           <button
             type="button"
-            onClick={() => setActiveTab(currentUser ? 'selamatDatang' : 'dashboard')}
+            onClick={() => setActiveTab(currentUser ? 'selamatDatang' : 'pengiraan')}
             className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
-            {currentUser ? 'Return to Selamat Datang' : 'Return to Dashboard Program'}
+            {currentUser ? 'Return to Selamat Datang' : 'Return to Pengiraan Bajet'}
           </button>
           {!currentUser && (
             <button
