@@ -49,6 +49,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { PusatJabatanChatSection } from './PusatJabatanChatSection';
+import { DashboardPusatSection } from './DashboardPusatSection';
 
 const OS_META: Array<{
   key: 'os21000' | 'os24000' | 'os27000' | 'os29000';
@@ -187,8 +188,9 @@ export const PusatPage: React.FC = () => {
   const [chatTopik, setChatTopik] = useState<MessageTopik>('BAKI');
   const [chatText, setChatText] = useState<string>('');
 
-  // By default hide all sections except Section 1 (1. Nama Pusat)
+  // By default hide all sections except Section 1 (1. Nama Pusat) and Dashboard Pusat
   const [expandedSections, setExpandedSections] = useState<{
+    dashboardPusat: boolean;
     peruntukanPusat: boolean;
     s2: boolean;
     s2b: boolean;
@@ -199,6 +201,7 @@ export const PusatPage: React.FC = () => {
     s5: boolean;
     s6: boolean;
   }>({
+    dashboardPusat: true,
     peruntukanPusat: false,
     s2: false,
     s2b: false,
@@ -271,6 +274,12 @@ export const PusatPage: React.FC = () => {
     return { allowed: false, expired: true };
   };
 
+  // Programs filtered to selectedPusat across all years (deduplicated by Kod Program)
+  const allPusatPrograms = useMemo(() => {
+    if (!selectedPusat) return [];
+    return deduplicateProgramsByCode(programs.filter((p) => p.pusat === selectedPusat));
+  }, [programs, selectedPusat]);
+
   // Programs filtered to selectedPusat and optional year (deduplicated by Kod Program)
   const pusatPrograms = useMemo(() => {
     if (!selectedPusat) return [];
@@ -298,15 +307,38 @@ export const PusatPage: React.FC = () => {
     return Array.from(set);
   }, [selectedPusat, jabatanMap, pusatPrograms, pegawaiList]);
 
-  // Officers under selectedPusat
+  // Officers under selectedPusat (plus any officer assigned on pusatPrograms)
   const pusatOfficers = useMemo(() => {
     if (!selectedPusat) return [];
-    return pegawaiList.filter(
-      (pg) =>
+    const byId = new Map<string, Pegawai>();
+    pegawaiList.forEach((pg) => {
+      if (
         pg.pusat === selectedPusat ||
         (pg.jabatan && jabatansUnderPusat.includes(pg.jabatan))
-    );
-  }, [pegawaiList, selectedPusat, jabatansUnderPusat]);
+      ) {
+        byId.set(pg.id, pg);
+      }
+    });
+    pusatPrograms.forEach((p) => {
+      pegawaiList.forEach((pg) => {
+        const idNorm = (pg.id || '').trim().toUpperCase();
+        const nmNorm = (pg.nama || '').trim().toUpperCase();
+        const match =
+          (idNorm &&
+            ((p.pengurusId || '').trim().toUpperCase() === idNorm ||
+              (p.pengurusBersamaId || '').trim().toUpperCase() === idNorm ||
+              (p.urusSetiaId || '').trim().toUpperCase() === idNorm)) ||
+          (nmNorm &&
+            ((p.pengurusNama || '').trim().toUpperCase() === nmNorm ||
+              (p.pengurusBersamaNama || '').trim().toUpperCase() === nmNorm ||
+              (p.urusSetiaNama || '').trim().toUpperCase() === nmNorm));
+        if (match && !byId.has(pg.id)) {
+          byId.set(pg.id, pg);
+        }
+      });
+    });
+    return Array.from(byId.values());
+  }, [pegawaiList, selectedPusat, jabatansUnderPusat, pusatPrograms]);
 
   // Officer program stats under Pusat
   const officerProgramMap = useMemo(() => {
@@ -1001,6 +1033,33 @@ export const PusatPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* ================================================================= */}
+      {/* DASHBOARD PUSAT (DEFAULT PAPAR)                                   */}
+      {/* ================================================================= */}
+      <DashboardPusatSection
+        selectedPusat={selectedPusat}
+        filterTahun={filterTahun}
+        jabatansUnderPusat={jabatansUnderPusat}
+        pusatPrograms={pusatPrograms}
+        allPusatPrograms={allPusatPrograms}
+        pusatOfficers={pusatOfficers}
+        allPegawaiList={pegawaiList}
+        isExpanded={expandedSections.dashboardPusat}
+        onToggleExpand={() => toggleSection('dashboardPusat')}
+        onViewProgram={viewProgramDetail}
+        onDrillDown={(title, subtitle, items) => setDrillModal({ title, subtitle, items })}
+        onLogExport={(description) =>
+          logActivity({
+            action_type: 'EXPORT',
+            module_name: 'Page Pusat · Dashboard Pusat',
+            activity_description: description,
+            record_id: selectedPusat || 'IAB',
+            status: 'SUCCESS',
+          })
+        }
+        onNotify={showNotification}
+      />
 
       {/* ================================================================= */}
       {/* 1B. PERUNTUKAN DILULUSKAN MENGIKUT PECAHAN OS (DARI PAGE PERUNTUKAN) */}

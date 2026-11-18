@@ -31,6 +31,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { PusatJabatanChatSection } from './PusatJabatanChatSection';
+import { DashboardJabatanSection } from './DashboardJabatanSection';
 
 const OS_META: Array<{
   key: 'os21000' | 'os24000' | 'os27000' | 'os29000';
@@ -137,8 +138,9 @@ export const JabatanPage: React.FC = () => {
   const [chatTopik, setChatTopik] = useState<MessageTopik>('BAKI');
   const [chatText, setChatText] = useState<string>('');
 
-  // By default hide all sections except Section 1 (1. Nama Jabatan)
+  // By default hide all sections except Section 1 (1. Nama Jabatan) and Dashboard Jabatan
   const [expandedSections, setExpandedSections] = useState<{
+    dashboardJabatan: boolean;
     kewangan: boolean;
     chat: boolean;
     s2: boolean;
@@ -146,6 +148,7 @@ export const JabatanPage: React.FC = () => {
     s4: boolean;
     s5: boolean;
   }>({
+    dashboardJabatan: true,
     kewangan: false,
     chat: false,
     s2: false,
@@ -331,6 +334,11 @@ export const JabatanPage: React.FC = () => {
     setChatText('');
   };
 
+  const allJabatanPrograms = useMemo(() => {
+    if (!selectedJabatan) return [];
+    return deduplicateProgramsByCode(programs.filter((p) => p.jabatan === selectedJabatan));
+  }, [programs, selectedJabatan]);
+
   const jabatanPrograms = useMemo(() => {
     if (!selectedJabatan) return [];
     return deduplicateProgramsByCode(
@@ -342,7 +350,7 @@ export const JabatanPage: React.FC = () => {
     );
   }, [programs, selectedJabatan, filterTahun]);
 
-  // Officers belonging to selectedJabatan (plus any managing programs under it)
+  // Officers belonging to selectedJabatan (plus any managing/supporting programs under it)
   const jabatanOfficers = useMemo(() => {
     if (!selectedJabatan) return [];
     const byId = new Map<string, Pegawai>();
@@ -351,7 +359,7 @@ export const JabatanPage: React.FC = () => {
         byId.set(pg.id, pg);
       }
     });
-    // Also include officers who lead/co-lead programs in this Jabatan
+    // Also include officers who lead/co-lead/support programs in this Jabatan
     jabatanPrograms.forEach((p) => {
       pegawaiList.forEach((pg) => {
         const idNorm = (pg.id || '').trim().toUpperCase();
@@ -362,7 +370,10 @@ export const JabatanPage: React.FC = () => {
         const matchBersama =
           (idNorm && (p.pengurusBersamaId || '').trim().toUpperCase() === idNorm) ||
           (nmNorm && (p.pengurusBersamaNama || '').trim().toUpperCase() === nmNorm);
-        if ((matchUtama || matchBersama) && !byId.has(pg.id)) {
+        const matchUrusSetia =
+          (idNorm && (p.urusSetiaId || '').trim().toUpperCase() === idNorm) ||
+          (nmNorm && (p.urusSetiaNama || '').trim().toUpperCase() === nmNorm);
+        if ((matchUtama || matchBersama || matchUrusSetia) && !byId.has(pg.id)) {
           byId.set(pg.id, pg);
         }
       });
@@ -750,6 +761,22 @@ export const JabatanPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* ================================================================= */}
+      {/* DASHBOARD JABATAN (DEFAULT PAPAR)                                 */}
+      {/* ================================================================= */}
+      <DashboardJabatanSection
+        selectedJabatan={selectedJabatan}
+        filterTahun={filterTahun}
+        jabatanPrograms={jabatanPrograms}
+        allJabatanPrograms={allJabatanPrograms}
+        jabatanOfficers={jabatanOfficers}
+        allPegawaiList={pegawaiList}
+        isExpanded={expandedSections.dashboardJabatan}
+        onToggleExpand={() => toggleSection('dashboardJabatan')}
+        onViewProgram={viewProgramDetail}
+        onDrillDown={(title, subtitle, items) => setDrillModal({ title, subtitle, items })}
+      />
 
       {/* ================================================================= */}
       {/* KEWANGAN JABATAN (PECAHAN OS & PULANGKAN BAKI)                   */}

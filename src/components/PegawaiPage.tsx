@@ -138,6 +138,7 @@ export const PegawaiPage: React.FC = () => {
   const {
     programs,
     pegawaiList,
+    statusProgramList,
     currentUser,
     isSuperAdmin,
     getPageAccessMode,
@@ -495,9 +496,32 @@ export const PegawaiPage: React.FC = () => {
     return items;
   }, [myScopedEntries]);
 
+  const notifStatusOptions = useMemo(() => {
+    const baseStatuses = [
+      'SELESAI',
+      'DALAM TINDAKAN',
+      'TANGGUNG',
+      'BELUM AMBIL TINDAKAN',
+      'BATAL',
+      ...(statusProgramList || []),
+    ];
+    const counts = new Map<string, number>();
+    baseStatuses.forEach((s) => {
+      const norm = (s || '').trim().toUpperCase();
+      if (norm && !counts.has(norm)) counts.set(norm, 0);
+    });
+    notifications.forEach((n) => {
+      const st = (n.program.statusProgram || 'BELUM AMBIL TINDAKAN').trim().toUpperCase();
+      counts.set(st, (counts.get(st) || 0) + 1);
+    });
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
+  }, [statusProgramList, notifications]);
+
   const filteredNotifications = useMemo(() => {
     if (notifFilter === 'SEMUA') return notifications;
-    return notifications.filter((n) => n.category === notifFilter);
+    return notifications.filter(
+      (n) => (n.program.statusProgram || 'BELUM AMBIL TINDAKAN').trim().toUpperCase() === notifFilter
+    );
   }, [notifications, notifFilter]);
 
   // All BK04 Amendment records across officer's scoped programmes
@@ -1269,54 +1293,72 @@ export const PegawaiPage: React.FC = () => {
                     </h3>
                   </div>
 
-                  <select
-                    value={notifFilter}
-                    onChange={(e) => setNotifFilter(e.target.value)}
-                    className="px-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
-                  >
-                    <option value="SEMUA">Semua Kategori ({notifications.length})</option>
-                    <option value="AKAN_DATANG">Program Akan Datang</option>
-                    <option value="DALAM_TINDAKAN">Program Dalam Tindakan</option>
-                    <option value="PINDAAN_MAKLUMAT">Perubahan Maklumat Program</option>
-                    <option value="PENUGASAN_PEGAWAI">Perubahan Penugasan Pegawai</option>
-                    <option value="TIDAK_LENGKAP">Maklumat Program Belum Lengkap</option>
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="pegawai-notif-status-filter"
+                      className="text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap"
+                    >
+                      Status Program:
+                    </label>
+                    <select
+                      id="pegawai-notif-status-filter"
+                      value={notifFilter}
+                      onChange={(e) => setNotifFilter(e.target.value)}
+                      className="px-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-800"
+                    >
+                      <option value="SEMUA">Semua Status Program ({notifications.length})</option>
+                      {notifStatusOptions.map((opt) => (
+                        <option key={opt.status} value={opt.status}>
+                          {opt.status} ({opt.count})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {filteredNotifications.length === 0 ? (
                   <div className="py-8 text-center text-xs text-slate-400">
-                    Tiada notifikasi dalam kategori yang dipilih.
+                    Tiada notifikasi bagi status program yang dipilih.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto pr-1">
-                    {filteredNotifications.map((n) => (
-                      <button
-                        key={n.id}
-                        type="button"
-                        onClick={() => viewProgramDetail(n.program)}
-                        className="text-left p-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-slate-50/40 hover:bg-white transition-all cursor-pointer flex items-start gap-3"
-                      >
-                        <div className="mt-0.5 shrink-0">
-                          {n.severity === 'alert' ? (
-                            <FileWarning className="w-4 h-4 text-rose-600" />
-                          ) : n.severity === 'warning' ? (
-                            <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          ) : (
-                            <Bell className="w-4 h-4 text-blue-600" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-center justify-between gap-2 text-[11px]">
-                            <span className="font-bold text-indigo-700">{n.categoryLabel}</span>
-                            <span className="font-mono text-slate-400 shrink-0">{n.dateHint}</span>
+                    {filteredNotifications.map((n) => {
+                      const statusCfg = getStatusConfig(n.program.statusProgram);
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => viewProgramDetail(n.program)}
+                          className="text-left p-3.5 rounded-xl border border-slate-200 hover:border-slate-400 bg-slate-50/40 hover:bg-white transition-all cursor-pointer flex items-start gap-3"
+                        >
+                          <div className="mt-0.5 shrink-0">
+                            {n.severity === 'alert' ? (
+                              <FileWarning className="w-4 h-4 text-rose-600" />
+                            ) : n.severity === 'warning' ? (
+                              <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            ) : (
+                              <Bell className="w-4 h-4 text-blue-600" />
+                            )}
                           </div>
-                          <p className="text-xs font-bold text-slate-900 line-clamp-1 uppercase">
-                            {n.title}
-                          </p>
-                          <p className="text-[11px] text-slate-600 leading-snug">{n.detail}</p>
-                        </div>
-                      </button>
-                    ))}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="font-bold text-indigo-700 truncate">{n.categoryLabel}</span>
+                              <span className="font-mono text-slate-400 shrink-0">{n.dateHint}</span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-900 line-clamp-1 uppercase">
+                              {n.title}
+                            </p>
+                            <p className="text-[11px] text-slate-600 leading-snug">{n.detail}</p>
+                            <div className="pt-0.5 flex items-center gap-2 text-[10px]">
+                              <span className={`font-bold px-2 py-0.5 rounded border ${statusCfg.badgeBg}`}>
+                                {statusCfg.label}
+                              </span>
+                              <span className="font-mono text-slate-400">{n.program.kodProgram}</span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </section>
