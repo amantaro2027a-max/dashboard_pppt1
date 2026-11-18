@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { SubwaranRecord, PtjOption } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
 import { getCurrentFinanceYear, getSubwaranYear } from '../utils/financeYear';
+import { filterSubwaranByScope } from '../utils/financeCalculations';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Share2,
@@ -223,6 +224,11 @@ const BahagianSubwaranCard: React.FC<BahagianSubwaranCardProps> = ({
                               ({item.ptjLain})
                             </span>
                           )}
+                          {(item.pusat || item.kluster) && (
+                            <span className="text-[10px] text-amber-800 font-semibold block mt-1">
+                              {item.pusat || item.kluster}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-700">
                           {item.tarikhSubWaran || '-'}
@@ -320,8 +326,16 @@ export const SubwaranPage: React.FC = () => {
     canEditPage,
     setActiveTab,
     sumberKewanganList,
+    klusterList,
+    klusterMap,
+    pusatList,
+    getKlusterForPusat,
     selectedFinanceYear,
     setSelectedFinanceYear,
+    financeKlusterFilter,
+    financePusatFilter,
+    financeTargetPusats,
+    isFinanceOrgAutoFiltered,
     subwaranList,
     addSubwaran,
     updateSubwaran,
@@ -332,8 +346,15 @@ export const SubwaranPage: React.FC = () => {
   const canEdit = isSuperAdmin || canEditPage('SUBWARAN');
 
   const yearSubwaranList = useMemo(
-    () => subwaranList.filter((item) => getSubwaranYear(item) === selectedFinanceYear),
-    [subwaranList, selectedFinanceYear]
+    () =>
+      filterSubwaranByScope(
+        subwaranList,
+        financeTargetPusats,
+        selectedFinanceYear,
+        financeKlusterFilter,
+        getKlusterForPusat
+      ),
+    [subwaranList, financeTargetPusats, selectedFinanceYear, financeKlusterFilter, getKlusterForPusat]
   );
 
   // Modal states
@@ -342,6 +363,8 @@ export const SubwaranPage: React.FC = () => {
 
   // Form Fields
   const [formSumberKewangan, setFormSumberKewangan] = useState<string>('');
+  const [formKluster, setFormKluster] = useState<string>('');
+  const [formPusat, setFormPusat] = useState<string>('');
   const [formNamaPtj, setFormNamaPtj] = useState<PtjOption>('IABCGH');
   const [formPtjLain, setFormPtjLain] = useState<string>('');
   const [formTarikhSubwaran, setFormTarikhSubwaran] = useState<string>('');
@@ -353,6 +376,13 @@ export const SubwaranPage: React.FC = () => {
   const [formObjektif, setFormObjektif] = useState<string>('');
   const [formPegawaiPic, setFormPegawaiPic] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const availableFormPusats = useMemo(() => {
+    if (formKluster && klusterMap[formKluster]?.length) {
+      return klusterMap[formKluster];
+    }
+    return pusatList;
+  }, [formKluster, klusterMap, pusatList]);
 
   // Delete modal state
   const [deleteTarget, setDeleteTarget] = useState<SubwaranRecord | null>(null);
@@ -431,6 +461,16 @@ export const SubwaranPage: React.FC = () => {
     if (!canEdit) return;
     setEditingItem(null);
     setFormSumberKewangan(sk);
+    const defaultPusat =
+      financePusatFilter !== 'SEMUA' ? financePusatFilter : pusatList[0] || '';
+    const defaultKluster =
+      financeKlusterFilter !== 'SEMUA'
+        ? financeKlusterFilter
+        : defaultPusat
+          ? getKlusterForPusat(defaultPusat)
+          : klusterList[0] || '';
+    setFormKluster(defaultKluster);
+    setFormPusat(defaultPusat);
     setFormNamaPtj('IABCGH');
     setFormPtjLain('');
     const defaultDate =
@@ -454,6 +494,14 @@ export const SubwaranPage: React.FC = () => {
     if (!canEdit) return;
     setEditingItem(item);
     setFormSumberKewangan(item.sumberKewangan);
+    const resolvedPusat =
+      item.pusat || (financePusatFilter !== 'SEMUA' ? financePusatFilter : '');
+    const resolvedKluster =
+      item.kluster ||
+      (resolvedPusat ? getKlusterForPusat(resolvedPusat) : '') ||
+      (financeKlusterFilter !== 'SEMUA' ? financeKlusterFilter : '');
+    setFormKluster(resolvedKluster);
+    setFormPusat(resolvedPusat);
     setFormNamaPtj(item.namaPtj);
     setFormPtjLain(item.ptjLain || '');
     setFormTarikhSubwaran(item.tarikhSubWaran || '');
@@ -473,6 +521,11 @@ export const SubwaranPage: React.FC = () => {
     e.preventDefault();
     if (!canEdit) return;
     setFormError(null);
+
+    if (pusatList.length > 0 && !formPusat) {
+      setFormError('Sila pilih Pusat (Data Induk) bagi rekod subwaran ini.');
+      return;
+    }
 
     if (!formNamaPtj) {
       setFormError('Sila pilih Nama PTJ.');
@@ -498,8 +551,13 @@ export const SubwaranPage: React.FC = () => {
       ? Number(formTarikhSubwaran.slice(0, 4))
       : selectedFinanceYear;
 
+    const resolvedKluster =
+      formKluster || (formPusat ? getKlusterForPusat(formPusat) : '') || undefined;
+
     const payload = {
       sumberKewangan: formSumberKewangan,
+      kluster: resolvedKluster,
+      pusat: formPusat || undefined,
       namaPtj: formNamaPtj,
       ptjLain: formPtjLain.trim() || undefined,
       tarikhSubWaran: formTarikhSubwaran,
@@ -818,6 +876,63 @@ export const SubwaranPage: React.FC = () => {
                   <span>{formError}</span>
                 </div>
               )}
+
+              {/* Grid 0: Kluster & Pusat (Master Data) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-amber-50/50 border border-amber-200/80 rounded-xl p-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Kluster (Data Induk)
+                  </label>
+                  <select
+                    value={formKluster}
+                    disabled={isFinanceOrgAutoFiltered}
+                    onChange={(e) => {
+                      const nextK = e.target.value;
+                      setFormKluster(nextK);
+                      const mappedPusats = nextK ? klusterMap[nextK] || [] : pusatList;
+                      if (formPusat && mappedPusats.length > 0 && !mappedPusats.includes(formPusat)) {
+                        setFormPusat(mappedPusats[0] || '');
+                      }
+                    }}
+                    className={`w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                      isFinanceOrgAutoFiltered ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
+                    }`}
+                  >
+                    <option value="">-- Pilih Kluster --</option>
+                    {klusterList.map((kl) => (
+                      <option key={kl} value={kl}>
+                        {kl}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Pusat (Data Induk) <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={formPusat}
+                    disabled={isFinanceOrgAutoFiltered}
+                    onChange={(e) => {
+                      const nextP = e.target.value;
+                      setFormPusat(nextP);
+                      const mappedK = nextP ? getKlusterForPusat(nextP) : '';
+                      if (mappedK) setFormKluster(mappedK);
+                    }}
+                    className={`w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                      isFinanceOrgAutoFiltered ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
+                    }`}
+                  >
+                    <option value="">-- Pilih Pusat --</option>
+                    {availableFormPusats.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               {/* Grid 1: Nama PTJ & Jika Selain IAB */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

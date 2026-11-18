@@ -645,6 +645,7 @@ export const AdminPage: React.FC = () => {
     { key: 'ANALISIS PEGAWAI', label: 'ANALISIS PEGAWAI MENGIKUT PROGRAM' },
     { key: 'PUSAT', label: 'PAGE PUSAT' },
     { key: 'JABATAN', label: 'PAGE JABATAN' },
+    { key: 'PEGAWAI', label: 'PAGE PEGAWAI' },
     { key: 'PERUNTUKAN', label: 'PERUNTUKAN' },
     { key: 'PERBELANJAAN', label: 'PERBELANJAAN' },
     { key: 'SUBWARAN', label: 'SUBWARAN' },

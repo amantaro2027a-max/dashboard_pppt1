@@ -2,8 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
-import { getFasaYear, getProgramYear, getSubwaranYear } from '../utils/financeYear';
+import { getFasaYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import {
+  filterProgramsByOrgScope,
+  filterSubwaranByScope,
+  getPeruntukanDiluluskanStats,
+} from '../utils/financeCalculations';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Scale,
@@ -228,7 +233,7 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
                   <span>Bahagian {bahagianIndex}.1: BAKI PERUNTUKAN PROGRAM (STATUS: SELESAI &amp; TANGGUNG)</span>
                 </h4>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Perbandingan 3 baris serentak bagi setiap program: PERUNTUKAN DITERIMA, BELANJA SEBENAR, dan PENJIMATAN (OS).
+                  Perbandingan 3 baris serentak bagi setiap program: PERUNTUKAN DIAGIHKAN (BK65), BELANJA SEBENAR, dan PENJIMATAN (OS).
                 </p>
               </div>
 
@@ -303,7 +308,7 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
                               </span>
                             </td>
                             <td className="py-2 px-3 text-[11px] font-semibold text-slate-700 bg-sky-50/50">
-                              PERUNTUKAN DITERIMA
+                              PERUNTUKAN DIAGIHKAN (BK65)
                             </td>
                             <td className="py-2 px-3 text-right font-mono text-slate-700 bg-sky-50/30">
                               {formatRM(d21)}
@@ -420,7 +425,7 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     <tr>
                       <td className="py-2 px-3 font-semibold text-slate-700">
-                        Jumlah PERUNTUKAN DITERIMA Program
+                        Jumlah PERUNTUKAN DIAGIHKAN (BK65) Program
                       </td>
                       <td className="py-2 px-3 text-right font-mono text-slate-800">
                         {formatRMWithPrefix(progTotals.diterima.os21)}
@@ -560,7 +565,7 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
                               </span>
                             </td>
                             <td className="py-2 px-3 text-[11px] font-semibold text-slate-700 bg-sky-50/50">
-                              PERUNTUKAN DITERIMA
+                              PERUNTUKAN DIAGIHKAN (BK65)
                             </td>
                             <td className="py-2 px-3 text-right font-mono text-slate-700 bg-sky-50/30">
                               {formatRM(d21)}
@@ -676,7 +681,7 @@ const BahagianBakiCard: React.FC<BahagianBakiProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     <tr>
                       <td className="py-2 px-3 font-semibold text-slate-700">
-                        Jumlah PERUNTUKAN DITERIMA Program
+                        Jumlah PERUNTUKAN DIAGIHKAN (BK65) Program
                       </td>
                       <td className="py-2 px-3 text-right font-mono text-slate-800">
                         {formatRMWithPrefix(pendingTotals.diterima.os21)}
@@ -935,6 +940,10 @@ export const BakiPeruntukanPage: React.FC = () => {
     setActiveTab,
     sumberKewanganList,
     selectedFinanceYear,
+    financeKlusterFilter,
+    financePusatFilter,
+    financeTargetPusats,
+    getKlusterForPusat,
     programs,
     fasaPeruntukanList,
     subwaranList,
@@ -950,46 +959,55 @@ export const BakiPeruntukanPage: React.FC = () => {
 
   const yearPrograms = useMemo(
     () =>
-      deduplicateProgramsByCode(
-        programs.filter((prog) => getProgramYear(prog) === selectedFinanceYear)
+      filterProgramsByOrgScope(
+        programs,
+        financeTargetPusats,
+        selectedFinanceYear,
+        financeKlusterFilter,
+        getKlusterForPusat
       ),
-    [programs, selectedFinanceYear]
+    [programs, financeTargetPusats, selectedFinanceYear, financeKlusterFilter, getKlusterForPusat]
   );
 
   const yearSubwaranList = useMemo(
-    () => subwaranList.filter((sub) => getSubwaranYear(sub) === selectedFinanceYear),
-    [subwaranList, selectedFinanceYear]
+    () =>
+      filterSubwaranByScope(
+        subwaranList,
+        financeTargetPusats,
+        selectedFinanceYear,
+        financeKlusterFilter,
+        getKlusterForPusat
+      ),
+    [subwaranList, financeTargetPusats, selectedFinanceYear, financeKlusterFilter, getKlusterForPusat]
   );
 
-  // SECTION 1: BAKI PERUNTUKAN KESELURUHAN (PERUNTUKAN − PERBELANJAAN − SUBWARAN)
+  // SECTION 1: BAKI PERUNTUKAN KESELURUHAN (PERUNTUKAN DILULUSKAN − PERBELANJAAN − SUBWARAN)
   const keseluruhanAnalysis = useMemo(() => {
-    // 1. Peruntukan per Sumber Kewangan from all Fasa in selected year
+    // 1. Peruntukan Diluluskan per Sumber Kewangan from all Fasa in selected year & Kluster/Pusat scope
+    const peruntukanStats = getPeruntukanDiluluskanStats(
+      yearFasaList,
+      sumberKewanganList,
+      financeTargetPusats,
+      selectedFinanceYear
+    );
+
     const peruntukanBySk: Record<
       string,
       { os21: number; os24: number; os27: number; os29: number; grand: number }
     > = {};
 
     sumberKewanganList.forEach((sk) => {
-      let p21 = 0, p24 = 0, p27 = 0, p29 = 0;
-      yearFasaList.forEach((fasa) => {
-        const alloc = fasa.allocations?.[sk];
-        if (alloc) {
-          p21 += Number(alloc.os21000) || 0;
-          p24 += Number(alloc.os24000) || 0;
-          p27 += Number(alloc.os27000) || 0;
-          p29 += Number(alloc.os29000) || 0;
-        }
-      });
+      const s = peruntukanStats.bySumber[sk];
       peruntukanBySk[sk] = {
-        os21: p21,
-        os24: p24,
-        os27: p27,
-        os29: p29,
-        grand: p21 + p24 + p27 + p29,
+        os21: s?.os21000 || 0,
+        os24: s?.os24000 || 0,
+        os27: s?.os27000 || 0,
+        os29: s?.os29000 || 0,
+        grand: s?.total || 0,
       };
     });
 
-    // 2. Perbelanjaan per Sumber Kewangan (from programs berstatus SELESAI & TANGGUNG in selected year)
+    // 2. Perbelanjaan per Sumber Kewangan (from programs berstatus SELESAI & TANGGUNG in selected year & scope)
     const belanjaBySk: Record<
       string,
       { os21: number; os24: number; os27: number; os29: number; grand: number; count: number }
@@ -1112,7 +1130,7 @@ export const BakiPeruntukanPage: React.FC = () => {
         baki: totalBakiGrand,
       },
     };
-  }, [sumberKewanganList, yearFasaList, yearPrograms, yearSubwaranList]);
+  }, [sumberKewanganList, yearFasaList, yearPrograms, yearSubwaranList, financeTargetPusats, selectedFinanceYear]);
 
   // If user cannot access, show restricted screen
   if (!canAccess) {
@@ -1176,7 +1194,7 @@ export const BakiPeruntukanPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="bg-slate-800/90 border border-purple-900/60 px-3 py-2 rounded-lg text-right">
             <span className="text-[10px] text-purple-400 font-semibold uppercase block">
-              Peruntukan Fasa
+              Peruntukan Diluluskan
             </span>
             <span className="text-sm font-bold text-purple-300 font-mono">
               {formatRMWithPrefix(keseluruhanAnalysis.grandTotals.peruntukan)}
@@ -1261,8 +1279,8 @@ export const BakiPeruntukanPage: React.FC = () => {
               <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <th className="py-3 px-3 w-12 text-center">BIL</th>
                 <th className="py-3 px-4 min-w-[200px]">SUMBER KEWANGAN (DATA INDUK)</th>
-                <th className="py-3 px-3 w-36 text-right">PERUNTUKAN (A)</th>
-                <th className="py-3 px-3 w-36 text-right">PERBELANJAAN (B)</th>
+                <th className="py-3 px-3 w-36 text-right">PERUNTUKAN DILULUSKAN (A)</th>
+                <th className="py-3 px-3 w-36 text-right">BELANJA (B)</th>
                 <th className="py-3 px-3 w-40 text-right bg-amber-50/70 text-amber-950 font-bold">
                   PENJIMATAN (A − B)
                 </th>
@@ -1351,7 +1369,7 @@ export const BakiPeruntukanPage: React.FC = () => {
               <span>Perincian Baki Peruntukan Mengikut Sumber Kewangan (Tahun {selectedFinanceYear})</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Pecahan terperinci perbandingan PERUNTUKAN DITERIMA, BELANJA SEBENAR, dan PENJIMATAN (OS) Tahun {selectedFinanceYear} bagi setiap aktiviti program serta agihan Subwaran.
+              Pecahan terperinci perbandingan PERUNTUKAN DIAGIHKAN (BK65), BELANJA SEBENAR, dan PENJIMATAN (OS) Tahun {selectedFinanceYear} bagi setiap aktiviti program serta agihan Subwaran.
             </p>
           </div>
         </div>

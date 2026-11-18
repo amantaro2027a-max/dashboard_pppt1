@@ -22,6 +22,7 @@
         "pengurusBersamaNama": { "type": "string", "maxLength": 200 },
         "urusSetiaId": { "type": "string", "maxLength": 100 },
         "urusSetiaNama": { "type": "string", "maxLength": 200 },
+        "kluster": { "type": "string", "maxLength": 200 },
         "pusat": { "type": "string", "maxLength": 250 },
         "jabatan": { "type": "string", "maxLength": 250 },
         "sumberKewangan": { "type": "string", "maxLength": 150 },
@@ -136,6 +137,8 @@
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "sumberKewangan": { "type": "string", "maxLength": 150 },
+        "kluster": { "type": "string", "maxLength": 200 },
+        "pusat": { "type": "string", "maxLength": 250 },
         "namaPtj": { "type": "string", "maxLength": 100 },
         "ptjLain": { "type": "string", "maxLength": 200 },
         "tarikhSubWaran": { "type": "string", "maxLength": 30 },
@@ -199,6 +202,76 @@
         "reviewed_at": { "type": "string", "maxLength": 64 }
       },
       "required": ["alert_id", "rule_code", "title", "severity", "status", "timestamp"]
+    },
+    "jabatan_allocations": {
+      "title": "JabatanAllocation",
+      "description": "Rekod agihan peruntukan daripada Ketua Pusat kepada Jabatan mengikut pecahan OS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 250 },
+        "tahun": { "type": "number" },
+        "tarikh": { "type": "string", "maxLength": 30 },
+        "os21000": { "type": "number" },
+        "os24000": { "type": "number" },
+        "os27000": { "type": "number" },
+        "os29000": { "type": "number" },
+        "jumlah": { "type": "number" },
+        "catatan": { "type": "string", "maxLength": 1000 },
+        "diagihkanOlehId": { "type": "string", "maxLength": 128 },
+        "diagihkanOlehNama": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "createdAtMs": { "type": "number" },
+        "serverCreatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "pusat", "jabatan", "tahun", "tarikh", "os21000", "os24000", "os27000", "os29000", "jumlah", "diagihkanOlehId", "diagihkanOlehNama", "createdAt"]
+    },
+    "jabatan_pullbacks": {
+      "title": "JabatanPullback",
+      "description": "Rekod penarikan semula (TARIK) oleh Ketua Pusat atau pemulangan (PULANGKAN) oleh Ketua Jabatan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 250 },
+        "tahun": { "type": "number" },
+        "jenisTindakan": { "type": "string", "enum": ["TARIK", "PULANGKAN"] },
+        "sumberBaki": { "type": "string", "enum": ["ASAL", "PENJIMATAN"] },
+        "tarikh": { "type": "string", "maxLength": 30 },
+        "os21000": { "type": "number" },
+        "os24000": { "type": "number" },
+        "os27000": { "type": "number" },
+        "os29000": { "type": "number" },
+        "jumlah": { "type": "number" },
+        "catatan": { "type": "string", "maxLength": 1000 },
+        "dilakukanOlehId": { "type": "string", "maxLength": 128 },
+        "dilakukanOlehNama": { "type": "string", "maxLength": 200 },
+        "dilakukanOlehPeranan": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "pusat", "jabatan", "tahun", "jenisTindakan", "sumberBaki", "tarikh", "os21000", "os24000", "os27000", "os29000", "jumlah", "dilakukanOlehId", "dilakukanOlehNama", "dilakukanOlehPeranan", "createdAt"]
+    },
+    "pusat_jabatan_messages": {
+      "title": "PusatJabatanMessage",
+      "description": "Komunikasi perbincangan antara Ketua Pusat dan Ketua Jabatan berkaitan baki, penarikan dan pemulangan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "pusat": { "type": "string", "maxLength": 250 },
+        "jabatan": { "type": "string", "maxLength": 250 },
+        "tahun": { "type": "number" },
+        "pengirimId": { "type": "string", "maxLength": 128 },
+        "pengirimNama": { "type": "string", "maxLength": 200 },
+        "pengirimLevel": { "type": "string", "maxLength": 64 },
+        "mesej": { "type": "string", "maxLength": 2000 },
+        "topik": { "type": "string", "enum": ["BAKI", "PENARIKAN", "PEMULANGAN", "AGIHAN", "UMUM"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "createdAtMs": { "type": "number" },
+        "serverCreatedAt": { "type": "string", "format": "date-time" },
+        "malaysiaDisplay": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "pusat", "jabatan", "tahun", "pengirimId", "pengirimNama", "pengirimLevel", "mesej", "createdAt", "malaysiaDisplay"]
     }
   },
   "firestore": {
@@ -233,6 +306,19 @@
     "/security_alerts/{alertId}": {
       "schema": { "$ref": "#/entities/security_alerts" },
       "description": "Amaran keselamatan automatik"
+    },
+    "/jabatan_allocations/{allocationId}": {
+      "schema": { "$ref": "#/entities/jabatan_allocations" },
+      "description": "Rekod agihan peruntukan Ketua Pusat kepada Jabatan"
+    },
+    "/jabatan_pullbacks/{pullbackId}": {
+      "schema": { "$ref": "#/entities/jabatan_pullbacks" },
+      "description": "Rekod penarikan semula dan pemulangan baki Jabatan"
+    },
+    "/pusat_jabatan_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/pusat_jabatan_messages" },
+      "description": "Mesej komunikasi antara Ketua Pusat dan Ketua Jabatan"
     }
   }
 }
+

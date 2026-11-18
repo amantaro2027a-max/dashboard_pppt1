@@ -2,8 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
-import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { getCurrentFinanceYear, getFasaYear, getProgramYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import {
+  getPeruntukanDiluluskanStats,
+  getProgramFinanceAggregate,
+} from '../utils/financeCalculations';
 import * as XLSX from 'xlsx';
 import {
   Layers,
@@ -51,7 +55,8 @@ interface PusatMetric {
   batal: number;
   peserta: number;
   hari: number;
-  peruntukan: number;
+  peruntukanDiluluskan: number;
+  peruntukanDiagihkan: number;
   belanja: number;
   penjimatan: number;
   successRate: number;
@@ -69,7 +74,7 @@ interface JabatanMetric {
   batal: number;
   peserta: number;
   hari: number;
-  peruntukan: number;
+  peruntukanDiagihkan: number;
   belanja: number;
   penjimatan: number;
   successRate: number;
@@ -87,6 +92,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     jabatanMap,
     pegawaiList,
     programs,
+    fasaPeruntukanList,
+    sumberKewanganList,
     viewProgramDetail,
     logActivity,
   } = useProgramContext();
@@ -129,8 +136,11 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     programs.forEach((p) => {
       set.add(String(getProgramYear(p)));
     });
+    (fasaPeruntukanList || []).forEach((f) => {
+      set.add(String(getFasaYear(f)));
+    });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [programs]);
+  }, [programs, fasaPeruntukanList]);
 
   const effectivePusats = useMemo(() => {
     if (selectedPusatFilter !== 'SEMUA' && pusatsUnderKluster.includes(selectedPusatFilter)) {
@@ -162,14 +172,19 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
   const klusterPrograms = useMemo(() => {
     const jabSet = new Set(allJabatansUnderKluster.map((x) => x.jabatan));
     const pusSet = new Set(effectivePusats);
+    const resolvedUpper = resolvedKlusterName.trim().toUpperCase();
     return deduplicateProgramsByCode(
       programs.filter((p) => {
-        const matchKluster = pusSet.has(p.pusat) || jabSet.has(p.jabatan);
+        const matchKluster =
+          pusSet.has(p.pusat) ||
+          jabSet.has(p.jabatan) ||
+          (selectedPusatFilter === 'SEMUA' &&
+            (p.kluster || '').trim().toUpperCase() === resolvedUpper);
         const matchYear = filterTahun === 'SEMUA' || String(getProgramYear(p)) === filterTahun;
         return matchKluster && matchYear;
       })
     );
-  }, [programs, effectivePusats, allJabatansUnderKluster, filterTahun]);
+  }, [programs, effectivePusats, allJabatansUnderKluster, filterTahun, selectedPusatFilter, resolvedKlusterName]);
 
   // Pegawai under Pusats in this Kluster
   const klusterOfficers = useMemo(() => {
@@ -187,16 +202,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
     const batal = groupProgs.filter((p) => p.statusProgram === 'BATAL').length;
     const peserta = groupProgs.reduce((sum, p) => sum + (Number(p.bilanganPeserta) || 0), 0);
     const hari = groupProgs.reduce((sum, p) => sum + (Number(p.jumlahHari) || 0), 0);
-    const peruntukan = groupProgs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-    const belanja = groupProgs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
-    const penjimatan = groupProgs.reduce(
-      (sum, p) =>
-        sum +
-        (p.jumlahPenjimatanRm !== undefined
-          ? Number(p.jumlahPenjimatanRm)
-          : Math.max(0, (Number(p.jumlahRm) || 0) - (Number(p.jumlahBelanjaRm) || 0))),
-      0
-    );
+    const fin = getProgramFinanceAggregate(groupProgs, true);
     const activeTotal = Math.max(0, groupProgs.length - batal);
     const successRate = activeTotal > 0 ? Math.round((selesai / activeTotal) * 100) : 0;
     return {
@@ -208,9 +214,9 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       batal,
       peserta,
       hari,
-      peruntukan,
-      belanja,
-      penjimatan,
+      peruntukanDiagihkan: fin.diagihkan.total,
+      belanja: fin.belanja.total,
+      penjimatan: fin.penjimatan.total,
       successRate,
     };
   };
@@ -223,14 +229,21 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       const pusProgs = klusterPrograms.filter((p) => p.pusat === pus || jabSet.has(p.jabatan));
       const pusPeg = klusterOfficers.filter((peg) => peg.pusat === pus || jabSet.has(peg.jabatan || ''));
       const stats = computeProgramGroupStats(pusProgs);
+      const diluluskanStats = getPeruntukanDiluluskanStats(
+        fasaPeruntukanList,
+        sumberKewanganList,
+        [pus],
+        filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+      );
       return {
         pusat: pus,
         jabatanCount: jabs.length,
         pegawaiCount: pusPeg.length,
+        peruntukanDiluluskan: diluluskanStats.overall.total,
         ...stats,
       };
     });
-  }, [effectivePusats, jabatanMap, klusterPrograms, klusterOfficers]);
+  }, [effectivePusats, jabatanMap, klusterPrograms, klusterOfficers, fasaPeruntukanList, sumberKewanganList, filterTahun]);
 
   // Metrics per Jabatan
   const jabatanMetrics: JabatanMetric[] = useMemo(() => {
@@ -250,13 +263,20 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
   // Kluster Grand Totals
   const klusterTotals = useMemo(() => {
     const base = computeProgramGroupStats(klusterPrograms);
+    const diluluskanStats = getPeruntukanDiluluskanStats(
+      fasaPeruntukanList,
+      sumberKewanganList,
+      effectivePusats,
+      filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+    );
     return {
       ...base,
+      peruntukanDiluluskan: diluluskanStats.overall.total,
       pusatCount: effectivePusats.length,
       jabatanCount: allJabatansUnderKluster.length,
       pegawaiCount: klusterOfficers.length,
     };
-  }, [klusterPrograms, effectivePusats.length, allJabatansUnderKluster.length, klusterOfficers.length]);
+  }, [klusterPrograms, effectivePusats, allJabatansUnderKluster.length, klusterOfficers.length, fasaPeruntukanList, sumberKewanganList, filterTahun]);
 
   // Officer Performance Rows
   const officerRows = useMemo(() => {
@@ -296,7 +316,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       else if (officerSortKey === 'jabatan') cmp = (a.pegawai.jabatan || '').localeCompare(b.pegawai.jabatan || '');
       else if (officerSortKey === 'total') cmp = a.totalPrograms - b.totalPrograms;
       else if (officerSortKey === 'selesai') cmp = a.selesai - b.selesai;
-      else if (officerSortKey === 'peruntukan') cmp = a.peruntukan - b.peruntukan;
+      else if (officerSortKey === 'peruntukan') cmp = a.peruntukanDiagihkan - b.peruntukanDiagihkan;
       return officerSortDir === 'asc' ? cmp : -cmp;
     });
 
@@ -314,12 +334,16 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
 
   const maxPusatProg = useMemo(() => Math.max(1, ...pusatMetrics.map((p) => p.totalPrograms)), [pusatMetrics]);
   const maxPusatBudget = useMemo(
-    () => Math.max(1, ...pusatMetrics.map((p) => Math.max(p.peruntukan, p.belanja))),
+    () =>
+      Math.max(
+        1,
+        ...pusatMetrics.map((p) => Math.max(p.peruntukanDiluluskan, p.peruntukanDiagihkan, p.belanja))
+      ),
     [pusatMetrics]
   );
   const maxJabProg = useMemo(() => Math.max(1, ...jabatanMetrics.map((j) => j.totalPrograms)), [jabatanMetrics]);
   const maxJabBudget = useMemo(
-    () => Math.max(1, ...jabatanMetrics.map((j) => Math.max(j.peruntukan, j.belanja))),
+    () => Math.max(1, ...jabatanMetrics.map((j) => Math.max(j.peruntukanDiagihkan, j.belanja))),
     [jabatanMetrics]
   );
 
@@ -339,8 +363,9 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       Batal: p.batal,
       'Jumlah Peserta': p.peserta,
       'Jumlah Hari': p.hari,
-      'Peruntukan (RM)': p.peruntukan,
-      'Belanja Sebenar (RM)': p.belanja,
+      'Peruntukan Diluluskan (RM)': p.peruntukanDiluluskan,
+      'Peruntukan Diagihkan (RM)': p.peruntukanDiagihkan,
+      'Belanja (RM)': p.belanja,
       'Penjimatan (RM)': p.penjimatan,
       'Kadar Selesai (%)': `${p.successRate}%`,
     }));
@@ -358,8 +383,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
       Batal: j.batal,
       'Jumlah Peserta': j.peserta,
       'Jumlah Hari': j.hari,
-      'Peruntukan (RM)': j.peruntukan,
-      'Belanja Sebenar (RM)': j.belanja,
+      'Peruntukan Diagihkan (RM)': j.peruntukanDiagihkan,
+      'Belanja (RM)': j.belanja,
       'Penjimatan (RM)': j.penjimatan,
       'Kadar Selesai (%)': `${j.successRate}%`,
     }));
@@ -494,7 +519,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-800 tabular-nums">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5 pt-4 border-t border-slate-800 tabular-nums">
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
             <div className="text-[10px] font-bold uppercase text-slate-400">Pusat</div>
             <div className="text-xl font-black text-white mt-0.5">{klusterTotals.pusatCount}</div>
@@ -518,17 +543,21 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
               <span className="text-xs font-bold text-slate-400">({klusterTotals.successRate}%)</span>
             </div>
           </div>
-          <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Peruntukan</div>
-            <div className="text-sm font-black text-amber-300 mt-1">RM {formatRM(klusterTotals.peruntukan)}</div>
+          <div className="bg-slate-800/70 rounded-xl p-3 border border-purple-700/50">
+            <div className="text-[10px] font-bold uppercase text-purple-300">Peruntukan Diluluskan</div>
+            <div className="text-xs font-black text-purple-200 mt-1">RM {formatRM(klusterTotals.peruntukanDiluluskan)}</div>
           </div>
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Belanja</div>
-            <div className="text-sm font-black text-sky-300 mt-1">RM {formatRM(klusterTotals.belanja)}</div>
+            <div className="text-[10px] font-bold uppercase text-amber-300">Peruntukan Diagihkan</div>
+            <div className="text-xs font-black text-amber-200 mt-1">RM {formatRM(klusterTotals.peruntukanDiagihkan)}</div>
           </div>
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Penjimatan</div>
-            <div className="text-sm font-black text-emerald-300 mt-1">RM {formatRM(klusterTotals.penjimatan)}</div>
+            <div className="text-[10px] font-bold uppercase text-sky-300">Belanja</div>
+            <div className="text-xs font-black text-sky-200 mt-1">RM {formatRM(klusterTotals.belanja)}</div>
+          </div>
+          <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
+            <div className="text-[10px] font-bold uppercase text-emerald-300">Penjimatan</div>
+            <div className="text-xs font-black text-emerald-200 mt-1">RM {formatRM(klusterTotals.penjimatan)}</div>
           </div>
         </div>
       </section>
@@ -623,10 +652,14 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs tabular-nums">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100 text-xs tabular-nums">
                   <div>
-                    <div className="text-[10px] font-bold text-slate-500 uppercase">Peruntukan</div>
-                    <div className="font-bold text-slate-900">RM {formatRM(pm.peruntukan)}</div>
+                    <div className="text-[10px] font-bold text-purple-700 uppercase">Peruntukan Diluluskan</div>
+                    <div className="font-bold text-purple-950">RM {formatRM(pm.peruntukanDiluluskan)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Peruntukan Diagihkan</div>
+                    <div className="font-bold text-slate-900">RM {formatRM(pm.peruntukanDiagihkan)}</div>
                   </div>
                   <div>
                     <div className="text-[10px] font-bold text-slate-500 uppercase">Belanja</div>
@@ -712,8 +745,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                           <span>Selesai: <strong className="text-emerald-700">{jm.selesai}</strong> ({jm.successRate}%)</span>
                         </div>
                         <div className="text-[11px] text-slate-700 font-semibold tabular-nums pt-1 border-t border-slate-200/70 flex justify-between">
-                          <span>Peruntukan:</span>
-                          <span>RM {formatRM(jm.peruntukan)}</span>
+                          <span>Peruntukan Diagihkan:</span>
+                          <span>RM {formatRM(jm.peruntukanDiagihkan)}</span>
                         </div>
                       </div>
                     ))
@@ -798,7 +831,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                   Selesai
                 </th>
                 <th onClick={() => handleSortOfficer('peruntukan')} className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-200">
-                  Peruntukan (RM)
+                  Peruntukan Diagihkan (RM)
                 </th>
               </tr>
             </thead>
@@ -845,7 +878,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                       {row.selesai}
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                      RM {formatRM(row.peruntukan)}
+                      RM {formatRM(row.peruntukanDiagihkan)}
                     </td>
                   </tr>
                 ))
@@ -928,8 +961,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                       )}
                     </div>
                     <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500">
-                      <span>Peserta: <strong className="text-slate-800">{pm.peserta}</strong> · Hari: <strong className="text-slate-800">{pm.hari}</strong></span>
-                      <span>Peruntukan: <strong className="text-slate-900">RM {formatRM(pm.peruntukan)}</strong></span>
+                      <span>Peserta: <strong className="text-slate-800">{pm.peserta}</strong> · Diluluskan: <strong className="text-purple-900">RM {formatRM(pm.peruntukanDiluluskan)}</strong></span>
+                      <span>Diagihkan: <strong className="text-slate-900">RM {formatRM(pm.peruntukanDiagihkan)}</strong></span>
                     </div>
                   </div>
                 );
@@ -1020,17 +1053,23 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 tabular-nums">
-          {/* Comparison 1: Peruntukan vs Belanja Sebenar */}
+          {/* Comparison 1: Peruntukan Diluluskan / Peruntukan Diagihkan vs Belanja */}
           <div className="space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <Wallet className="w-4 h-4 text-blue-600" />
-              <span>Perbandingan Peruntukan Diterima vs Belanja Sebenar (RM)</span>
+              <span>
+                {comparisonTarget === 'pusat'
+                  ? 'Perbandingan Peruntukan Diluluskan, Peruntukan Diagihkan vs Belanja (RM)'
+                  : 'Perbandingan Peruntukan Diagihkan vs Belanja (RM)'}
+              </span>
             </h4>
             <div className="space-y-3">
               {(comparisonTarget === 'pusat' ? pusatMetrics : jabatanMetrics).map((item) => {
                 const label = 'jabatan' in item ? item.jabatan : item.pusat;
                 const maxB = comparisonTarget === 'pusat' ? maxPusatBudget : maxJabBudget;
-                const wPer = Math.round((item.peruntukan / maxB) * 100);
+                const diluluskan = 'peruntukanDiluluskan' in item ? item.peruntukanDiluluskan : null;
+                const wDil = diluluskan !== null ? Math.round((diluluskan / maxB) * 100) : 0;
+                const wPer = Math.round((item.peruntukanDiagihkan / maxB) * 100);
                 const wBel = Math.round((item.belanja / maxB) * 100);
                 return (
                   <div key={label} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
@@ -1038,15 +1077,24 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                       {label}
                     </div>
                     <div className="space-y-1">
+                      {diluluskan !== null && (
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <span className="w-24 text-purple-700 font-semibold shrink-0">Diluluskan</span>
+                          <div className="flex-1 h-2.5 bg-white rounded-full border border-slate-200 overflow-hidden">
+                            <div style={{ width: `${wDil}%` }} className="h-full bg-purple-600 rounded-full" />
+                          </div>
+                          <span className="w-24 text-right font-bold text-purple-900">RM {formatRM(diluluskan)}</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 text-[11px]">
-                        <span className="w-20 text-slate-500 font-semibold shrink-0">Peruntukan</span>
+                        <span className="w-24 text-slate-500 font-semibold shrink-0">Diagihkan</span>
                         <div className="flex-1 h-2.5 bg-white rounded-full border border-slate-200 overflow-hidden">
                           <div style={{ width: `${wPer}%` }} className="h-full bg-blue-600 rounded-full" />
                         </div>
-                        <span className="w-24 text-right font-bold text-slate-900">RM {formatRM(item.peruntukan)}</span>
+                        <span className="w-24 text-right font-bold text-slate-900">RM {formatRM(item.peruntukanDiagihkan)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-[11px]">
-                        <span className="w-20 text-slate-500 font-semibold shrink-0">Belanja</span>
+                        <span className="w-24 text-slate-500 font-semibold shrink-0">Belanja</span>
                         <div className="flex-1 h-2.5 bg-white rounded-full border border-slate-200 overflow-hidden">
                           <div style={{ width: `${wBel}%` }} className="h-full bg-emerald-600 rounded-full" />
                         </div>
@@ -1140,7 +1188,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                 <th className="py-2.5 px-2 text-center text-slate-600">Belum</th>
                 <th className="py-2.5 px-2 text-center text-rose-700">Batal</th>
                 <th className="py-2.5 px-2 text-right">Peserta</th>
-                <th className="py-2.5 px-3 text-right">Peruntukan (RM)</th>
+                <th className="py-2.5 px-3 text-right text-purple-800">Peruntukan Diluluskan (RM)</th>
+                <th className="py-2.5 px-3 text-right">Peruntukan Diagihkan (RM)</th>
                 <th className="py-2.5 px-3 text-right">Belanja (RM)</th>
                 <th className="py-2.5 px-3 text-right">Penjimatan (RM)</th>
               </tr>
@@ -1158,7 +1207,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                   <td className="py-2.5 px-2 text-center">{pm.belum}</td>
                   <td className="py-2.5 px-2 text-center font-bold text-rose-600">{pm.batal}</td>
                   <td className="py-2.5 px-2 text-right">{pm.peserta}</td>
-                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(pm.peruntukan)}</td>
+                  <td className="py-2.5 px-3 text-right font-semibold text-purple-800">{formatRM(pm.peruntukanDiluluskan)}</td>
+                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(pm.peruntukanDiagihkan)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-blue-700">{formatRM(pm.belanja)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">{formatRM(pm.penjimatan)}</td>
                 </tr>
@@ -1174,7 +1224,8 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                 <td className="py-3 px-2 text-center">{klusterTotals.belum}</td>
                 <td className="py-3 px-2 text-center text-rose-300">{klusterTotals.batal}</td>
                 <td className="py-3 px-2 text-right">{klusterTotals.peserta}</td>
-                <td className="py-3 px-3 text-right">{formatRM(klusterTotals.peruntukan)}</td>
+                <td className="py-3 px-3 text-right text-purple-300">{formatRM(klusterTotals.peruntukanDiluluskan)}</td>
+                <td className="py-3 px-3 text-right text-amber-300">{formatRM(klusterTotals.peruntukanDiagihkan)}</td>
                 <td className="py-3 px-3 text-right text-sky-300">{formatRM(klusterTotals.belanja)}</td>
                 <td className="py-3 px-3 text-right text-emerald-300">{formatRM(klusterTotals.penjimatan)}</td>
               </tr>
@@ -1200,7 +1251,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                 <th className="py-2.5 px-2 text-center text-slate-600">Belum</th>
                 <th className="py-2.5 px-2 text-center text-rose-700">Batal</th>
                 <th className="py-2.5 px-2 text-right">Peserta</th>
-                <th className="py-2.5 px-3 text-right">Peruntukan (RM)</th>
+                <th className="py-2.5 px-3 text-right">Peruntukan Diagihkan (RM)</th>
                 <th className="py-2.5 px-3 text-right">Belanja (RM)</th>
                 <th className="py-2.5 px-3 text-right">Penjimatan (RM)</th>
               </tr>
@@ -1218,7 +1269,7 @@ export const KlusterPage: React.FC<KlusterPageProps> = ({ targetKlusterKey }) =>
                   <td className="py-2.5 px-2 text-center">{jm.belum}</td>
                   <td className="py-2.5 px-2 text-center font-bold text-rose-600">{jm.batal}</td>
                   <td className="py-2.5 px-2 text-right">{jm.peserta}</td>
-                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(jm.peruntukan)}</td>
+                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(jm.peruntukanDiagihkan)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-blue-700">{formatRM(jm.belanja)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">{formatRM(jm.penjimatan)}</td>
                 </tr>

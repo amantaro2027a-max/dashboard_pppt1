@@ -20,6 +20,12 @@ import {
   ActivityLogStatus,
   AlertStatus,
   MonitoringSettings,
+  JabatanAllocationRecord,
+  JabatanPullbackRecord,
+  PusatJabatanMessage,
+  PullbackActionType,
+  PullbackSourceType,
+  MessageTopik,
   getAdminLevelLabel,
 } from '../types/program';
 import {
@@ -43,6 +49,12 @@ import {
   deduplicateProgramsByCode,
   getProgramDedupeKey,
 } from '../utils/programDedupe';
+import {
+  resolveTargetPusats,
+  resolveUserDefaultPusat,
+  computeJabatanFinanceSummary,
+  computePusatPoolSummary,
+} from '../utils/financeCalculations';
 import { INITIAL_PROGRAMS } from '../data/samplePrograms';
 import {
   KLUSTER_LIST,
@@ -68,6 +80,7 @@ import {
   orderBy,
   limit,
   deleteField,
+  serverTimestamp,
 } from 'firebase/firestore';
 import {
   User as FirebaseUser,
@@ -142,8 +155,8 @@ interface ProgramContextType {
   setIsExportOpen: (open: boolean) => void;
   programToEdit: ProgramItem | null;
   setProgramToEdit: (prog: ProgramItem | null) => void;
-  activeTab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
-  setActiveTab: (tab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
+  activeTab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'pegawai' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki';
+  setActiveTab: (tab: 'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'pegawai' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki') => void;
 
   // Program CRUD
   addProgram: (data: Omit<ProgramItem, 'id'>) => { success: boolean; message?: string };
@@ -236,14 +249,25 @@ interface ProgramContextType {
   importStatusProgramBulk: (items: string[]) => { success: boolean; added: number; message?: string };
   importJawatanBulk: (items: string[]) => { success: boolean; added: number; message?: string };
 
-  // Synchronized Finance Year (Default: current year)
+  // Synchronized Finance Year (Default: current year) & Finance Org Filters (Kluster / Pusat)
   selectedFinanceYear: number;
   setSelectedFinanceYear: (year: number) => void;
   availableFinanceYears: number[];
+  financeKlusterFilter: string;
+  setFinanceKlusterFilter: (kluster: string) => void;
+  financePusatFilter: string;
+  setFinancePusatFilter: (pusat: string) => void;
+  resetFinanceOrgFilters: () => void;
+  financeTargetPusats: string[] | null;
+  isFinanceOrgAutoFiltered: boolean;
 
   // Page Peruntukan (Super Admin)
   fasaPeruntukanList: FasaPeruntukanRecord[];
-  updateFasaPeruntukan: (fasaId: string, allocations: Record<string, OsAllocation>) => { success: boolean; message?: string };
+  updateFasaPeruntukan: (
+    fasaId: string,
+    allocations: Record<string, OsAllocation>,
+    pusatAllocations?: Record<string, Record<string, OsAllocation>>
+  ) => { success: boolean; message?: string };
   addFasaPeruntukan: (namaFasa?: string, tahun?: number) => { success: boolean; message?: string };
   deleteFasaPeruntukan: (fasaId: string) => { success: boolean; message?: string };
 
@@ -256,6 +280,46 @@ interface ProgramContextType {
   // Pengiraan Bajet Unit Rates (Super Admin editable, persisted in Firestore)
   budgetRates: BudgetRatesConfig;
   updateBudgetRates: (rates: BudgetRatesConfig) => { success: boolean; message?: string };
+
+  // Pengagihan, Penarikan, Pemulangan & Komunikasi Pusat-Jabatan
+  jabatanAllocations: JabatanAllocationRecord[];
+  jabatanPullbacks: JabatanPullbackRecord[];
+  pusatJabatanMessages: PusatJabatanMessage[];
+  addJabatanAllocationsBatch: (
+    entries: Array<{
+      pusat: string;
+      jabatan: string;
+      tahun: number;
+      tarikh: string;
+      os21000: number;
+      os24000: number;
+      os27000: number;
+      os29000: number;
+      catatan?: string;
+    }>
+  ) => { success: boolean; message?: string };
+  deleteJabatanAllocation: (id: string) => { success: boolean; message?: string };
+  addJabatanPullback: (entry: {
+    pusat: string;
+    jabatan: string;
+    tahun: number;
+    jenisTindakan: PullbackActionType;
+    sumberBaki: PullbackSourceType;
+    tarikh: string;
+    os21000: number;
+    os24000: number;
+    os27000: number;
+    os29000: number;
+    catatan?: string;
+  }) => { success: boolean; message?: string };
+  sendPusatJabatanMessage: (entry: {
+    pusat: string;
+    jabatan: string;
+    tahun: number;
+    mesej: string;
+    topik?: MessageTopik;
+  }) => { success: boolean; message?: string };
+  deletePusatJabatanMessage: (id: string) => { success: boolean; message?: string };
 
   // User Activity Logs, Security Alerts & Cost Control Settings (Admin Monitoring Dashboard)
   activityLogs: UserActivityLog[];
@@ -314,6 +378,9 @@ const STORAGE_ACTIVITY_LOGS = 'pppt_dashboard_activity_logs_v1';
 const STORAGE_SECURITY_ALERTS = 'pppt_dashboard_security_alerts_v1';
 const STORAGE_SESSION_ID = 'pppt_dashboard_session_id_v1';
 const STORAGE_MONITORING_SETTINGS = 'pppt_dashboard_monitoring_settings_v1';
+const STORAGE_JABATAN_ALLOCATIONS = 'pppt_dashboard_jabatan_allocations_v1';
+const STORAGE_JABATAN_PULLBACKS = 'pppt_dashboard_jabatan_pullbacks_v1';
+const STORAGE_PUSAT_JABATAN_MESSAGES = 'pppt_dashboard_pusat_jabatan_messages_v1';
 
 export const DEFAULT_MONITORING_SETTINGS: MonitoringSettings = {
   masterEnabled: true,
@@ -769,19 +836,46 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return DEFAULT_BUDGET_RATES;
   });
 
+  // Jabatan Allocations, Pullbacks & Pusat-Jabatan Messages
+  const [jabatanAllocations, setJabatanAllocations] = useState<JabatanAllocationRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_JABATAN_ALLOCATIONS);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [jabatanPullbacks, setJabatanPullbacks] = useState<JabatanPullbackRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_JABATAN_PULLBACKS);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  const [pusatJabatanMessages, setPusatJabatanMessages] = useState<PusatJabatanMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_PUSAT_JABATAN_MESSAGES);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
   // UI States
   const [selectedFinanceYear, setSelectedFinanceYear] = useState<number>(() => getCurrentFinanceYear());
   const availableFinanceYears = useMemo(
     () => computeAvailableFinanceYears(programs, fasaPeruntukanList, subwaranList),
     [programs, fasaPeruntukanList, subwaranList]
   );
+  const [financeKlusterFilter, setFinanceKlusterFilterState] = useState<string>('SEMUA');
+  const [financePusatFilter, setFinancePusatFilterState] = useState<string>('SEMUA');
   const [filters, setFilters] = useState<ProgramFilterState>(defaultFilters);
   const [selectedProgram, setSelectedProgram] = useState<ProgramItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [programToEdit, setProgramToEdit] = useState<ProgramItem | null>(null);
-  const [activeTab, setActiveTabState] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
+  const [activeTab, setActiveTabState] = useState<'welcome' | 'selamatDatang' | 'dashboard' | 'bersepadu' | 'perincian' | 'analisisPegawai' | 'pengiraan' | 'pusat' | 'jabatan' | 'pegawai' | 'iabAll' | 'klusterProfesional' | 'klusterLatihan' | 'admin' | 'monitoring' | 'peruntukan' | 'perbelanjaan' | 'subwaran' | 'baki'>('welcome');
 
   const [notificationPopup, setNotificationPopup] = useState<NotificationPopupState>({
     isOpen: false,
@@ -892,6 +986,24 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.setItem(STORAGE_SUBWARAN, JSON.stringify(subwaranList));
     } catch {}
   }, [subwaranList]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_JABATAN_ALLOCATIONS, JSON.stringify(jabatanAllocations));
+    } catch {}
+  }, [jabatanAllocations]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_JABATAN_PULLBACKS, JSON.stringify(jabatanPullbacks));
+    } catch {}
+  }, [jabatanPullbacks]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_PUSAT_JABATAN_MESSAGES, JSON.stringify(pusatJabatanMessages));
+    } catch {}
+  }, [pusatJabatanMessages]);
 
   // Local storage persistence fallback
   useEffect(() => {
@@ -1231,6 +1343,76 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       );
       return () => unsub();
     }
+  }, [firebaseUser?.uid, currentUser?.id, currentUser?.role, currentUser?.levelId]);
+
+  // 3b. Authenticated Firestore Listeners for Jabatan Allocations, Pullbacks & Pusat-Jabatan Messages
+  useEffect(() => {
+    if (!firebaseUser || !currentUser) return;
+
+    const unsubAllocs = onSnapshot(
+      collection(db, 'jabatan_allocations'),
+      (snapshot) => {
+        const loaded: JabatanAllocationRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as JabatanAllocationRecord & { serverCreatedAt?: { toMillis?: () => number } };
+          const serverMs = data.serverCreatedAt && typeof data.serverCreatedAt.toMillis === 'function' ? data.serverCreatedAt.toMillis() : undefined;
+          loaded.push({ ...data, id: docSnap.id, createdAtMs: data.createdAtMs ?? serverMs });
+        });
+        setJabatanAllocations(loaded);
+      },
+      (err) => {
+        handleFirestoreError(err, { operation: OperationType.LIST, path: 'jabatan_allocations' });
+      }
+    );
+
+    const unsubPulls = onSnapshot(
+      collection(db, 'jabatan_pullbacks'),
+      (snapshot) => {
+        const loaded: JabatanPullbackRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as JabatanPullbackRecord;
+          loaded.push({ ...data, id: docSnap.id });
+        });
+        setJabatanPullbacks(loaded);
+      },
+      (err) => {
+        handleFirestoreError(err, { operation: OperationType.LIST, path: 'jabatan_pullbacks' });
+      }
+    );
+
+    const canAccessMessages =
+      currentUser.role === 'SUPER_ADMIN' ||
+      currentUser.levelId === 'SUPER_ADMIN' ||
+      currentUser.levelId === 'KETUA_PUSAT' ||
+      currentUser.levelId === 'KETUA_JABATAN';
+
+    let unsubMsgs = () => {};
+    if (canAccessMessages) {
+      unsubMsgs = onSnapshot(
+        collection(db, 'pusat_jabatan_messages'),
+        (snapshot) => {
+          const loaded: PusatJabatanMessage[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as PusatJabatanMessage & { serverCreatedAt?: { toMillis?: () => number } };
+            const serverMs = data.serverCreatedAt && typeof data.serverCreatedAt.toMillis === 'function' ? data.serverCreatedAt.toMillis() : undefined;
+            loaded.push({ ...data, id: docSnap.id, createdAtMs: data.createdAtMs ?? serverMs });
+          });
+          loaded.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+          setPusatJabatanMessages(loaded);
+        },
+        (err) => {
+          handleFirestoreError(err, { operation: OperationType.LIST, path: 'pusat_jabatan_messages' });
+        }
+      );
+    } else {
+      setPusatJabatanMessages([]);
+    }
+
+    return () => {
+      unsubAllocs();
+      unsubPulls();
+      unsubMsgs();
+    };
   }, [firebaseUser?.uid, currentUser?.id, currentUser?.role, currentUser?.levelId]);
 
   // Manual Fetch Function for Monitoring Dashboard (used when real-time listeners are disabled to save quota)
@@ -1825,6 +2007,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return 'view';
     }
 
+    // Personalised Officer Dashboard: accessible to every authenticated officer (RBAC filtered to own assignments)
+    if (key === 'PEGAWAI') {
+      if (currentUser.pageAccess && currentUser.pageAccess['PEGAWAI'] === 'edit') {
+        return 'edit';
+      }
+      return 'view';
+    }
+
     // Check new granular pageAccess map first
     if (currentUser.pageAccess && Object.prototype.hasOwnProperty.call(currentUser.pageAccess, key)) {
       return currentUser.pageAccess[key] === 'edit' ? 'edit' : 'view';
@@ -2110,6 +2300,128 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     return emptyScope;
   }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, programs, pusatList, getAuthorizedJabatanList, getAuthorizedPusatList]);
+
+  const getKlusterForPusat = useCallback(
+    (pusatName: string): string => {
+      const cleanP = (pusatName || '').trim().toUpperCase();
+      for (const [k, pusats] of Object.entries(klusterMap)) {
+        if ((pusats || []).some((p) => p.trim().toUpperCase() === cleanP)) {
+          return k;
+        }
+      }
+      return '';
+    },
+    [klusterMap]
+  );
+
+  // Auto-filter Kluster & Pusat for the 4 financial pages:
+  // Super Admin & Pengarah default to 'SEMUA' / 'SEMUA'; other authorized users auto-filter by their Pusat.
+  const isFinanceOrgAutoFiltered = Boolean(
+    currentUser && !isSuperAdmin && currentUser.levelId !== 'PENGARAH'
+  );
+  const autoFinanceFilterAppliedRef = useRef<string>('');
+
+  useEffect(() => {
+    if (!currentUser) {
+      autoFinanceFilterAppliedRef.current = '';
+      setFinanceKlusterFilterState('SEMUA');
+      setFinancePusatFilterState('SEMUA');
+      return;
+    }
+
+    if (isSuperAdmin || currentUser.levelId === 'PENGARAH') {
+      const key = `${currentUser.id}::ALL`;
+      if (autoFinanceFilterAppliedRef.current !== key) {
+        autoFinanceFilterAppliedRef.current = key;
+        setFinanceKlusterFilterState('SEMUA');
+        setFinancePusatFilterState('SEMUA');
+      }
+      return;
+    }
+
+    const userPusat = resolveUserDefaultPusat(
+      currentUser,
+      pegawaiList,
+      jabatanMap,
+      getAuthorizedPusatList()
+    );
+    const key = `${currentUser.id}::${userPusat}`;
+    if (autoFinanceFilterAppliedRef.current !== key) {
+      autoFinanceFilterAppliedRef.current = key;
+      if (userPusat) {
+        setFinancePusatFilterState(userPusat);
+        const mappedKluster = getKlusterForPusat(userPusat);
+        setFinanceKlusterFilterState(mappedKluster || 'SEMUA');
+      } else {
+        setFinancePusatFilterState('SEMUA');
+        setFinanceKlusterFilterState('SEMUA');
+      }
+    }
+  }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, klusterMap, getAuthorizedPusatList, getKlusterForPusat]);
+
+  const setFinanceKlusterFilter = useCallback(
+    (nextKluster: string) => {
+      if (isFinanceOrgAutoFiltered) return;
+      const clean = nextKluster || 'SEMUA';
+      setFinanceKlusterFilterState(clean);
+      if (clean === 'SEMUA') {
+        setFinancePusatFilterState('SEMUA');
+      } else {
+        const pusatsInKluster = klusterMap[clean] || [];
+        setFinancePusatFilterState((prevPusat) => {
+          if (
+            prevPusat !== 'SEMUA' &&
+            pusatsInKluster.some((p) => p.trim().toUpperCase() === prevPusat.trim().toUpperCase())
+          ) {
+            return prevPusat;
+          }
+          return 'SEMUA';
+        });
+      }
+    },
+    [klusterMap, isFinanceOrgAutoFiltered]
+  );
+
+  const setFinancePusatFilter = useCallback(
+    (nextPusat: string) => {
+      if (isFinanceOrgAutoFiltered) return;
+      const clean = nextPusat || 'SEMUA';
+      setFinancePusatFilterState(clean);
+      if (clean !== 'SEMUA') {
+        const mapped = getKlusterForPusat(clean);
+        if (mapped) {
+          setFinanceKlusterFilterState(mapped);
+        }
+      }
+    },
+    [getKlusterForPusat, isFinanceOrgAutoFiltered]
+  );
+
+  const resetFinanceOrgFilters = useCallback(() => {
+    if (!currentUser || isSuperAdmin || currentUser.levelId === 'PENGARAH') {
+      setFinanceKlusterFilterState('SEMUA');
+      setFinancePusatFilterState('SEMUA');
+      return;
+    }
+    const userPusat = resolveUserDefaultPusat(
+      currentUser,
+      pegawaiList,
+      jabatanMap,
+      getAuthorizedPusatList()
+    );
+    if (userPusat) {
+      setFinancePusatFilterState(userPusat);
+      setFinanceKlusterFilterState(getKlusterForPusat(userPusat) || 'SEMUA');
+    } else {
+      setFinanceKlusterFilterState('SEMUA');
+      setFinancePusatFilterState('SEMUA');
+    }
+  }, [currentUser, isSuperAdmin, pegawaiList, jabatanMap, getAuthorizedPusatList, getKlusterForPusat]);
+
+  const financeTargetPusats = useMemo(
+    () => resolveTargetPusats(financeKlusterFilter, financePusatFilter, klusterMap, pusatList),
+    [financeKlusterFilter, financePusatFilter, klusterMap, pusatList]
+  );
 
   const getCreatableJabatans = useCallback((): string[] => {
     const allJabs = Array.from(new Set(Object.values(jabatanMap).flat())).filter(
@@ -3282,6 +3594,44 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     }
 
+    // Semakan JUMLAH BAKI TERKINI Jabatan apabila Ketua Jabatan menambah program baharu
+    const newProgStatusUpper = (data.statusProgram || '').trim().toUpperCase();
+    if (currentUser.levelId === 'KETUA_JABATAN' && newProgStatusUpper !== 'BATAL') {
+      const req21 = Number(data.os21000) || 0;
+      const req24 = Number(data.os24000) || 0;
+      const req27 = Number(data.os27000) || 0;
+      const req29 = Number(data.os29000) || 0;
+      const reqTotal =
+        data.jumlahRm !== undefined && data.jumlahRm !== null
+          ? Number(data.jumlahRm) || 0
+          : req21 + req24 + req27 + req29;
+
+      if (reqTotal > 0) {
+        const progYear = data.tahun || getProgramYear(data as ProgramItem);
+        const jabSummary = computeJabatanFinanceSummary(
+          data.jabatan,
+          progYear,
+          programs,
+          jabatanAllocations,
+          jabatanPullbacks,
+          data.pusat
+        );
+        const avail = jabSummary.jumlahBakiTerkini;
+        const kekuranganOs: string[] = [];
+        if (req21 > avail.os21000 + 0.001) kekuranganOs.push(`OS21000 (Baki: RM ${formatRM(avail.os21000)}, Mohon: RM ${formatRM(req21)})`);
+        if (req24 > avail.os24000 + 0.001) kekuranganOs.push(`OS24000 (Baki: RM ${formatRM(avail.os24000)}, Mohon: RM ${formatRM(req24)})`);
+        if (req27 > avail.os27000 + 0.001) kekuranganOs.push(`OS27000 (Baki: RM ${formatRM(avail.os27000)}, Mohon: RM ${formatRM(req27)})`);
+        if (req29 > avail.os29000 + 0.001) kekuranganOs.push(`OS29000 (Baki: RM ${formatRM(avail.os29000)}, Mohon: RM ${formatRM(req29)})`);
+
+        if (reqTotal > avail.total + 0.001 || kekuranganOs.length > 0) {
+          return {
+            success: false,
+            message: `Peruntukan tidak mencukupi! JUMLAH BAKI TERKINI Jabatan "${data.jabatan}" (Tahun ${progYear}) ialah RM ${formatRM(avail.total)}, sedangkan jumlah permohonan ialah RM ${formatRM(reqTotal)}.${kekuranganOs.length > 0 ? ` Pecahan OS tidak mencukupi: ${kekuranganOs.join('; ')}.` : ''}`,
+          };
+        }
+      }
+    }
+
     const matchedRegistrar = pegawaiList.find(
       (pg) =>
         (currentUser.name && pg.nama?.trim().toUpperCase() === currentUser.name.trim().toUpperCase()) ||
@@ -3296,8 +3646,10 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dd && mm && yyyy ? `${dd}/${mm}/${yyyy}` : nowParts.malaysia_datetime_display;
 
     const newId = `prog-${Date.now()}`;
+    const resolvedKluster = (data.kluster || getKlusterForPusat(data.pusat) || '').trim();
     const newProg: ProgramItem = sanitizeProgramExpenditure({
       ...data,
+      kluster: resolvedKluster || undefined,
       namaProgram: data.namaProgram.toUpperCase(),
       kodProgram: data.kodProgram.toUpperCase(),
       didaftarOleh: data.didaftarOleh || registrarName,
@@ -3367,6 +3719,60 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
           message:
             'Akses Ditolak: Hanya Ketua Pusat (Pusat berkaitan), Ketua Jabatan (Jabatan berkaitan), atau Pengurus / Pengurus Bersama (program berkaitan) yang mempunyai kebenaran Edit sahaja boleh mengemaskini program ini.',
         };
+      }
+    }
+
+    // Semakan JUMLAH BAKI TERKINI Jabatan sekiranya Ketua Jabatan menambah/menaikkan peruntukan program
+    const nextStatusCheck = (data.statusProgram ?? target.statusProgram ?? '').trim().toUpperCase();
+    if (currentUser.levelId === 'KETUA_JABATAN' && nextStatusCheck !== 'BATAL') {
+      const nextJab = data.jabatan ?? target.jabatan;
+      const nextPus = data.pusat ?? target.pusat;
+      const nextYr = data.tahun ?? getProgramYear({ ...target, ...data } as ProgramItem);
+      const req21 = data.os21000 !== undefined ? Number(data.os21000) || 0 : Number(target.os21000) || 0;
+      const req24 = data.os24000 !== undefined ? Number(data.os24000) || 0 : Number(target.os24000) || 0;
+      const req27 = data.os27000 !== undefined ? Number(data.os27000) || 0 : Number(target.os27000) || 0;
+      const req29 = data.os29000 !== undefined ? Number(data.os29000) || 0 : Number(target.os29000) || 0;
+      const reqTotal = req21 + req24 + req27 + req29;
+
+      const sameJabAndYr =
+        (target.jabatan || '').trim().toUpperCase() === (nextJab || '').trim().toUpperCase() &&
+        getProgramYear(target) === nextYr &&
+        (target.statusProgram || '').trim().toUpperCase() !== 'BATAL';
+      const old21 = sameJabAndYr ? Number(target.os21000) || 0 : 0;
+      const old24 = sameJabAndYr ? Number(target.os24000) || 0 : 0;
+      const old27 = sameJabAndYr ? Number(target.os27000) || 0 : 0;
+      const old29 = sameJabAndYr ? Number(target.os29000) || 0 : 0;
+      const oldTotal = old21 + old24 + old27 + old29;
+
+      const isIncreasing =
+        req21 > old21 || req24 > old24 || req27 > old27 || req29 > old29 || reqTotal > oldTotal;
+      if (isIncreasing) {
+        const jabSummary = computeJabatanFinanceSummary(
+          nextJab,
+          nextYr,
+          programs,
+          jabatanAllocations,
+          jabatanPullbacks,
+          nextPus
+        );
+        const avail21 = jabSummary.jumlahBakiTerkini.os21000 + old21;
+        const avail24 = jabSummary.jumlahBakiTerkini.os24000 + old24;
+        const avail27 = jabSummary.jumlahBakiTerkini.os27000 + old27;
+        const avail29 = jabSummary.jumlahBakiTerkini.os29000 + old29;
+        const availTot = jabSummary.jumlahBakiTerkini.total + oldTotal;
+
+        const kekuranganOs: string[] = [];
+        if (req21 > avail21 + 0.001) kekuranganOs.push(`OS21000 (Boleh guna: RM ${formatRM(avail21)})`);
+        if (req24 > avail24 + 0.001) kekuranganOs.push(`OS24000 (Boleh guna: RM ${formatRM(avail24)})`);
+        if (req27 > avail27 + 0.001) kekuranganOs.push(`OS27000 (Boleh guna: RM ${formatRM(avail27)})`);
+        if (req29 > avail29 + 0.001) kekuranganOs.push(`OS29000 (Boleh guna: RM ${formatRM(avail29)})`);
+
+        if (reqTotal > availTot + 0.001 || kekuranganOs.length > 0) {
+          return {
+            success: false,
+            message: `Peruntukan tidak mencukupi untuk kemaskini ini! Baki boleh guna Jabatan "${nextJab}" (Tahun ${nextYr}) ialah RM ${formatRM(availTot)}, sedangkan amaun baharu ialah RM ${formatRM(reqTotal)}.${kekuranganOs.length > 0 ? ` ${kekuranganOs.join('; ')}.` : ''}`,
+          };
+        }
       }
     }
 
@@ -3540,6 +3946,22 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }
 
+    const existingKluster = target.kluster || getKlusterForPusat(target.pusat) || '';
+    const nextKlusterCandidate =
+      data.kluster !== undefined
+        ? data.kluster
+        : data.pusat !== undefined
+        ? getKlusterForPusat(data.pusat) || existingKluster
+        : existingKluster;
+
+    if (nextKlusterCandidate !== existingKluster && (data.kluster !== undefined || data.pusat !== undefined)) {
+      diffItems.push({
+        jenisPerubahan: 'Kluster',
+        maklumatAsal: existingKluster || 'Tiada',
+        maklumatTerkini: nextKlusterCandidate || 'Tiada',
+      });
+    }
+
     if (data.pusat !== undefined && data.pusat !== target.pusat) {
       diffItems.push({
         jenisPerubahan: 'Pusat',
@@ -3598,6 +4020,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const baseUpdated = sanitizeProgramExpenditure({
       ...target,
       ...data,
+      kluster: nextKlusterCandidate || undefined,
       namaProgram: data.namaProgram !== undefined ? data.namaProgram.toUpperCase() : target.namaProgram,
       kodProgram: data.kodProgram !== undefined ? data.kodProgram.toUpperCase() : target.kodProgram,
     });
@@ -3902,16 +4325,6 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   // Master Data CRUD functions (Super Admin Only)
-  const getKlusterForPusat = (pusatName: string): string => {
-    const cleanP = (pusatName || '').trim().toUpperCase();
-    for (const [k, pusats] of Object.entries(klusterMap)) {
-      if ((pusats || []).some((p) => p.trim().toUpperCase() === cleanP)) {
-        return k;
-      }
-    }
-    return '';
-  };
-
   const addKluster = (namaKluster: string): { success: boolean; message?: string } => {
     if (!currentUser || !isSuperAdmin) {
       return { success: false, message: 'Akses ditolak. Hanya Super Admin dibenarkan menambah Kluster IAB.' };
@@ -4870,7 +5283,8 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Peruntukan Fasa CRUD Functions (Super Admin or Page Peruntukan Edit Permission)
   const updateFasaPeruntukan = (
     fasaId: string,
-    allocations: Record<string, OsAllocation>
+    allocations: Record<string, OsAllocation>,
+    pusatAllocations?: Record<string, Record<string, OsAllocation>>
   ): { success: boolean; message?: string } => {
     if (!currentUser || (!isSuperAdmin && !canEditPage('PERUNTUKAN'))) {
       return { success: false, message: 'Mod Paparan Sahaja: Kebenaran Edit diperlukan untuk mengemaskini peruntukan fasa.' };
@@ -4882,6 +5296,7 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...f,
             tahun: getFasaYear(f),
             allocations,
+            ...(pusatAllocations !== undefined ? { pusatAllocations } : {}),
             updatedAt: new Date().toISOString().slice(0, 10),
           }
         : f
@@ -5111,6 +5526,364 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
+  // Pusat -> Jabatan Allocation, Pullback (TARIK/PULANGKAN) & Messaging
+  const addJabatanAllocationsBatch = (
+    entries: Array<{
+      pusat: string;
+      jabatan: string;
+      tahun: number;
+      tarikh: string;
+      os21000: number;
+      os24000: number;
+      os27000: number;
+      os29000: number;
+      catatan?: string;
+    }>
+  ): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk untuk membuat agihan kepada jabatan.' };
+    }
+    const isKetuaPusatUser = currentUser.levelId === 'KETUA_PUSAT';
+    if (!isSuperAdmin && !isKetuaPusatUser) {
+      return {
+        success: false,
+        message: 'Akses ditolak. Hanya Ketua Pusat atau Super Admin boleh membuat agihan kepada jabatan.',
+      };
+    }
+
+    const validEntries = entries.filter((e) => {
+      const sum =
+        (Number(e.os21000) || 0) +
+        (Number(e.os24000) || 0) +
+        (Number(e.os27000) || 0) +
+        (Number(e.os29000) || 0);
+      return e.pusat && e.jabatan && sum > 0;
+    });
+
+    if (validEntries.length === 0) {
+      return { success: false, message: 'Sila masukkan sekurang-kurangnya satu amaun agihan (> RM 0.00).' };
+    }
+
+    const targetPusat = validEntries[0].pusat;
+    const targetTahun = Number(validEntries[0].tahun) || getCurrentFinanceYear();
+
+    if (!isSuperAdmin) {
+      const authPusats = getAuthorizedPusatList().map((p) => p.trim().toUpperCase());
+      if (authPusats.length > 0 && !authPusats.includes(targetPusat.trim().toUpperCase())) {
+        return { success: false, message: 'Anda hanya dibenarkan mengagihkan peruntukan bagi Pusat anda sendiri.' };
+      }
+    }
+
+    const pool = computePusatPoolSummary(
+      targetPusat,
+      targetTahun,
+      fasaPeruntukanList,
+      sumberKewanganList,
+      jabatanAllocations,
+      jabatanPullbacks
+    );
+
+    const req21 = validEntries.reduce((s, e) => s + (Number(e.os21000) || 0), 0);
+    const req24 = validEntries.reduce((s, e) => s + (Number(e.os24000) || 0), 0);
+    const req27 = validEntries.reduce((s, e) => s + (Number(e.os27000) || 0), 0);
+    const req29 = validEntries.reduce((s, e) => s + (Number(e.os29000) || 0), 0);
+    const reqTot = req21 + req24 + req27 + req29;
+
+    const baki = pool.bakiPusatUntukAgihan;
+    const issues: string[] = [];
+    if (req21 > baki.os21000 + 0.001) issues.push(`OS21000 (Baki Pusat: RM ${formatRM(baki.os21000)}, Agihan: RM ${formatRM(req21)})`);
+    if (req24 > baki.os24000 + 0.001) issues.push(`OS24000 (Baki Pusat: RM ${formatRM(baki.os24000)}, Agihan: RM ${formatRM(req24)})`);
+    if (req27 > baki.os27000 + 0.001) issues.push(`OS27000 (Baki Pusat: RM ${formatRM(baki.os27000)}, Agihan: RM ${formatRM(req27)})`);
+    if (req29 > baki.os29000 + 0.001) issues.push(`OS29000 (Baki Pusat: RM ${formatRM(baki.os29000)}, Agihan: RM ${formatRM(req29)})`);
+
+    if (reqTot > baki.total + 0.001 || issues.length > 0) {
+      return {
+        success: false,
+        message: `Baki peruntukan Pusat tidak mencukupi! Baki Pusat tersedia ialah RM ${formatRM(baki.total)}.${issues.length > 0 ? ` ${issues.join('; ')}.` : ''}`,
+      };
+    }
+
+    const nowMs = Date.now();
+    const { timestamp } = getMalaysiaTimestampParts(new Date(nowMs));
+    const newRecords: JabatanAllocationRecord[] = validEntries.map((e, idx) => {
+      const o21 = Math.max(0, Number(e.os21000) || 0);
+      const o24 = Math.max(0, Number(e.os24000) || 0);
+      const o27 = Math.max(0, Number(e.os27000) || 0);
+      const o29 = Math.max(0, Number(e.os29000) || 0);
+      const jumlah = o21 + o24 + o27 + o29;
+      return {
+        id: `jalloc-${nowMs}-${idx}`,
+        pusat: e.pusat,
+        jabatan: e.jabatan,
+        tahun: Number(e.tahun) || targetTahun,
+        tarikh: e.tarikh || timestamp.slice(0, 10),
+        os21000: o21,
+        os24000: o24,
+        os27000: o27,
+        os29000: o29,
+        jumlah,
+        catatan: e.catatan?.trim() || undefined,
+        diagihkanOlehId: currentUser.id,
+        diagihkanOlehNama: currentUser.name || currentUser.id,
+        createdAt: timestamp,
+        createdAtMs: nowMs,
+      };
+    });
+
+    setJabatanAllocations((prev) => [...prev, ...newRecords]);
+
+    newRecords.forEach((rec) => {
+      setDoc(doc(db, 'jabatan_allocations', rec.id), {
+        ...sanitizeData(rec),
+        serverCreatedAt: serverTimestamp(),
+      }).catch((err) => {
+        handleFirestoreError(err, { operation: OperationType.CREATE, path: `jabatan_allocations/${rec.id}` });
+      });
+    });
+
+    logActivity({
+      action_type: 'CREATE',
+      module_name: 'Page Pusat',
+      activity_description: `Agihan RM ${formatRM(reqTot)} kepada ${newRecords.length} jabatan di bawah ${targetPusat} (Tahun ${targetTahun})`,
+      record_id: targetPusat,
+      status: 'SUCCESS',
+    });
+
+    return {
+      success: true,
+      message: `Agihan peruntukan berjumlah RM ${formatRM(reqTot)} kepada ${newRecords.length} jabatan telah berjaya direkodkan.`,
+    };
+  };
+
+  const deleteJabatanAllocation = (id: string): { success: boolean; message?: string } => {
+    if (!currentUser || (!isSuperAdmin && currentUser.levelId !== 'KETUA_PUSAT')) {
+      return { success: false, message: 'Hanya Ketua Pusat atau Super Admin boleh memadam rekod agihan.' };
+    }
+    const target = jabatanAllocations.find((a) => a.id === id);
+    if (!target) {
+      return { success: false, message: 'Rekod agihan tidak ditemui.' };
+    }
+    if (!isSuperAdmin) {
+      const createdMs = target.createdAtMs ?? (target.createdAt ? Date.parse(target.createdAt) : NaN);
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      if (isNaN(createdMs) || Date.now() - createdMs > THREE_DAYS_MS) {
+        return {
+          success: false,
+          message: 'Tempoh 3 hari untuk memadam rekod agihan telah tamat. Selepas 3 hari, hanya Super Admin dibenarkan memadam rekod ini.',
+        };
+      }
+    }
+    setJabatanAllocations((prev) => prev.filter((a) => a.id !== id));
+    deleteDoc(doc(db, 'jabatan_allocations', id)).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.DELETE, path: `jabatan_allocations/${id}` });
+    });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Page Pusat',
+      activity_description: `Memadam rekod agihan ${target?.jabatan || id} (RM ${formatRM(target?.jumlah || 0)})`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
+    return { success: true, message: 'Rekod agihan berjaya dipadam dan baki dikemaskini.' };
+  };
+
+  const addJabatanPullback = (entry: {
+    pusat: string;
+    jabatan: string;
+    tahun: number;
+    jenisTindakan: PullbackActionType;
+    sumberBaki: PullbackSourceType;
+    tarikh: string;
+    os21000: number;
+    os24000: number;
+    os27000: number;
+    os29000: number;
+    catatan?: string;
+  }): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk untuk meneruskan tindakan ini.' };
+    }
+    const isTarik = entry.jenisTindakan === 'TARIK';
+    if (isTarik && !isSuperAdmin && currentUser.levelId !== 'KETUA_PUSAT') {
+      return { success: false, message: 'Hanya Ketua Pusat atau Super Admin boleh menarik semula peruntukan jabatan.' };
+    }
+    if (!isTarik && !isSuperAdmin && currentUser.levelId !== 'KETUA_JABATAN') {
+      return { success: false, message: 'Hanya Ketua Jabatan atau Super Admin boleh memulangkan peruntukan ke Pusat.' };
+    }
+
+    const o21 = Math.max(0, Number(entry.os21000) || 0);
+    const o24 = Math.max(0, Number(entry.os24000) || 0);
+    const o27 = Math.max(0, Number(entry.os27000) || 0);
+    const o29 = Math.max(0, Number(entry.os29000) || 0);
+    const jumlah = o21 + o24 + o27 + o29;
+    if (jumlah <= 0) {
+      return { success: false, message: 'Sila masukkan amaun melebihi RM 0.00.' };
+    }
+
+    const yr = Number(entry.tahun) || getCurrentFinanceYear();
+    const summary = computeJabatanFinanceSummary(
+      entry.jabatan,
+      yr,
+      programs,
+      jabatanAllocations,
+      jabatanPullbacks,
+      entry.pusat
+    );
+
+    const maxSource =
+      entry.sumberBaki === 'PENJIMATAN' ? summary.availableTarikPenjimatan : summary.availableTarikAsal;
+    const issues: string[] = [];
+    if (o21 > maxSource.os21000 + 0.001) issues.push(`OS21000 (Maks: RM ${formatRM(maxSource.os21000)})`);
+    if (o24 > maxSource.os24000 + 0.001) issues.push(`OS24000 (Maks: RM ${formatRM(maxSource.os24000)})`);
+    if (o27 > maxSource.os27000 + 0.001) issues.push(`OS27000 (Maks: RM ${formatRM(maxSource.os27000)})`);
+    if (o29 > maxSource.os29000 + 0.001) issues.push(`OS29000 (Maks: RM ${formatRM(maxSource.os29000)})`);
+
+    if (jumlah > maxSource.total + 0.001 || issues.length > 0) {
+      return {
+        success: false,
+        message: `Amaun melebihi baki tersedia bagi ${entry.sumberBaki === 'PENJIMATAN' ? 'Baki (Penjimatan)' : 'Baki (Asal)'} (Maksimum: RM ${formatRM(maxSource.total)}).${issues.length > 0 ? ` ${issues.join('; ')}.` : ''}`,
+      };
+    }
+
+    const { timestamp } = getMalaysiaTimestampParts();
+    const newId = `jpull-${Date.now()}`;
+    const record: JabatanPullbackRecord = {
+      id: newId,
+      pusat: entry.pusat,
+      jabatan: entry.jabatan,
+      tahun: yr,
+      jenisTindakan: entry.jenisTindakan,
+      sumberBaki: entry.sumberBaki,
+      tarikh: entry.tarikh || timestamp.slice(0, 10),
+      os21000: o21,
+      os24000: o24,
+      os27000: o27,
+      os29000: o29,
+      jumlah,
+      catatan: entry.catatan?.trim() || undefined,
+      dilakukanOlehId: currentUser.id,
+      dilakukanOlehNama: currentUser.name || currentUser.id,
+      dilakukanOlehPeranan: getAdminLevelLabel(currentUser.levelId, currentUser.role),
+      createdAt: timestamp,
+    };
+
+    setJabatanPullbacks((prev) => [record, ...prev]);
+
+    setDoc(doc(db, 'jabatan_pullbacks', newId), sanitizeData(record)).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.CREATE, path: `jabatan_pullbacks/${newId}` });
+    });
+
+    logActivity({
+      action_type: 'CREATE',
+      module_name: isTarik ? 'Page Pusat' : 'Page Jabatan',
+      activity_description: `${isTarik ? 'Tarik semula' : 'Pulangkan'} RM ${formatRM(jumlah)} (${entry.sumberBaki}) daripada ${entry.jabatan} ke ${entry.pusat}`,
+      record_id: newId,
+      status: 'SUCCESS',
+    });
+
+    return {
+      success: true,
+      message: isTarik
+        ? `Peruntukan berjumlah RM ${formatRM(jumlah)} telah berjaya ditarik daripada ${entry.jabatan} dan digabungkan semula ke Baki Pusat.`
+        : `Peruntukan berjumlah RM ${formatRM(jumlah)} telah berjaya dipulangkan daripada ${entry.jabatan} ke ${entry.pusat}.`,
+    };
+  };
+
+  const sendPusatJabatanMessage = (entry: {
+    pusat: string;
+    jabatan: string;
+    tahun: number;
+    mesej: string;
+    topik?: MessageTopik;
+  }): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk untuk menghantar mesej.' };
+    }
+    const allowed =
+      isSuperAdmin ||
+      currentUser.levelId === 'KETUA_PUSAT' ||
+      currentUser.levelId === 'KETUA_JABATAN';
+    if (!allowed) {
+      return {
+        success: false,
+        message: 'Hanya Ketua Pusat dan Ketua Jabatan dibenarkan berkomunikasi di saluran ini.',
+      };
+    }
+    const text = (entry.mesej || '').trim();
+    if (!text) {
+      return { success: false, message: 'Sila taip mesej sebelum menghantar.' };
+    }
+    const nowMs = Date.now();
+    const { timestamp, malaysia_datetime_display } = getMalaysiaTimestampParts(new Date(nowMs));
+    const newId = `pjmsg-${nowMs}`;
+    const msgObj: PusatJabatanMessage = {
+      id: newId,
+      pusat: entry.pusat,
+      jabatan: entry.jabatan,
+      tahun: Number(entry.tahun) || getCurrentFinanceYear(),
+      pengirimId: currentUser.id,
+      pengirimNama: currentUser.name || currentUser.id,
+      pengirimLevel: currentUser.levelId || currentUser.role,
+      mesej: text,
+      topik: entry.topik || 'UMUM',
+      createdAt: timestamp,
+      createdAtMs: nowMs,
+      malaysiaDisplay: malaysia_datetime_display,
+    };
+
+    setPusatJabatanMessages((prev) => [...prev, msgObj]);
+
+    setDoc(doc(db, 'pusat_jabatan_messages', newId), {
+      ...sanitizeData(msgObj),
+      serverCreatedAt: serverTimestamp(),
+    }).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.CREATE, path: `pusat_jabatan_messages/${newId}` });
+    });
+
+    return { success: true };
+  };
+
+  const deletePusatJabatanMessage = (id: string): { success: boolean; message?: string } => {
+    if (!currentUser) {
+      return { success: false, message: 'Sila log masuk untuk memadam mesej.' };
+    }
+    const target = pusatJabatanMessages.find((m) => m.id === id);
+    if (!target) {
+      return { success: false, message: 'Mesej tidak ditemui.' };
+    }
+    if (!isSuperAdmin) {
+      const isRoleAllowed =
+        currentUser.levelId === 'KETUA_PUSAT' || currentUser.levelId === 'KETUA_JABATAN';
+      if (!isRoleAllowed) {
+        return { success: false, message: 'Hanya Ketua Pusat, Ketua Jabatan atau Super Admin boleh memadam mesej.' };
+      }
+      if ((target.pengirimId || '').toUpperCase() !== (currentUser.id || '').toUpperCase()) {
+        return { success: false, message: 'Anda hanya boleh memadam mesej anda sendiri.' };
+      }
+      const createdMs = target.createdAtMs ?? (target.createdAt ? Date.parse(target.createdAt) : NaN);
+      const TEN_MINUTES_MS = 10 * 60 * 1000;
+      if (isNaN(createdMs) || Date.now() - createdMs > TEN_MINUTES_MS) {
+        return {
+          success: false,
+          message: 'Tempoh 10 minit untuk memadam mesej sendiri telah tamat. Selepas 10 minit, hanya Super Admin boleh memadam mesej ini.',
+        };
+      }
+    }
+
+    setPusatJabatanMessages((prev) => prev.filter((m) => m.id !== id));
+    deleteDoc(doc(db, 'pusat_jabatan_messages', id)).catch((err) => {
+      handleFirestoreError(err, { operation: OperationType.DELETE, path: `pusat_jabatan_messages/${id}` });
+    });
+    logActivity({
+      action_type: 'DELETE',
+      module_name: 'Saluran Sulit Pusat-Jabatan',
+      activity_description: `Memadam mesej daripada ${target.pengirimNama} (${target.jabatan})`,
+      record_id: id,
+      status: 'SUCCESS',
+    });
+    return { success: true, message: 'Mesej berjaya dipadam.' };
+  };
+
   // Update Budget Rates (Super Admin Only)
   const updateBudgetRates = (newRates: BudgetRatesConfig): { success: boolean; message?: string } => {
     if (!currentUser || !isSuperAdmin) {
@@ -5243,6 +6016,13 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         selectedFinanceYear,
         setSelectedFinanceYear,
         availableFinanceYears,
+        financeKlusterFilter,
+        setFinanceKlusterFilter,
+        financePusatFilter,
+        setFinancePusatFilter,
+        resetFinanceOrgFilters,
+        financeTargetPusats,
+        isFinanceOrgAutoFiltered,
         fasaPeruntukanList,
         updateFasaPeruntukan,
         addFasaPeruntukan,
@@ -5253,6 +6033,14 @@ export const ProgramProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteSubwaran,
         budgetRates,
         updateBudgetRates,
+        jabatanAllocations,
+        jabatanPullbacks,
+        pusatJabatanMessages,
+        addJabatanAllocationsBatch,
+        deleteJabatanAllocation,
+        addJabatanPullback,
+        sendPusatJabatanMessage,
+        deletePusatJabatanMessage,
         activityLogs,
         securityAlerts,
         sessionId,

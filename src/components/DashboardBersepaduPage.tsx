@@ -29,6 +29,7 @@ import {
 import { formatNumber, formatRM, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getFasaYear, getProgramYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import { getFasaAllocationsForScope } from '../utils/financeCalculations';
 
 export const DashboardBersepaduPage: React.FC = () => {
   const {
@@ -411,13 +412,21 @@ export const DashboardBersepaduPage: React.FC = () => {
     return deduplicateProgramsByCode(scoped);
   }, [programs, filterScope]);
 
-  // Peruntukan Keseluruhan diambil terus daripada Page PERUNTUKAN (fasaPeruntukanList) mengikut tahun
+  const scopeTargetPusats = useMemo(
+    () =>
+      filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0
+        ? filterScope.allowedPusats
+        : null,
+    [filterScope]
+  );
+
+  // Peruntukan Diluluskan diambil terus daripada Page PERUNTUKAN (fasaPeruntukanList) mengikut tahun & Pusat
   const totalAllocationPeruntukanPage = useMemo(() => {
     let grand = 0;
     (fasaPeruntukanList || []).forEach((fasa) => {
       if (filterTahun !== 'SEMUA' && String(getFasaYear(fasa)) !== filterTahun) return;
-      if (!fasa.allocations) return;
-      Object.entries(fasa.allocations).forEach(([sk, alloc]) => {
+      const scopedAlloc = getFasaAllocationsForScope(fasa, sumberKewanganList, scopeTargetPusats);
+      Object.entries(scopedAlloc).forEach(([sk, alloc]) => {
         if (filterSumber !== 'SEMUA' && sk !== filterSumber) return;
         if (filterOsCode === 'SEMUA') {
           grand +=
@@ -437,7 +446,7 @@ export const DashboardBersepaduPage: React.FC = () => {
       });
     });
     return grand;
-  }, [fasaPeruntukanList, filterTahun, filterSumber, filterOsCode]);
+  }, [fasaPeruntukanList, sumberKewanganList, scopeTargetPusats, filterTahun, filterSumber, filterOsCode]);
 
   const handleResetFilters = () => {
     setFilterTahun(String(getCurrentFinanceYear()));
@@ -785,6 +794,8 @@ export const DashboardBersepaduPage: React.FC = () => {
         allPrograms={uniqueScopedAllPrograms}
         totalAllocationPeruntukanPage={totalAllocationPeruntukanPage}
         fasaPeruntukanList={fasaPeruntukanList}
+        sumberKewanganList={sumberKewanganList}
+        targetPusats={scopeTargetPusats}
         filterSumber={filterSumber}
         filterOsCode={filterOsCode}
         onOpenDrillDown={handleOpenDrillDown}

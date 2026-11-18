@@ -116,6 +116,8 @@ export function resolveModuleLabel(tabId: string): string {
       return 'Page Pusat';
     case 'jabatan':
       return 'Page Jabatan';
+    case 'pegawai':
+      return 'Page Pegawai';
     case 'pengiraan':
       return 'Pengiraan Bajet';
     case 'peruntukan':

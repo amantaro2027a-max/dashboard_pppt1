@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ProgramItem } from '../../types/program';
 import { formatNumber, formatRM } from '../../utils/formatters';
+import { getProgramFinanceAggregate } from '../../utils/financeCalculations';
 
 interface ExecutiveOverviewModuleProps {
   programs: ProgramItem[];
@@ -75,36 +76,28 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
     [programs]
   );
 
-  // Financial calculations
-  // 1. Total Allocation Program: Mengambil nilai peruntukan diterima JUMLAH PERUNTUKAN DITERIMA (RM) bagi program
-  const totalProgramAllocation = useMemo(() => {
-    return programs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-  }, [programs]);
+  // Financial calculations via shared helper (strictly deduplicated & SELESAI/TANGGUNG for Belanja/Penjimatan)
+  const finAggregate = useMemo(() => getProgramFinanceAggregate(programs, true), [programs]);
+  const tanggungFinAggregate = useMemo(
+    () => getProgramFinanceAggregate(upcomingTanggungList, true),
+    [upcomingTanggungList]
+  );
+
+  // 1. Peruntukan Diagihkan: JUMLAH PERUNTUKAN KEWANGAN DILULUSKAN (BK65)
+  const totalProgramAllocation = finAggregate.diagihkan.total;
 
   // 2. Committed LO (Ambil nilai dalam BELANJA SEBENAR (OS) status tanggung)
-  const tanggungCommittedLO = useMemo(() => {
-    return upcomingTanggungList.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
-  }, [upcomingTanggungList]);
+  const tanggungCommittedLO = tanggungFinAggregate.belanja.total;
 
   // 3. Available Balance (Ambil nilai dalam PENJIMATAN (OS) BAKI BERSIH status tanggung)
-  const tanggungAvailableBalance = useMemo(() => {
-    return upcomingTanggungList.reduce((sum, p) => {
-      const penjimatan =
-        p.jumlahPenjimatanRm != null
-          ? Number(p.jumlahPenjimatanRm)
-          : (Number(p.jumlahRm) || 0) - (Number(p.jumlahBelanjaRm) || 0);
-      return sum + penjimatan;
-    }, 0);
-  }, [upcomingTanggungList]);
+  const tanggungAvailableBalance = tanggungFinAggregate.penjimatan.total;
 
   // Overall participants & actual expenditure
   const totalPeserta = useMemo(() => {
     return programs.reduce((sum, p) => sum + (Number(p.bilanganPeserta) || 0), 0);
   }, [programs]);
 
-  const totalActualExp = useMemo(() => {
-    return programs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
-  }, [programs]);
+  const totalActualExp = finAggregate.belanja.total;
 
   const totalCount = programs.length;
 
@@ -435,11 +428,11 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 8. Jumlah Peruntukan Keseluruhan (AMBIL DALAM HALAMAN PERUNTUKAN) */}
+        {/* 8. Peruntukan Diluluskan (AMBIL DALAM HALAMAN PERUNTUKAN) */}
         <div className="bg-white p-4 rounded-xl border border-blue-300 shadow-xs flex flex-col justify-between bg-gradient-to-b from-white to-blue-50/20">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
-              Jumlah Peruntukan
+              Peruntukan Diluluskan
             </span>
             <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center">
               <Wallet className="w-3.5 h-3.5" />
@@ -455,14 +448,14 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
           </div>
         </div>
 
-        {/* 9. Jumlah Peruntukan Program */}
+        {/* 9. Peruntukan Diagihkan */}
         <div
-          onClick={() => onOpenDrillDown('Senarai Program Mengikut Peruntukan Diterima (RM)', programs)}
+          onClick={() => onOpenDrillDown('Senarai Program Mengikut Peruntukan Diagihkan (BK65)', programs)}
           className="bg-white p-4 rounded-xl border border-purple-200 shadow-xs hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between bg-gradient-to-b from-white to-purple-50/30"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
-              Jumlah Peruntukan Program
+              Peruntukan Diagihkan
             </span>
             <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center">
               <FileCheck className="w-3.5 h-3.5" />
@@ -473,7 +466,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
               {formatRM(totalProgramAllocation)}
             </div>
             <p className="text-[11px] text-purple-700 font-semibold mt-1 flex items-center justify-between">
-              <span>Peruntukan Program</span>
+              <span>Peruntukan Program (BK65)</span>
               <span className="text-[10px] underline">Lihat &rarr;</span>
             </p>
           </div>
@@ -658,7 +651,7 @@ export const ExecutiveOverviewModule: React.FC<ExecutiveOverviewModuleProps> = (
 
             <div className="grid grid-cols-2 gap-3 mt-4">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] text-slate-500 block">Jumlah Peruntukan</span>
+                <span className="text-[11px] text-slate-500 block">Peruntukan Diluluskan</span>
                 <span className="text-base sm:text-lg font-black text-slate-900 mt-0.5 block truncate">
                   {formatRM(totalAllocationPeruntukanPage)}
                 </span>

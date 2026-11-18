@@ -11,10 +11,15 @@ import {
 } from '../data/constants';
 import { PusatType, StatusProgram, SumberKewangan } from '../types/program';
 import { calculateDaysBetween, formatDateToMY, formatRM } from '../utils/formatters';
-import { X, Save, AlertCircle, Calculator, Wallet } from 'lucide-react';
+import { computeJabatanFinanceSummary } from '../utils/financeCalculations';
+import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { X, Save, AlertCircle, Calculator, Wallet, CheckCircle2 } from 'lucide-react';
 
 export const ProgramFormModal: React.FC = () => {
   const {
+    programs,
+    jabatanAllocations,
+    jabatanPullbacks,
     isFormOpen,
     setIsFormOpen,
     programToEdit,
@@ -27,6 +32,9 @@ export const ProgramFormModal: React.FC = () => {
     canEditProgram,
     getCreatableJabatans,
     filterScope,
+    klusterList,
+    klusterMap,
+    getKlusterForPusat,
     pusatList,
     jabatanMap,
     pegawaiList,
@@ -46,6 +54,7 @@ export const ProgramFormModal: React.FC = () => {
   const [pengurusId, setPengurusId] = useState(PEGAWAI_LIST[0].id);
   const [pengurusBersamaId, setPengurusBersamaId] = useState(PEGAWAI_LIST[1].id);
   const [urusSetiaId, setUrusSetiaId] = useState('');
+  const [kluster, setKluster] = useState('');
   const [pusat, setPusat] = useState<string>(PUSAT_LIST[0]);
   const [jabatan, setJabatan] = useState('');
   const [sumberKewangan, setSumberKewangan] = useState<string>(SUMBER_KEWANGAN_LIST[0]);
@@ -69,7 +78,7 @@ export const ProgramFormModal: React.FC = () => {
   const canEditFormByPage = isSuperAdmin || canEditPage('ADMIN') || canEditPage('PERINCIAN PROGRAM');
   const isJabatanLocked = !isSuperAdmin && editableJabatans.length <= 1;
 
-  const allowedPusatList = useMemo(() => {
+  const baseAllowedPusatList = useMemo(() => {
     if (isSuperAdmin) return pusatList;
     let filtered = pusatList.filter((p) =>
       (jabatanMap[p] || []).some((j) => editableJabatans.includes(j))
@@ -83,6 +92,34 @@ export const ProgramFormModal: React.FC = () => {
     }
     return filtered;
   }, [isSuperAdmin, pusatList, jabatanMap, editableJabatans, programToEdit, filterScope]);
+
+  const allowedKlusterList = useMemo(() => {
+    let base: string[];
+    if (isSuperAdmin) {
+      base = [...klusterList];
+    } else {
+      const allowedUpper = new Set(baseAllowedPusatList.map((p) => p.trim().toUpperCase()));
+      base = klusterList.filter((k) =>
+        (klusterMap[k] || []).some((p) => allowedUpper.has(p.trim().toUpperCase()))
+      );
+      if (base.length === 0) base = [...klusterList];
+    }
+    const editKluster = programToEdit?.kluster || (programToEdit?.pusat ? getKlusterForPusat(programToEdit.pusat) : '');
+    if (editKluster && !base.includes(editKluster)) {
+      return [...base, editKluster];
+    }
+    return base;
+  }, [isSuperAdmin, klusterList, klusterMap, baseAllowedPusatList, programToEdit, getKlusterForPusat]);
+
+  const allowedPusatList = useMemo(() => {
+    if (!kluster) return baseAllowedPusatList;
+    const pusatsInKluster = new Set((klusterMap[kluster] || []).map((p) => p.trim().toUpperCase()));
+    const scoped = baseAllowedPusatList.filter((p) => pusatsInKluster.has(p.trim().toUpperCase()));
+    if (programToEdit?.pusat && pusatsInKluster.has(programToEdit.pusat.trim().toUpperCase()) && !scoped.includes(programToEdit.pusat)) {
+      return [...scoped, programToEdit.pusat];
+    }
+    return scoped;
+  }, [kluster, klusterMap, baseAllowedPusatList, programToEdit]);
 
   const allowedJabatanOptions = useMemo(() => {
     const allInPusat = jabatanMap[pusat] || [];
@@ -111,6 +148,7 @@ export const ProgramFormModal: React.FC = () => {
       setPengurusId(programToEdit.pengurusId);
       setPengurusBersamaId(programToEdit.pengurusBersamaId);
       setUrusSetiaId(programToEdit.urusSetiaId || '');
+      setKluster(programToEdit.kluster || getKlusterForPusat(programToEdit.pusat) || '');
       setPusat(programToEdit.pusat);
       setJabatan(programToEdit.jabatan);
       setSumberKewangan(programToEdit.sumberKewangan);
@@ -143,12 +181,15 @@ export const ProgramFormModal: React.FC = () => {
           Object.keys(jabatanMap).find((p) => (jabatanMap[p] || []).includes(singleJab)) ||
           currentUser?.pusat ||
           '';
+        setKluster(getKlusterForPusat(foundPusat) || '');
         setPusat(foundPusat);
         setJabatan(singleJab);
-      } else if (!isSuperAdmin && allowedPusatList.length === 1) {
-        setPusat(allowedPusatList[0]);
+      } else if (!isSuperAdmin && baseAllowedPusatList.length === 1) {
+        setKluster(getKlusterForPusat(baseAllowedPusatList[0]) || '');
+        setPusat(baseAllowedPusatList[0]);
         setJabatan('');
       } else {
+        setKluster('');
         setPusat('');
         setJabatan('');
       }
@@ -165,12 +206,36 @@ export const ProgramFormModal: React.FC = () => {
       setCatatan('');
     }
     setErrorMsg('');
-  }, [programToEdit, isFormOpen, isSuperAdmin, editableJabatans, allowedPusatList, currentUser, pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList]);
+  }, [programToEdit, isFormOpen, isSuperAdmin, editableJabatans, baseAllowedPusatList, currentUser, pusatList, jabatanMap, pegawaiList, sumberKewanganList, statusProgramList, getKlusterForPusat]);
 
-  // When Pusat changes, ensure Jabatan matches the available options
+  // When Kluster changes, filter/reset Pusat & Jabatan if not matching
+  const handleKlusterChange = (newKluster: string) => {
+    if (isJabatanLocked) return;
+    setKluster(newKluster);
+    if (!newKluster) return;
+    const validPusats = new Set((klusterMap[newKluster] || []).map((p) => p.trim().toUpperCase()));
+    if (pusat && !validPusats.has(pusat.trim().toUpperCase())) {
+      const firstMatch = baseAllowedPusatList.find((p) => validPusats.has(p.trim().toUpperCase())) || '';
+      setPusat(firstMatch);
+      if (firstMatch) {
+        const available = (jabatanMap[firstMatch] || []).filter((j) =>
+          isSuperAdmin ? true : editableJabatans.includes(j)
+        );
+        setJabatan(available.length > 0 ? available[0] : '');
+      } else {
+        setJabatan('');
+      }
+    }
+  };
+
+  // When Pusat changes, ensure Kluster & Jabatan match the available options
   const handlePusatChange = (newPusat: string) => {
     if (isJabatanLocked) return;
     setPusat(newPusat);
+    const parentKluster = getKlusterForPusat(newPusat);
+    if (parentKluster) {
+      setKluster(parentKluster);
+    }
     const available = (jabatanMap[newPusat] || []).filter((j) =>
       isSuperAdmin ? true : editableJabatans.includes(j)
     );
@@ -294,6 +359,99 @@ export const ProgramFormModal: React.FC = () => {
     return penjimatan21 + penjimatan24 + penjimatan27 + penjimatan29;
   }, [penjimatan21, penjimatan24, penjimatan27, penjimatan29, isBatal]);
 
+  const targetProgramYear = useMemo(() => {
+    if (tarikhMula) {
+      const dt = new Date(tarikhMula);
+      if (!isNaN(dt.getFullYear())) return dt.getFullYear();
+    }
+    if (programToEdit) return getProgramYear(programToEdit);
+    return getCurrentFinanceYear();
+  }, [tarikhMula, programToEdit]);
+
+  const jabatanBalanceInfo = useMemo(() => {
+    if (!jabatan) return null;
+    const summary = computeJabatanFinanceSummary(
+      jabatan,
+      targetProgramYear,
+      programs,
+      jabatanAllocations,
+      jabatanPullbacks,
+      pusat || undefined
+    );
+
+    const sameJabAndYr =
+      Boolean(programToEdit) &&
+      (programToEdit!.jabatan || '').trim().toUpperCase() === jabatan.trim().toUpperCase() &&
+      getProgramYear(programToEdit!) === targetProgramYear &&
+      (programToEdit!.statusProgram || '').trim().toUpperCase() !== 'BATAL';
+
+    const old21 = sameJabAndYr ? Number(programToEdit!.os21000) || 0 : 0;
+    const old24 = sameJabAndYr ? Number(programToEdit!.os24000) || 0 : 0;
+    const old27 = sameJabAndYr ? Number(programToEdit!.os27000) || 0 : 0;
+    const old29 = sameJabAndYr ? Number(programToEdit!.os29000) || 0 : 0;
+    const oldTot = old21 + old24 + old27 + old29;
+
+    const avail21 = summary.jumlahBakiTerkini.os21000 + old21;
+    const avail24 = summary.jumlahBakiTerkini.os24000 + old24;
+    const avail27 = summary.jumlahBakiTerkini.os27000 + old27;
+    const avail29 = summary.jumlahBakiTerkini.os29000 + old29;
+    const availTot = summary.jumlahBakiTerkini.total + oldTot;
+
+    const req21 = isBatal ? 0 : Number(os21000) || 0;
+    const req24 = isBatal ? 0 : Number(os24000) || 0;
+    const req27 = isBatal ? 0 : Number(os27000) || 0;
+    const req29 = isBatal ? 0 : Number(os29000) || 0;
+    const reqTot = isBatal ? 0 : calculatedTotalRm;
+
+    const isIncreasing =
+      !programToEdit ||
+      req21 > old21 ||
+      req24 > old24 ||
+      req27 > old27 ||
+      req29 > old29 ||
+      reqTot > oldTot;
+
+    const over21 = !isBatal && req21 > avail21 + 0.001;
+    const over24 = !isBatal && req24 > avail24 + 0.001;
+    const over27 = !isBatal && req27 > avail27 + 0.001;
+    const over29 = !isBatal && req29 > avail29 + 0.001;
+    const overTot = !isBatal && reqTot > availTot + 0.001;
+
+    return {
+      tahun: targetProgramYear,
+      rawBakiTerkini: summary.jumlahBakiTerkini,
+      avail: { os21000: avail21, os24000: avail24, os27000: avail27, os29000: avail29, total: availTot },
+      after: {
+        os21000: avail21 - req21,
+        os24000: avail24 - req24,
+        os27000: avail27 - req27,
+        os29000: avail29 - req29,
+        total: availTot - reqTot,
+      },
+      isIncreasing,
+      hasShortfall: isIncreasing && reqTot > 0 && (over21 || over24 || over27 || over29 || overTot),
+      over21,
+      over24,
+      over27,
+      over29,
+      overTot,
+    };
+  }, [
+    jabatan,
+    pusat,
+    targetProgramYear,
+    programs,
+    jabatanAllocations,
+    jabatanPullbacks,
+    programToEdit,
+    isBatal,
+    os21000,
+    os24000,
+    os27000,
+    os29000,
+    calculatedTotalRm,
+  ]);
+
   if (!isFormOpen) return null;
 
   const failValidation = (msg: string, isEditMode: boolean) => {
@@ -340,6 +498,11 @@ export const ProgramFormModal: React.FC = () => {
     }
     if (!kodProgram.trim()) {
       failValidation('Sila masukkan Kod Program.', isEditMode);
+      return;
+    }
+    const resolvedKluster = kluster || getKlusterForPusat(pusat) || '';
+    if (!resolvedKluster && allowedKlusterList.length > 0) {
+      failValidation('Sila pilih Kluster.', isEditMode);
       return;
     }
     if (!pusat) {
@@ -391,6 +554,29 @@ export const ProgramFormModal: React.FC = () => {
       return;
     }
 
+    if (
+      currentUser?.levelId === 'KETUA_JABATAN' &&
+      !isBatal &&
+      jabatanBalanceInfo &&
+      jabatanBalanceInfo.hasShortfall
+    ) {
+      const kekuranganOs: string[] = [];
+      if (jabatanBalanceInfo.over21)
+        kekuranganOs.push(`OS21000 (Boleh guna: RM ${formatRM(jabatanBalanceInfo.avail.os21000)})`);
+      if (jabatanBalanceInfo.over24)
+        kekuranganOs.push(`OS24000 (Boleh guna: RM ${formatRM(jabatanBalanceInfo.avail.os24000)})`);
+      if (jabatanBalanceInfo.over27)
+        kekuranganOs.push(`OS27000 (Boleh guna: RM ${formatRM(jabatanBalanceInfo.avail.os27000)})`);
+      if (jabatanBalanceInfo.over29)
+        kekuranganOs.push(`OS29000 (Boleh guna: RM ${formatRM(jabatanBalanceInfo.avail.os29000)})`);
+
+      failValidation(
+        `JUMLAH BAKI TERKINI Jabatan "${jabatan}" (Tahun ${jabatanBalanceInfo.tahun}) tidak mencukupi! Baki boleh guna: RM ${formatRM(jabatanBalanceInfo.avail.total)}, sedangkan jumlah permohonan ialah RM ${formatRM(calculatedTotalRm)}.${kekuranganOs.length > 0 ? ` Pecahan tidak mencukupi: ${kekuranganOs.join('; ')}.` : ''}`,
+        isEditMode
+      );
+      return;
+    }
+
     // REQUIREMENT: Apabila STATUS PROGRAM = SELESAI atau TANGGUNG dipilih, Bahagian BELANJA SEBENAR dan PENJIMATAN wajib diisi
     if (isSelesaiOrTanggung) {
       if (
@@ -432,6 +618,7 @@ export const ProgramFormModal: React.FC = () => {
       pengurusBersamaNama: pengurusBersamaObj ? pengurusBersamaObj.nama : pengurusBersamaId,
       urusSetiaId,
       urusSetiaNama: urusSetiaObj ? urusSetiaObj.nama : urusSetiaId,
+      kluster: resolvedKluster || undefined,
       pusat,
       jabatan,
       sumberKewangan,
@@ -551,8 +738,34 @@ export const ProgramFormModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Row 2: Pusat & Jabatan (Cascading) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50/80 rounded-lg border border-slate-200">
+            {/* Row 2: Kluster, Pusat & Jabatan (Cascading from Master Data) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50/80 rounded-lg border border-slate-200">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
+                    Kluster *
+                  </label>
+                  {isJabatanLocked && (
+                    <span className="text-[10px] text-amber-700 font-medium">Dikunci</span>
+                  )}
+                </div>
+                <select
+                  value={kluster}
+                  disabled={isJabatanLocked}
+                  onChange={(e) => handleKlusterChange(e.target.value)}
+                  className={`w-full py-2 px-3 border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 font-medium ${
+                    isJabatanLocked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-900'
+                  }`}
+                >
+                  <option value="">-- Sila Pilih Kluster --</option>
+                  {allowedKlusterList.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
@@ -937,6 +1150,58 @@ export const ProgramFormModal: React.FC = () => {
                   RM {formatRM(calculatedTotalRm)}
                 </span>
               </div>
+
+              {/* Semakan JUMLAH BAKI TERKINI Jabatan */}
+              {jabatan && jabatanBalanceInfo && (
+                <div
+                  className={`p-3 rounded-lg border text-xs space-y-2 ${
+                    jabatanBalanceInfo.hasShortfall
+                      ? 'bg-rose-50 border-rose-300 text-rose-900'
+                      : 'bg-white border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                      {jabatanBalanceInfo.hasShortfall ? (
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      )}
+                      <span>
+                        Semakan JUMLAH BAKI TERKINI Jabatan ({jabatanBalanceInfo.tahun})
+                      </span>
+                    </span>
+                    <span
+                      className={`font-mono font-bold ${
+                        jabatanBalanceInfo.hasShortfall ? 'text-rose-700' : 'text-emerald-700'
+                      }`}
+                    >
+                      Boleh Guna: RM {formatRM(jabatanBalanceInfo.avail.total)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+                    <div className={`px-2 py-1 rounded border ${jabatanBalanceInfo.over21 ? 'bg-rose-100 border-rose-300 text-rose-800 font-bold' : 'bg-slate-50 border-slate-200'}`}>
+                      OS21: RM {formatRM(jabatanBalanceInfo.avail.os21000)}
+                    </div>
+                    <div className={`px-2 py-1 rounded border ${jabatanBalanceInfo.over24 ? 'bg-rose-100 border-rose-300 text-rose-800 font-bold' : 'bg-slate-50 border-slate-200'}`}>
+                      OS24: RM {formatRM(jabatanBalanceInfo.avail.os24000)}
+                    </div>
+                    <div className={`px-2 py-1 rounded border ${jabatanBalanceInfo.over27 ? 'bg-rose-100 border-rose-300 text-rose-800 font-bold' : 'bg-slate-50 border-slate-200'}`}>
+                      OS27: RM {formatRM(jabatanBalanceInfo.avail.os27000)}
+                    </div>
+                    <div className={`px-2 py-1 rounded border ${jabatanBalanceInfo.over29 ? 'bg-rose-100 border-rose-300 text-rose-800 font-bold' : 'bg-slate-50 border-slate-200'}`}>
+                      OS29: RM {formatRM(jabatanBalanceInfo.avail.os29000)}
+                    </div>
+                  </div>
+                  {jabatanBalanceInfo.hasShortfall && (
+                    <p className="text-[11px] font-semibold text-rose-700">
+                      {currentUser?.levelId === 'KETUA_JABATAN'
+                        ? 'Amaran: Jumlah permohonan melebihi JUMLAH BAKI TERKINI Jabatan. Ketua Jabatan tidak dapat mendaftar/menambah bajet melebihi baki terkini.'
+                        : 'Nota: Permohonan ini melebihi JUMLAH BAKI TERKINI Jabatan.'}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* REQUIREMENT: 2 BAHAGIAN BAHARU (BELANJA SEBENAR & PENJIMATAN) */}

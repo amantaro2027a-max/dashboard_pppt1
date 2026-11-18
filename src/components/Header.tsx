@@ -22,6 +22,7 @@ import {
   UserCheck,
   KeyRound,
   Activity,
+  ClipboardList,
 } from 'lucide-react';
 import jataNegaraLogo from '../assets/jata_negara.png';
 
@@ -162,6 +163,13 @@ export const Header: React.FC = () => {
       iconBg: 'bg-teal-100 text-teal-700',
     },
     {
+      id: 'pegawai',
+      label: 'Page Pegawai',
+      desc: 'Dashboard peribadi program sebagai Pengurus, Bersama & Urus Setia',
+      icon: ClipboardList,
+      iconBg: 'bg-sky-100 text-sky-700',
+    },
+    {
       id: 'peruntukan',
       label: 'Peruntukan',
       desc: 'Penetapan peruntukan fasa mengikut kod OS',
@@ -223,6 +231,7 @@ export const Header: React.FC = () => {
     if (item.id === 'klusterLatihan') return getPageAccessMode('KLUSTER KHIDMAT LATIHAN') !== 'none';
     if (item.id === 'pusat') return getPageAccessMode('PUSAT') !== 'none';
     if (item.id === 'jabatan') return getPageAccessMode('JABATAN') !== 'none';
+    if (item.id === 'pegawai') return getPageAccessMode('PEGAWAI') !== 'none';
     if (item.id === 'peruntukan') return getPageAccessMode('PERUNTUKAN') !== 'none';
     if (item.id === 'perbelanjaan') return getPageAccessMode('PERBELANJAAN') !== 'none';
     if (item.id === 'subwaran') return getPageAccessMode('SUBWARAN') !== 'none';

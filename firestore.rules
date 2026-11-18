@@ -78,6 +78,14 @@ service cloud.firestore {
       );
     }
 
+    function isKetuaPusat() {
+      return isActiveStaff() && hasAuthRecord() && authRecord().levelId == 'KETUA_PUSAT';
+    }
+
+    function isKetuaJabatan() {
+      return isActiveStaff() && hasAuthRecord() && authRecord().levelId == 'KETUA_JABATAN';
+    }
+
     // 3. Entity Validation Blueprints
     function isValidProgram(data) {
       return data.keys().hasAll(['namaProgram', 'pusat', 'jabatan', 'statusProgram'])
@@ -86,13 +94,14 @@ service cloud.firestore {
           'tempoh', 'jumlahHari', 'tempat', 'negeri', 'bilanganPeserta',
           'pengurusId', 'pengurusNama', 'pengurusBersamaId', 'pengurusBersamaNama',
           'urusSetiaId', 'urusSetiaNama',
-          'pusat', 'jabatan', 'sumberKewangan',
+          'kluster', 'pusat', 'jabatan', 'sumberKewangan',
           'os21000', 'os24000', 'os27000', 'os29000', 'jumlahRm',
           'os21000Belanja', 'os24000Belanja', 'os27000Belanja', 'os29000Belanja', 'jumlahBelanjaRm',
           'os21000Penjimatan', 'os24000Penjimatan', 'os27000Penjimatan', 'os29000Penjimatan', 'jumlahPenjimatanRm',
           'statusProgram', 'tahun', 'bulan', 'catatan', 'didaftarOleh', 'tarikhDaftar', 'rekodPindaan'
         ])
         && data.namaProgram is string && data.namaProgram.size() >= 1 && data.namaProgram.size() <= 400
+        && (!('kluster' in data) || (data.kluster is string && data.kluster.size() <= 200))
         && data.pusat is string && data.pusat.size() <= 250
         && data.jabatan is string && data.jabatan.size() <= 250
         && data.statusProgram is string && data.statusProgram.size() <= 100
@@ -167,12 +176,14 @@ service cloud.firestore {
     function isValidSubwaran(data) {
       return data.keys().hasAll(['id', 'sumberKewangan', 'namaPtj', 'namaProgram'])
         && data.keys().hasOnly([
-          'id', 'sumberKewangan', 'namaPtj', 'ptjLain', 'tarikhSubWaran', 'tahun',
+          'id', 'sumberKewangan', 'kluster', 'pusat', 'namaPtj', 'ptjLain', 'tarikhSubWaran', 'tahun',
           'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
           'namaProgram', 'objektif', 'pegawaiPic', 'createdAt'
         ])
         && data.id is string && data.id.size() <= 128
         && data.sumberKewangan is string && data.sumberKewangan.size() <= 150
+        && (!('kluster' in data) || (data.kluster is string && data.kluster.size() <= 200))
+        && (!('pusat' in data) || (data.pusat is string && data.pusat.size() <= 250))
         && data.namaPtj is string && data.namaPtj.size() <= 100
         && data.namaProgram is string && data.namaProgram.size() <= 400
         && (!('tahun' in data) || (data.tahun is number && data.tahun >= 2000 && data.tahun <= 2100))
@@ -211,6 +222,89 @@ service cloud.firestore {
         && data.status in ['New', 'Under Review', 'Resolved']
         && data.timestamp is string && data.timestamp.size() <= 64
         && (!('related_log_ids' in data) || (data.related_log_ids is list && data.related_log_ids.size() <= 100));
+    }
+
+    function isValidJabatanAllocation(data) {
+      return data.keys().hasAll([
+          'id', 'pusat', 'jabatan', 'tahun', 'tarikh',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
+          'diagihkanOlehId', 'diagihkanOlehNama', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'pusat', 'jabatan', 'tahun', 'tarikh',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
+          'catatan', 'diagihkanOlehId', 'diagihkanOlehNama', 'createdAt', 'createdAtMs', 'serverCreatedAt'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.pusat is string && data.pusat.size() >= 1 && data.pusat.size() <= 250
+        && data.jabatan is string && data.jabatan.size() >= 1 && data.jabatan.size() <= 250
+        && data.tahun is number && data.tahun >= 2000 && data.tahun <= 2100
+        && data.tarikh is string && data.tarikh.size() >= 1 && data.tarikh.size() <= 30
+        && data.os21000 is number && data.os21000 >= 0
+        && data.os24000 is number && data.os24000 >= 0
+        && data.os27000 is number && data.os27000 >= 0
+        && data.os29000 is number && data.os29000 >= 0
+        && data.jumlah is number && data.jumlah > 0
+        && (!('catatan' in data) || (data.catatan is string && data.catatan.size() <= 1000))
+        && data.diagihkanOlehId is string && data.diagihkanOlehId.size() >= 1 && data.diagihkanOlehId.size() <= 128
+        && data.diagihkanOlehNama is string && data.diagihkanOlehNama.size() >= 1 && data.diagihkanOlehNama.size() <= 200
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('createdAtMs' in data) || (data.createdAtMs is number && data.createdAtMs >= 0))
+        && (!('serverCreatedAt' in data) || data.serverCreatedAt is timestamp);
+    }
+
+    function isValidJabatanPullback(data) {
+      return data.keys().hasAll([
+          'id', 'pusat', 'jabatan', 'tahun', 'jenisTindakan', 'sumberBaki', 'tarikh',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
+          'dilakukanOlehId', 'dilakukanOlehNama', 'dilakukanOlehPeranan', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'pusat', 'jabatan', 'tahun', 'jenisTindakan', 'sumberBaki', 'tarikh',
+          'os21000', 'os24000', 'os27000', 'os29000', 'jumlah',
+          'catatan', 'dilakukanOlehId', 'dilakukanOlehNama', 'dilakukanOlehPeranan', 'createdAt'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.pusat is string && data.pusat.size() >= 1 && data.pusat.size() <= 250
+        && data.jabatan is string && data.jabatan.size() >= 1 && data.jabatan.size() <= 250
+        && data.tahun is number && data.tahun >= 2000 && data.tahun <= 2100
+        && data.jenisTindakan in ['TARIK', 'PULANGKAN']
+        && data.sumberBaki in ['ASAL', 'PENJIMATAN']
+        && data.tarikh is string && data.tarikh.size() >= 1 && data.tarikh.size() <= 30
+        && data.os21000 is number && data.os21000 >= 0
+        && data.os24000 is number && data.os24000 >= 0
+        && data.os27000 is number && data.os27000 >= 0
+        && data.os29000 is number && data.os29000 >= 0
+        && data.jumlah is number && data.jumlah > 0
+        && (!('catatan' in data) || (data.catatan is string && data.catatan.size() <= 1000))
+        && data.dilakukanOlehId is string && data.dilakukanOlehId.size() >= 1 && data.dilakukanOlehId.size() <= 128
+        && data.dilakukanOlehNama is string && data.dilakukanOlehNama.size() >= 1 && data.dilakukanOlehNama.size() <= 200
+        && data.dilakukanOlehPeranan is string && data.dilakukanOlehPeranan.size() >= 1 && data.dilakukanOlehPeranan.size() <= 100
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidPusatJabatanMessage(data) {
+      return data.keys().hasAll([
+          'id', 'pusat', 'jabatan', 'tahun', 'pengirimId', 'pengirimNama',
+          'pengirimLevel', 'mesej', 'createdAt', 'malaysiaDisplay'
+        ])
+        && data.keys().hasOnly([
+          'id', 'pusat', 'jabatan', 'tahun', 'pengirimId', 'pengirimNama',
+          'pengirimLevel', 'mesej', 'topik', 'createdAt', 'createdAtMs', 'serverCreatedAt', 'malaysiaDisplay'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.pusat is string && data.pusat.size() >= 1 && data.pusat.size() <= 250
+        && data.jabatan is string && data.jabatan.size() >= 1 && data.jabatan.size() <= 250
+        && data.tahun is number && data.tahun >= 2000 && data.tahun <= 2100
+        && data.pengirimId is string && data.pengirimId.size() >= 1 && data.pengirimId.size() <= 128
+        && data.pengirimNama is string && data.pengirimNama.size() >= 1 && data.pengirimNama.size() <= 200
+        && data.pengirimLevel is string && data.pengirimLevel.size() >= 1 && data.pengirimLevel.size() <= 64
+        && data.mesej is string && data.mesej.size() >= 1 && data.mesej.size() <= 2000
+        && (!('topik' in data) || data.topik in ['BAKI', 'PENARIKAN', 'PEMULANGAN', 'AGIHAN', 'UMUM'])
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && (!('createdAtMs' in data) || (data.createdAtMs is number && data.createdAtMs >= 0))
+        && (!('serverCreatedAt' in data) || data.serverCreatedAt is timestamp)
+        && data.malaysiaDisplay is string && data.malaysiaDisplay.size() <= 64;
     }
 
     // 4. Collection Rules
@@ -324,6 +418,72 @@ service cloud.firestore {
         && (isSuperAdmin() || hasPageEdit('ADMIN MONITORING DASHBOARD'))
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewed_by', 'reviewed_at']);
       allow delete: if false;
+    }
+
+    // Jabatan Allocations - Agihan Ketua Pusat kepada Jabatan mengikut pecahan OS
+    // Ketua Pusat hanya boleh memadam rekod agihan dalam tempoh 3 hari (259,200,000 ms); selepas itu Super Admin sahaja.
+    match /jabatan_allocations/{allocationId} {
+      allow get: if isValidId(allocationId) && (isSuperAdmin() || isActiveStaff());
+      allow list: if isSignedIn() && (isSuperAdmin() || isActiveStaff());
+      allow create: if isValidId(allocationId)
+        && isValidJabatanAllocation(incoming())
+        && incoming().serverCreatedAt == request.time
+        && (isSuperAdmin() || isKetuaPusat());
+      allow update: if isValidId(allocationId)
+        && isValidJabatanAllocation(incoming())
+        && isSuperAdmin();
+      allow delete: if isValidId(allocationId) && (
+        isSuperAdmin() ||
+        (
+          isKetuaPusat() &&
+          (
+            !('serverCreatedAt' in existing()) ||
+            (existing().serverCreatedAt is timestamp && (request.time.toMillis() - existing().serverCreatedAt.toMillis()) <= 259200000)
+          )
+        )
+      );
+    }
+
+    // Jabatan Pullbacks - TARIK oleh Ketua Pusat & PULANGKAN oleh Ketua Jabatan
+    match /jabatan_pullbacks/{pullbackId} {
+      allow get: if isValidId(pullbackId) && (isSuperAdmin() || isActiveStaff());
+      allow list: if isSignedIn() && (isSuperAdmin() || isActiveStaff());
+      allow create: if isValidId(pullbackId)
+        && isValidJabatanPullback(incoming())
+        && (
+          isSuperAdmin() ||
+          (isKetuaPusat() && incoming().jenisTindakan == 'TARIK') ||
+          (isKetuaJabatan() && incoming().jenisTindakan == 'PULANGKAN')
+        );
+      allow update: if false;
+      allow delete: if isValidId(pullbackId) && isSuperAdmin();
+    }
+
+    // Pusat-Jabatan Messages - Komunikasi terhad antara Ketua Pusat dan Ketua Jabatan sahaja
+    // Ketua Pusat / Ketua Jabatan boleh memadam mesej sendiri dalam tempoh 10 minit (600,000 ms); selepas itu Super Admin sahaja.
+    match /pusat_jabatan_messages/{messageId} {
+      allow get: if isValidId(messageId) && isSignedIn() && (isSuperAdmin() || isKetuaPusat() || isKetuaJabatan());
+      allow list: if isSignedIn() && (isSuperAdmin() || isKetuaPusat() || isKetuaJabatan());
+      allow create: if isValidId(messageId)
+        && isValidPusatJabatanMessage(incoming())
+        && incoming().serverCreatedAt == request.time
+        && (
+          isSuperAdmin() ||
+          ((isKetuaPusat() || isKetuaJabatan()) && hasAuthRecord() && incoming().pengirimId == authRecord().adminId)
+        );
+      allow update: if false;
+      allow delete: if isValidId(messageId) && (
+        isSuperAdmin() ||
+        (
+          (isKetuaPusat() || isKetuaJabatan()) &&
+          hasAuthRecord() &&
+          existing().pengirimId == authRecord().adminId &&
+          (
+            !('serverCreatedAt' in existing()) ||
+            (existing().serverCreatedAt is timestamp && (request.time.toMillis() - existing().serverCreatedAt.toMillis()) <= 600000)
+          )
+        )
+      );
     }
   }
 }

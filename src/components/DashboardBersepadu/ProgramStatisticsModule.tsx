@@ -25,6 +25,7 @@ import {
 import { ProgramItem, Pegawai } from '../../types/program';
 import { formatNumber, formatRM, getStatusConfig } from '../../utils/formatters';
 import { deduplicateProgramsByCode, getProgramDedupeKey } from '../../utils/programDedupe';
+import { getProgramFinanceAggregate } from '../../utils/financeCalculations';
 
 interface ProgramStatisticsModuleProps {
   programs: ProgramItem[];
@@ -88,8 +89,9 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
         return false;
       });
 
-      const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-      const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+      const fin = getProgramFinanceAggregate(progs, true);
+      const allocRm = fin.diagihkan.total;
+      const actualRm = fin.belanja.total;
       const balanceRm = allocRm - actualRm;
 
       // Status breakdown
@@ -147,8 +149,9 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
 
       // Programs
       const progs = uniquePrograms.filter((p) => p.jabatan === jabatan);
-      const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-      const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+      const fin = getProgramFinanceAggregate(progs, true);
+      const allocRm = fin.diagihkan.total;
+      const actualRm = fin.belanja.total;
       const balanceRm = allocRm - actualRm;
 
       // Status breakdown
@@ -255,8 +258,9 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
 
     return Array.from(pegawaiMap.values()).map((entry) => {
       const progs = Array.from(entry.progsByKey.values());
-      const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-      const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+      const fin = getProgramFinanceAggregate(progs, true);
+      const allocRm = fin.diagihkan.total;
+      const actualRm = fin.belanja.total;
       const balanceRm = allocRm - actualRm;
 
       const selesai = progs.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
@@ -288,8 +292,9 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
   const statsProgram = useMemo(() => {
     const totalPusat = new Set(uniquePrograms.map((p) => p.pusat).filter(Boolean)).size;
     const totalJabatan = new Set(uniquePrograms.map((p) => p.jabatan).filter(Boolean)).size;
-    const totalAlloc = uniquePrograms.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-    const totalActual = uniquePrograms.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+    const fin = getProgramFinanceAggregate(uniquePrograms, true);
+    const totalAlloc = fin.diagihkan.total;
+    const totalActual = fin.belanja.total;
     const totalBalance = totalAlloc - totalActual;
 
     const selesai = uniquePrograms.filter((p) => (p.statusProgram || '').trim().toUpperCase() === 'SELESAI').length;
@@ -328,8 +333,9 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
           .filter(Boolean)
       );
 
-      const allocRm = progs.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-      const actualRm = progs.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
+      const fin = getProgramFinanceAggregate(progs, true);
+      const allocRm = fin.diagihkan.total;
+      const actualRm = fin.belanja.total;
       const balanceRm = allocRm - actualRm;
 
       return {
@@ -574,7 +580,7 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
                         {/* Financial Snapshot */}
                         <div className="flex flex-wrap items-center gap-3">
                           <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-right">
-                            <span className="text-[10px] text-blue-700 font-bold uppercase block">Peruntukan (RM)</span>
+                            <span className="text-[10px] text-blue-700 font-bold uppercase block">Peruntukan Diagihkan</span>
                             <span className="text-sm font-black text-blue-950">{formatRM(p.allocRm)}</span>
                           </div>
                           <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-right">
@@ -863,11 +869,11 @@ export const ProgramStatisticsModule: React.FC<ProgramStatisticsModuleProps> = (
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-xs bg-blue-50/20">
-                  <span className="text-[10px] font-bold text-blue-800 uppercase block">Peruntukan (RM)</span>
+                  <span className="text-[10px] font-bold text-blue-800 uppercase block">Peruntukan Diagihkan</span>
                   <span className="text-lg font-black text-blue-950 mt-1 block truncate">
                     {formatRM(statsProgram.totalAlloc)}
                   </span>
-                  <span className="text-[11px] text-blue-700">Jumlah diluluskan</span>
+                  <span className="text-[11px] text-blue-700">Peruntukan Program (BK65)</span>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-xs bg-amber-50/20">

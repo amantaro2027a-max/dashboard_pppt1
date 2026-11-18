@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRMWithPrefix, formatRM } from '../utils/formatters';
-import { getProgramYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import { filterProgramsByOrgScope } from '../utils/financeCalculations';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   CreditCard,
@@ -304,6 +304,10 @@ export const PerbelanjaanPage: React.FC = () => {
     setActiveTab,
     sumberKewanganList,
     selectedFinanceYear,
+    financeKlusterFilter,
+    financePusatFilter,
+    financeTargetPusats,
+    getKlusterForPusat,
     programs,
     viewProgramDetail,
   } = useProgramContext();
@@ -312,10 +316,14 @@ export const PerbelanjaanPage: React.FC = () => {
 
   const yearPrograms = useMemo(
     () =>
-      deduplicateProgramsByCode(
-        programs.filter((p) => getProgramYear(p) === selectedFinanceYear)
+      filterProgramsByOrgScope(
+        programs,
+        financeTargetPusats,
+        selectedFinanceYear,
+        financeKlusterFilter,
+        getKlusterForPusat
       ),
-    [programs, selectedFinanceYear]
+    [programs, financeTargetPusats, selectedFinanceYear, financeKlusterFilter, getKlusterForPusat]
   );
 
   // Compute PERUNTUKAN DIBELANJAKAN KESELURUHAN (STATUS PROGRAM: TANGGUNG DAN SELESAI)
@@ -511,7 +519,12 @@ export const PerbelanjaanPage: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">
-                Pengiraan automatik jumlah amaun semua Bahagian/Sumber Kewangan Tahun {selectedFinanceYear} bagi program berstatus TANGGUNG dan SELESAI.
+                Pengiraan automatik jumlah amaun semua Bahagian/Sumber Kewangan Tahun {selectedFinanceYear} bagi program berstatus TANGGUNG dan SELESAI
+                {financePusatFilter !== 'SEMUA'
+                  ? ` · Skop Pusat: ${financePusatFilter}`
+                  : financeKlusterFilter !== 'SEMUA'
+                    ? ` · Skop Kluster: ${financeKlusterFilter}`
+                    : ''}.
               </p>
             </div>
           </div>

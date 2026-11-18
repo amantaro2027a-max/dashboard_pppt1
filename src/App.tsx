@@ -27,6 +27,7 @@ import { PengiraanBajetPage } from './components/PengiraanBajetPage';
 import { AnalisisPegawaiPage } from './components/AnalisisPegawaiPage';
 import { PusatPage } from './components/PusatPage';
 import { JabatanPage } from './components/JabatanPage';
+import { PegawaiPage } from './components/PegawaiPage';
 import { KlusterPage } from './components/KlusterPage';
 import { IabAllPage } from './components/IabAllPage';
 import { AdminMonitoringPage } from './components/AdminMonitoringPage';
@@ -125,6 +126,8 @@ const DashboardContent: React.FC = () => {
                       ? 'Profil, Perbandingan & Rumusan Pusat'
                       : activeTab === 'jabatan'
                       ? 'Profil, Perbandingan & Rumusan Jabatan'
+                      : activeTab === 'pegawai'
+                      ? 'Page Pegawai — Dashboard Peribadi Pegawai IAB'
                       : activeTab === 'pengiraan'
                       ? 'Pengiraan Bajet Program & Pakej Hotel'
                       : activeTab === 'peruntukan'
@@ -164,6 +167,8 @@ const DashboardContent: React.FC = () => {
                     ? 'Paparan terperinci Pusat, senarai jabatan & pegawai di bawah pusat, visualisasi infografik, perbandingan antara jabatan, dan rumusan keseluruhan.'
                     : activeTab === 'jabatan'
                     ? 'Paparan terperinci Jabatan, senarai pegawai di bawah jabatan, visualisasi infografik setiap pegawai, perbandingan & rumusan mengikut status program.'
+                    : activeTab === 'pegawai'
+                    ? 'Dashboard peribadi berorientasikan rekod pegawai sebagai Pengurus, Pengurus Bersama atau Urus Setia termasuk kalendar pelaksanaan, notifikasi & rekod pindaan BK04.'
                     : activeTab === 'pengiraan'
                     ? 'Kalkulator pengiraan bajet Makan Minum, Dobi, dan Pakej Hotel (beserta SST 6% & 8%). Pengguna boleh mengisi sel kuning; kadar kos seunit (RM) dikawal oleh Super Admin.'
                     : activeTab === 'peruntukan'
@@ -267,6 +272,9 @@ const DashboardContent: React.FC = () => {
           ) : activeTab === 'jabatan' ? (
             /* PAGE BARU – PAGE JABATAN */
             <JabatanPage />
+          ) : activeTab === 'pegawai' ? (
+            /* PAGE BARU – PAGE PEGAWAI (DASHBOARD PERIBADI PEGAWAI) */
+            <PegawaiPage />
           ) : activeTab === 'pengiraan' ? (
             /* PAGE BARU – PENGIRAAN BAJET (AKSES PELAWAT) */
             <PengiraanBajetPage />

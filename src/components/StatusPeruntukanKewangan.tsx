@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { formatRM } from '../utils/formatters';
-import { getFasaYear, getSubwaranYear } from '../utils/financeYear';
-import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import {
+  filterSubwaranByScope,
+  getPeruntukanDiluluskanStats,
+  getProgramFinanceAggregate,
+} from '../utils/financeCalculations';
 import {
   Wallet,
   ArrowDownLeft,
@@ -22,48 +25,55 @@ export const StatusPeruntukanKewangan: React.FC = () => {
     sumberKewanganList,
     filteredPrograms,
     filters,
+    filterScope,
   } = useProgramContext();
 
-  // Pengiraan tepat mengikut arahan:
-  // 1. Card PERUNTUKAN DITERIMA ambil data daripada Page PERUNTUKAN (mengikut tapisan tahun)
-  // 2. Card PERUNTUKAN DIBELANJAKAN ambil data daripada Page PERBELANJAAN (status: SELESAI & TANGGUNG)
-  // 3. Card BAKI PERUNTUKAN = (PERUNTUKAN DITERIMA) - (PERUNTUKAN DIBELANJAKAN) - (data daripada Page Subwaran)
-  const calc = useMemo(() => {
-    // 1. Peruntukan Diterima daripada Page Peruntukan
-    let d21 = 0, d24 = 0, d27 = 0, d29 = 0;
-    const targetSkList = filters.sumberKewangan ? [filters.sumberKewangan] : (sumberKewanganList || []);
+  const targetPusats = useMemo(() => {
+    if (filters.pusat) return [filters.pusat];
+    if (filterScope.isPusatRestricted && filterScope.allowedPusats.length > 0) {
+      return filterScope.allowedPusats;
+    }
+    return null;
+  }, [filters.pusat, filterScope]);
 
-    (fasaPeruntukanList || []).forEach((fasa) => {
-      if (filters.tahun && String(getFasaYear(fasa)) !== filters.tahun) return;
-      targetSkList.forEach((sk) => {
-        const alloc = fasa.allocations?.[sk];
-        if (alloc) {
-          d21 += Number(alloc.os21000) || 0;
-          d24 += Number(alloc.os24000) || 0;
-          d27 += Number(alloc.os27000) || 0;
-          d29 += Number(alloc.os29000) || 0;
-        }
-      });
-    });
-    const dKeseluruhan = d21 + d24 + d27 + d29;
+  // Pengiraan tepat mengikut arahan:
+  // 1. Card PERUNTUKAN DILULUSKAN ambil data daripada Page PERUNTUKAN (mengikut tapisan tahun & Pusat)
+  // 2. Card PERUNTUKAN DIBELANJAKAN ambil data daripada Page PERBELANJAAN (status: SELESAI & TANGGUNG)
+  // 3. Card BAKI PERUNTUKAN = (PERUNTUKAN DILULUSKAN) - (PERUNTUKAN DIBELANJAKAN)
+  const calc = useMemo(() => {
+    const tahunFilter = filters.tahun || 'SEMUA';
+    const sumberFilter = filters.sumberKewangan || 'SEMUA';
+
+    // 1. Peruntukan Diluluskan daripada Page Peruntukan
+    const diluluskanStats = getPeruntukanDiluluskanStats(
+      fasaPeruntukanList || [],
+      sumberKewanganList || [],
+      targetPusats,
+      tahunFilter,
+      sumberFilter
+    );
+    const d21 = diluluskanStats.overall.os21000;
+    const d24 = diluluskanStats.overall.os24000;
+    const d27 = diluluskanStats.overall.os27000;
+    const d29 = diluluskanStats.overall.os29000;
+    const dKeseluruhan = diluluskanStats.overall.total;
 
     // 2. Peruntukan Dibelanjakan daripada Page Perbelanjaan (Status SELESAI & TANGGUNG)
-    let b21 = 0, b24 = 0, b27 = 0, b29 = 0;
-    deduplicateProgramsByCode(filteredPrograms || []).forEach((p) => {
-      const status = (p.statusProgram || '').trim().toUpperCase();
-      if (status === 'SELESAI' || status === 'TANGGUNG') {
-        b21 += Number(p.os21000Belanja) || 0;
-        b24 += Number(p.os24000Belanja) || 0;
-        b27 += Number(p.os27000Belanja) || 0;
-        b29 += Number(p.os29000Belanja) || 0;
-      }
-    });
-    const bKeseluruhan = b21 + b24 + b27 + b29;
+    const progFin = getProgramFinanceAggregate(filteredPrograms || [], false);
+    const b21 = progFin.belanja.os21000;
+    const b24 = progFin.belanja.os24000;
+    const b27 = progFin.belanja.os27000;
+    const b29 = progFin.belanja.os29000;
+    const bKeseluruhan = progFin.belanja.total;
 
-    // 3. Data daripada Page Subwaran (rujukan)
+    // 3. Data daripada Page Subwaran (mengikut skop Pusat & Tahun)
     let s21 = 0, s24 = 0, s27 = 0, s29 = 0;
-    (subwaranList || []).forEach((sub) => {
-      if (filters.tahun && String(getSubwaranYear(sub)) !== filters.tahun) return;
+    const scopedSubwaran = filterSubwaranByScope(
+      subwaranList || [],
+      targetPusats,
+      tahunFilter
+    );
+    scopedSubwaran.forEach((sub) => {
       if (!filters.sumberKewangan || sub.sumberKewangan === filters.sumberKewangan) {
         s21 += Number(sub.os21000) || 0;
         s24 += Number(sub.os24000) || 0;
@@ -73,8 +83,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
     });
     const sKeseluruhan = s21 + s24 + s27 + s29;
 
-    // 4. Baki Peruntukan = Peruntukan Diterima - Peruntukan Dibelanjakan
-    // (Jika Belanja adalah RM0.00, Baki Peruntukan tepat sama dengan Peruntukan Diterima)
+    // 4. Baki Peruntukan = Peruntukan Diluluskan - Peruntukan Dibelanjakan
     const baki21 = d21 - b21;
     const baki24 = d24 - b24;
     const baki27 = d27 - b27;
@@ -113,7 +122,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
 
       peratusBelanja,
     };
-  }, [fasaPeruntukanList, subwaranList, sumberKewanganList, filteredPrograms, filters]);
+  }, [fasaPeruntukanList, subwaranList, sumberKewanganList, filteredPrograms, filters, targetPusats]);
 
   const financialStats = calc;
   const peratusBelanja = calc.peratusBelanja;
@@ -135,7 +144,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-emerald-800/80 mt-1">
-            Ringkasan status peruntukan diterima, perbelanjaan semasa, dan baki peruntukan mengikut Objek Sebagai (OS)
+            Ringkasan status peruntukan diluluskan, perbelanjaan semasa, dan baki peruntukan mengikut Objek Sebagai (OS)
           </p>
         </div>
 
@@ -182,7 +191,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
                   <ArrowDownLeft className="w-3.5 h-3.5" />
                 </div>
                 <h3 className="text-xs font-bold text-sky-950 uppercase tracking-wider">
-                  PERUNTUKAN DITERIMA
+                  PERUNTUKAN DILULUSKAN
                 </h3>
               </div>
               <span className="text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
@@ -251,7 +260,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
             <div className="p-3 rounded-lg bg-sky-900 text-white flex items-center justify-between shadow-xs">
               <div>
                 <span className="text-[11px] font-semibold text-sky-200 uppercase tracking-wider block">
-                  Jumlah Diterima Keseluruhan
+                  Jumlah Diluluskan Keseluruhan
                 </span>
                 <span className="text-[10px] text-sky-300">Kumulatif OS21+24+27+29</span>
               </div>
@@ -441,7 +450,7 @@ export const StatusPeruntukanKewangan: React.FC = () => {
                   Jumlah Baki Keseluruhan
                 </span>
                 <span className="text-[10px] text-emerald-300 block">
-                  Diterima tolak Dibelanjakan
+                  Diluluskan tolak Dibelanjakan
                 </span>
                 <span className="text-[10px] text-emerald-200/90 font-medium block mt-0.5">
                   [Tidak termasuk Subwaran = RM {formatRM(financialStats.subwaranKeseluruhan)}]

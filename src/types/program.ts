@@ -49,6 +49,7 @@ export interface ProgramItem {
   pengurusBersamaNama: string; // e.g. 'SITI BINTI SAMAD'
   urusSetiaId?: string; // e.g. 'IAB003'
   urusSetiaNama?: string; // e.g. 'AHMAD BIN ALI'
+  kluster?: string;
   pusat: PusatType;
   jabatan: string;
   sumberKewangan: SumberKewangan;
@@ -319,6 +320,7 @@ export interface FasaPeruntukanRecord {
   nama: string; // e.g. 'PERUNTUKAN FASA 1'
   tahun?: number; // e.g. 2026
   allocations: Record<string, OsAllocation>;
+  pusatAllocations?: Record<string, Record<string, OsAllocation>>; // keyed by Pusat -> Sumber Kewangan
   updatedAt?: string;
 }
 
@@ -337,6 +339,8 @@ export type PtjOption =
 export interface SubwaranRecord {
   id: string;
   sumberKewangan: string;
+  kluster?: string;
+  pusat?: string;
   namaPtj: PtjOption;
   ptjLain?: string;
   tarikhSubWaran: string; // YYYY-MM-DD
@@ -371,3 +375,62 @@ export interface BudgetRatesConfig {
   updatedAt?: string;
   updatedBy?: string;
 }
+
+export interface JabatanAllocationRecord {
+  id: string;
+  pusat: string;
+  jabatan: string;
+  tahun: number;
+  tarikh: string; // YYYY-MM-DD
+  os21000: number;
+  os24000: number;
+  os27000: number;
+  os29000: number;
+  jumlah: number;
+  catatan?: string;
+  diagihkanOlehId: string;
+  diagihkanOlehNama: string;
+  createdAt: string;
+  createdAtMs?: number;
+}
+
+export type PullbackActionType = 'TARIK' | 'PULANGKAN';
+export type PullbackSourceType = 'ASAL' | 'PENJIMATAN';
+
+export interface JabatanPullbackRecord {
+  id: string;
+  pusat: string;
+  jabatan: string;
+  tahun: number;
+  jenisTindakan: PullbackActionType;
+  sumberBaki: PullbackSourceType;
+  tarikh: string; // YYYY-MM-DD
+  os21000: number;
+  os24000: number;
+  os27000: number;
+  os29000: number;
+  jumlah: number;
+  catatan?: string;
+  dilakukanOlehId: string;
+  dilakukanOlehNama: string;
+  dilakukanOlehPeranan: string;
+  createdAt: string;
+}
+
+export type MessageTopik = 'BAKI' | 'PENARIKAN' | 'PEMULANGAN' | 'AGIHAN' | 'UMUM';
+
+export interface PusatJabatanMessage {
+  id: string;
+  pusat: string;
+  jabatan: string;
+  tahun: number;
+  pengirimId: string;
+  pengirimNama: string;
+  pengirimLevel: string;
+  mesej: string;
+  topik?: MessageTopik;
+  createdAt: string;
+  createdAtMs?: number;
+  malaysiaDisplay: string;
+}
+

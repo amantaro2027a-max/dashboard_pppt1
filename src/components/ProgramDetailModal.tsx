@@ -27,12 +27,14 @@ export const ProgramDetailModal: React.FC = () => {
     isSuperAdmin,
     canEditProgram,
     programs,
+    getKlusterForPusat,
   } = useProgramContext();
 
   if (!isDetailOpen || !selectedProgram) return null;
 
   // Ensure showing latest program data from state if available
   const currentProg = programs.find((p) => p.id === selectedProgram.id) || selectedProgram;
+  const resolvedKluster = currentProg.kluster || getKlusterForPusat(currentProg.pusat) || '-';
   const statusConfig = getStatusConfig(currentProg.statusProgram);
 
   // Edit permission: Super Admin (all including SELESAI), or authorized Ketua Pusat / Ketua Jabatan / P/PB (excluding SELESAI)
@@ -219,6 +221,15 @@ export const ProgramDetailModal: React.FC = () => {
               </div>
 
               <div className="sm:col-span-3 pt-2 border-t border-slate-200">
+                <span className="text-slate-500 block text-[11px] uppercase font-semibold">
+                  Kluster:
+                </span>
+                <div className="font-semibold text-slate-900 mt-0.5">
+                  {resolvedKluster}
+                </div>
+              </div>
+
+              <div className="sm:col-span-3">
                 <span className="text-slate-500 block text-[11px] uppercase font-semibold">
                   Pusat:
                 </span>

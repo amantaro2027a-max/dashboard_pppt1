@@ -3,6 +3,7 @@ import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem, Pegawai } from '../types/program';
 import { formatRM, formatNumber, getStatusConfig } from '../utils/formatters';
 import { deduplicateProgramsByCode, getProgramDedupeKey } from '../utils/programDedupe';
+import { getProgramFinanceAggregate } from '../utils/financeCalculations';
 import {
   Filter,
   RotateCcw,
@@ -544,9 +545,10 @@ export const AnalisisPegawaiPage: React.FC = () => {
       const activeCount = Math.max(allProgs.length - batalCount, 0);
       const successRate = activeCount > 0 ? Math.round((selesaiCount / activeCount) * 100) : 0;
 
-      const totalPeruntukan = allProgs.reduce((s, p) => s + (Number(p.jumlahRm) || 0), 0);
-      const totalBelanja = allProgs.reduce((s, p) => s + (Number(p.jumlahBelanjaRm) || 0), 0);
-      const totalPenjimatan = Math.max(0, totalPeruntukan - totalBelanja);
+      const offFin = getProgramFinanceAggregate(allProgs, true);
+      const totalPeruntukan = offFin.diagihkan.total;
+      const totalBelanja = offFin.belanja.total;
+      const totalPenjimatan = offFin.penjimatan.total;
       const utilRate = totalPeruntukan > 0 ? Math.round((totalBelanja / totalPeruntukan) * 100) : 0;
 
       const totalHari = allProgs.reduce((s, p) => s + (Number(p.jumlahHari) || 0), 0);
@@ -655,8 +657,9 @@ export const AnalisisPegawaiPage: React.FC = () => {
     const activeProgs = Math.max(totalProgs - batal, 0);
     const completionPct = activeProgs > 0 ? Math.round((selesai / activeProgs) * 100) : 0;
 
-    const totalPeruntukan = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahRm) || 0), 0);
-    const totalBelanja = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahBelanjaRm) || 0), 0);
+    const summaryFin = getProgramFinanceAggregate(uniqueFilteredPrograms, true);
+    const totalPeruntukan = summaryFin.diagihkan.total;
+    const totalBelanja = summaryFin.belanja.total;
     const totalPeserta = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.bilanganPeserta) || 0), 0);
     const totalHari = uniqueFilteredPrograms.reduce((s, p) => s + (Number(p.jumlahHari) || 0), 0);
 
@@ -806,11 +809,9 @@ export const AnalisisPegawaiPage: React.FC = () => {
     return Object.entries(map)
       .map(([jabatan, v]) => {
         const uniqueProgs = Array.from(v.progByKey.values());
-        const alloc = v.uniqueForSum.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-        const belanja = v.uniqueForSum.reduce(
-          (sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0),
-          0
-        );
+        const jFin = getProgramFinanceAggregate(v.uniqueForSum, true);
+        const alloc = jFin.diagihkan.total;
+        const belanja = jFin.belanja.total;
         return {
           jabatan,
           officers: v.officers,
@@ -827,10 +828,13 @@ export const AnalisisPegawaiPage: React.FC = () => {
     const map: Record<string, { count: number; alloc: number; belanja: number }> = {};
     uniqueFilteredPrograms.forEach((p) => {
       const sk = p.sumberKewangan || 'TIDAK DINYATAKAN';
+      const st = (p.statusProgram || '').trim().toUpperCase();
       if (!map[sk]) map[sk] = { count: 0, alloc: 0, belanja: 0 };
       map[sk].count += 1;
       map[sk].alloc += Number(p.jumlahRm) || 0;
-      map[sk].belanja += Number(p.jumlahBelanjaRm) || 0;
+      if (st === 'SELESAI' || st === 'TANGGUNG') {
+        map[sk].belanja += Number(p.jumlahBelanjaRm) || 0;
+      }
     });
     const maxCount = Math.max(...Object.values(map).map((x) => x.count), 1);
     return Object.entries(map)

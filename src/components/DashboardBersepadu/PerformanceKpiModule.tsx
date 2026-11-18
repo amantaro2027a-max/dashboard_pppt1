@@ -18,12 +18,15 @@ import {
 import { FasaPeruntukanRecord, ProgramItem } from '../../types/program';
 import { formatNumber, formatRM } from '../../utils/formatters';
 import { getFasaYear, getProgramYear } from '../../utils/financeYear';
+import { getFasaAllocationsForScope } from '../../utils/financeCalculations';
 
 interface PerformanceKpiModuleProps {
   programs: ProgramItem[];
   allPrograms: ProgramItem[];
   totalAllocationPeruntukanPage?: number;
   fasaPeruntukanList?: FasaPeruntukanRecord[];
+  sumberKewanganList?: string[];
+  targetPusats?: string[] | null;
   filterSumber?: string;
   filterOsCode?: string;
   onOpenDrillDown: (title: string, filteredList: ProgramItem[]) => void;
@@ -36,6 +39,8 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
   allPrograms,
   totalAllocationPeruntukanPage,
   fasaPeruntukanList,
+  sumberKewanganList = [],
+  targetPusats = null,
   filterSumber = 'SEMUA',
   filterOsCode = 'SEMUA',
   onOpenDrillDown,
@@ -121,14 +126,18 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
       yearMap[yr].alloc += Number(p.jumlahRm) || 0;
     });
 
-    // Gunakan Peruntukan Rasmi dari Page Peruntukan mengikut setiap tahun jika tersedia
+    // Gunakan Peruntukan Diluluskan Rasmi dari Page Peruntukan mengikut setiap tahun jika tersedia
     if (fasaPeruntukanList && fasaPeruntukanList.length > 0) {
       const fasaAllocByYear: Record<string, number> = {};
       fasaPeruntukanList.forEach((fasa) => {
-        if (!fasa.allocations) return;
         const fYr = String(getFasaYear(fasa));
         let fSum = 0;
-        Object.entries(fasa.allocations).forEach(([sk, alloc]) => {
+        const scopedAlloc = getFasaAllocationsForScope(
+          fasa,
+          sumberKewanganList,
+          targetPusats ?? null
+        );
+        Object.entries(scopedAlloc).forEach(([sk, alloc]) => {
           if (filterSumber !== 'SEMUA' && sk !== filterSumber) return;
           if (filterOsCode === 'SEMUA') {
             fSum +=
@@ -174,7 +183,7 @@ export const PerformanceKpiModule: React.FC<PerformanceKpiModuleProps> = ({
       deptDistribution: Object.entries(deptCountMap).sort((a, b) => b[1].count - a[1].count),
       yearDistribution: Object.entries(yearMap).sort((a, b) => b[0].localeCompare(a[0])),
     };
-  }, [programs, allPrograms, totalAllocationPeruntukanPage, fasaPeruntukanList, filterSumber, filterOsCode]);
+  }, [programs, allPrograms, totalAllocationPeruntukanPage, fasaPeruntukanList, sumberKewanganList, targetPusats, filterSumber, filterOsCode]);
 
   return (
     <div className="space-y-8 mb-12">

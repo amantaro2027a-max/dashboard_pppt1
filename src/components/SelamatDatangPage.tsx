@@ -841,6 +841,7 @@ export const SelamatDatangPage: React.FC = () => {
                   { tab: 'klusterLatihan', key: 'KLUSTER KHIDMAT LATIHAN' },
                   { tab: 'pusat', key: 'PUSAT' },
                   { tab: 'jabatan', key: 'JABATAN' },
+                  { tab: 'pegawai', key: 'PEGAWAI' },
                   { tab: 'peruntukan', key: 'PERUNTUKAN' },
                   { tab: 'perbelanjaan', key: 'PERBELANJAAN' },
                   { tab: 'subwaran', key: 'SUBWARAN' },

@@ -2,8 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
 import { ProgramItem } from '../types/program';
 import { formatRM, getStatusConfig } from '../utils/formatters';
-import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
+import { getCurrentFinanceYear, getFasaYear, getProgramYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode } from '../utils/programDedupe';
+import {
+  getPeruntukanDiluluskanStats,
+  getProgramFinanceAggregate,
+} from '../utils/financeCalculations';
 import * as XLSX from 'xlsx';
 import {
   Globe,
@@ -34,7 +38,7 @@ interface GroupStats {
   batal: number;
   peserta: number;
   hari: number;
-  peruntukan: number;
+  peruntukanDiagihkan: number;
   belanja: number;
   penjimatan: number;
   successRate: number;
@@ -53,6 +57,8 @@ export const IabAllPage: React.FC = () => {
     jabatanMap,
     pegawaiList,
     programs,
+    fasaPeruntukanList,
+    sumberKewanganList,
     viewProgramDetail,
     logActivity,
   } = useProgramContext();
@@ -75,8 +81,11 @@ export const IabAllPage: React.FC = () => {
     programs.forEach((p) => {
       set.add(String(getProgramYear(p)));
     });
+    (fasaPeruntukanList || []).forEach((f) => {
+      set.add(String(getFasaYear(f)));
+    });
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [programs]);
+  }, [programs, fasaPeruntukanList]);
 
   const computeStats = (rawList: ProgramItem[]): GroupStats => {
     const list = deduplicateProgramsByCode(rawList);
@@ -87,16 +96,7 @@ export const IabAllPage: React.FC = () => {
     const batal = list.filter((p) => p.statusProgram === 'BATAL').length;
     const peserta = list.reduce((sum, p) => sum + (Number(p.bilanganPeserta) || 0), 0);
     const hari = list.reduce((sum, p) => sum + (Number(p.jumlahHari) || 0), 0);
-    const peruntukan = list.reduce((sum, p) => sum + (Number(p.jumlahRm) || 0), 0);
-    const belanja = list.reduce((sum, p) => sum + (Number(p.jumlahBelanjaRm) || 0), 0);
-    const penjimatan = list.reduce(
-      (sum, p) =>
-        sum +
-        (p.jumlahPenjimatanRm !== undefined
-          ? Number(p.jumlahPenjimatanRm)
-          : Math.max(0, (Number(p.jumlahRm) || 0) - (Number(p.jumlahBelanjaRm) || 0))),
-      0
-    );
+    const fin = getProgramFinanceAggregate(list, true);
     const activeTotal = Math.max(0, list.length - batal);
     const successRate = activeTotal > 0 ? Math.round((selesai / activeTotal) * 100) : 0;
     return {
@@ -108,9 +108,9 @@ export const IabAllPage: React.FC = () => {
       batal,
       peserta,
       hari,
-      peruntukan,
-      belanja,
-      penjimatan,
+      peruntukanDiagihkan: fin.diagihkan.total,
+      belanja: fin.belanja.total,
+      penjimatan: fin.penjimatan.total,
       successRate,
     };
   };
@@ -146,18 +146,31 @@ export const IabAllPage: React.FC = () => {
         });
       });
       const jabSet = new Set(jabs);
-      const progs = yearPrograms.filter((p) => pusSet.has(p.pusat) || jabSet.has(p.jabatan));
+      const kluUpper = klu.trim().toUpperCase();
+      const progs = yearPrograms.filter(
+        (p) =>
+          pusSet.has(p.pusat) ||
+          jabSet.has(p.jabatan) ||
+          (p.kluster || '').trim().toUpperCase() === kluUpper
+      );
       const pegs = pegawaiList.filter((peg) => pusSet.has(peg.pusat || '') || jabSet.has(peg.jabatan || ''));
+      const diluluskanStats = getPeruntukanDiluluskanStats(
+        fasaPeruntukanList,
+        sumberKewanganList,
+        pusats,
+        filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+      );
       return {
         kluster: klu,
         pusats,
         jabatanCount: jabs.length,
         pegawaiCount: pegs.length,
         programs: progs,
+        peruntukanDiluluskan: diluluskanStats.overall.total,
         ...computeStats(progs),
       };
     });
-  }, [effectiveKlusters, klusterMap, pusatList, jabatanMap, yearPrograms, pegawaiList]);
+  }, [effectiveKlusters, klusterMap, pusatList, jabatanMap, yearPrograms, pegawaiList, fasaPeruntukanList, sumberKewanganList, filterTahun]);
 
   // Metrics per Pusat across selected Klusters
   const pusatMetrics = useMemo(() => {
@@ -167,6 +180,7 @@ export const IabAllPage: React.FC = () => {
         pusat: string;
         jabatanCount: number;
         pegawaiCount: number;
+        peruntukanDiluluskan: number;
         programs: ProgramItem[];
       }
     > = [];
@@ -176,12 +190,19 @@ export const IabAllPage: React.FC = () => {
         const jabSet = new Set(jabs);
         const progs = yearPrograms.filter((p) => p.pusat === pus || jabSet.has(p.jabatan));
         const pegs = pegawaiList.filter((peg) => peg.pusat === pus || jabSet.has(peg.jabatan || ''));
+        const diluluskanStats = getPeruntukanDiluluskanStats(
+          fasaPeruntukanList,
+          sumberKewanganList,
+          [pus],
+          filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+        );
         rows.push({
           kluster: klu,
           pusat: pus,
           jabatanCount: jabs.length,
           pegawaiCount: pegs.length,
           programs: progs,
+          peruntukanDiluluskan: diluluskanStats.overall.total,
           ...computeStats(progs),
         });
       });
@@ -194,19 +215,26 @@ export const IabAllPage: React.FC = () => {
           const jabSet = new Set(jabs);
           const progs = yearPrograms.filter((p) => p.pusat === pus || jabSet.has(p.jabatan));
           const pegs = pegawaiList.filter((peg) => peg.pusat === pus || jabSet.has(peg.jabatan || ''));
+          const diluluskanStats = getPeruntukanDiluluskanStats(
+            fasaPeruntukanList,
+            sumberKewanganList,
+            [pus],
+            filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+          );
           rows.push({
             kluster: 'BELUM DITETAPKAN',
             pusat: pus,
             jabatanCount: jabs.length,
             pegawaiCount: pegs.length,
             programs: progs,
+            peruntukanDiluluskan: diluluskanStats.overall.total,
             ...computeStats(progs),
           });
         }
       });
     }
     return rows;
-  }, [effectiveKlusters, klusterMap, pusatList, jabatanMap, yearPrograms, pegawaiList, filterKluster, getKlusterForPusat]);
+  }, [effectiveKlusters, klusterMap, pusatList, jabatanMap, yearPrograms, pegawaiList, filterKluster, getKlusterForPusat, fasaPeruntukanList, sumberKewanganList, filterTahun]);
 
   // Metrics per Jabatan across selected Klusters
   const jabatanMetrics = useMemo(() => {
@@ -242,14 +270,25 @@ export const IabAllPage: React.FC = () => {
     const scopedPrograms =
       filterKluster === 'SEMUA'
         ? yearPrograms
-        : yearPrograms.filter((p) =>
-            pusatMetrics.some(
-              (pm) => pm.pusat === p.pusat || (jabatanMap[pm.pusat] || []).includes(p.jabatan)
-            )
+        : yearPrograms.filter(
+            (p) =>
+              (p.kluster || '').trim().toUpperCase() === filterKluster.trim().toUpperCase() ||
+              pusatMetrics.some(
+                (pm) => pm.pusat === p.pusat || (jabatanMap[pm.pusat] || []).includes(p.jabatan)
+              )
           );
     const stats = computeStats(scopedPrograms);
+    const targetPusatsForDiluluskan =
+      filterKluster === 'SEMUA' ? null : pusatMetrics.map((pm) => pm.pusat);
+    const diluluskanStats = getPeruntukanDiluluskanStats(
+      fasaPeruntukanList,
+      sumberKewanganList,
+      targetPusatsForDiluluskan,
+      filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+    );
     return {
       ...stats,
+      peruntukanDiluluskan: diluluskanStats.overall.total,
       klusterCount: effectiveKlusters.length,
       pusatCount: pusatMetrics.length,
       jabatanCount: jabatanMetrics.length,
@@ -262,7 +301,7 @@ export const IabAllPage: React.FC = () => {
               )
             ).length,
     };
-  }, [filterKluster, yearPrograms, pusatMetrics, jabatanMap, effectiveKlusters.length, jabatanMetrics.length, pegawaiList]);
+  }, [filterKluster, yearPrograms, pusatMetrics, jabatanMap, effectiveKlusters.length, jabatanMetrics.length, pegawaiList, fasaPeruntukanList, sumberKewanganList, filterTahun]);
 
   // Pegawai rows by Kluster
   const officerRows = useMemo(() => {
@@ -305,7 +344,7 @@ export const IabAllPage: React.FC = () => {
       else if (officerSortKey === 'jabatan') cmp = (a.pegawai.jabatan || '').localeCompare(b.pegawai.jabatan || '');
       else if (officerSortKey === 'total') cmp = a.totalPrograms - b.totalPrograms;
       else if (officerSortKey === 'selesai') cmp = a.selesai - b.selesai;
-      else if (officerSortKey === 'peruntukan') cmp = a.peruntukan - b.peruntukan;
+      else if (officerSortKey === 'peruntukan') cmp = a.peruntukanDiagihkan - b.peruntukanDiagihkan;
       return officerSortDir === 'asc' ? cmp : -cmp;
     });
 
@@ -323,17 +362,36 @@ export const IabAllPage: React.FC = () => {
 
   const comparisonItems = useMemo(() => {
     if (comparisonLevel === 'kluster') {
-      return klusterMetrics.map((k) => ({ label: k.kluster, sub: `${k.pusats.length} Pusat · ${k.jabatanCount} Jabatan`, ...k }));
+      return klusterMetrics.map((k) => ({
+        label: k.kluster,
+        sub: `${k.pusats.length} Pusat · ${k.jabatanCount} Jabatan`,
+        ...k,
+      }));
     }
     if (comparisonLevel === 'pusat') {
-      return pusatMetrics.map((p) => ({ label: p.pusat, sub: p.kluster, ...p }));
+      return pusatMetrics.map((p) => ({
+        label: p.pusat,
+        sub: p.kluster,
+        ...p,
+      }));
     }
-    return jabatanMetrics.map((j) => ({ label: j.jabatan, sub: `${j.pusat} (${j.kluster})`, ...j }));
+    return jabatanMetrics.map((j) => ({
+      label: j.jabatan,
+      sub: `${j.pusat} (${j.kluster})`,
+      peruntukanDiluluskan: null as number | null,
+      ...j,
+    }));
   }, [comparisonLevel, klusterMetrics, pusatMetrics, jabatanMetrics]);
 
   const maxCompProg = useMemo(() => Math.max(1, ...comparisonItems.map((c) => c.totalPrograms)), [comparisonItems]);
   const maxCompBudget = useMemo(
-    () => Math.max(1, ...comparisonItems.map((c) => Math.max(c.peruntukan, c.belanja))),
+    () =>
+      Math.max(
+        1,
+        ...comparisonItems.map((c) =>
+          Math.max(c.peruntukanDiluluskan || 0, c.peruntukanDiagihkan, c.belanja)
+        )
+      ),
     [comparisonItems]
   );
 
@@ -355,8 +413,9 @@ export const IabAllPage: React.FC = () => {
           'Belum Tindakan': k.belum,
           Batal: k.batal,
           'Jumlah Peserta': k.peserta,
-          'Peruntukan (RM)': k.peruntukan,
-          'Belanja Sebenar (RM)': k.belanja,
+          'Peruntukan Diluluskan (RM)': k.peruntukanDiluluskan,
+          'Peruntukan Diagihkan (RM)': k.peruntukanDiagihkan,
+          'Belanja (RM)': k.belanja,
           'Penjimatan (RM)': k.penjimatan,
           'Kadar Selesai (%)': `${k.successRate}%`,
         }))
@@ -379,8 +438,9 @@ export const IabAllPage: React.FC = () => {
           'Belum Tindakan': p.belum,
           Batal: p.batal,
           'Jumlah Peserta': p.peserta,
-          'Peruntukan (RM)': p.peruntukan,
-          'Belanja Sebenar (RM)': p.belanja,
+          'Peruntukan Diluluskan (RM)': p.peruntukanDiluluskan,
+          'Peruntukan Diagihkan (RM)': p.peruntukanDiagihkan,
+          'Belanja (RM)': p.belanja,
           'Penjimatan (RM)': p.penjimatan,
           'Kadar Selesai (%)': `${p.successRate}%`,
         }))
@@ -403,8 +463,8 @@ export const IabAllPage: React.FC = () => {
           'Belum Tindakan': j.belum,
           Batal: j.batal,
           'Jumlah Peserta': j.peserta,
-          'Peruntukan (RM)': j.peruntukan,
-          'Belanja Sebenar (RM)': j.belanja,
+          'Peruntukan Diagihkan (RM)': j.peruntukanDiagihkan,
+          'Belanja (RM)': j.belanja,
           'Penjimatan (RM)': j.penjimatan,
           'Kadar Selesai (%)': `${j.successRate}%`,
         }))
@@ -531,7 +591,7 @@ export const IabAllPage: React.FC = () => {
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5 pt-4 border-t border-slate-800 tabular-nums">
+        <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5 pt-4 border-t border-slate-800 tabular-nums">
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
             <div className="text-[10px] font-bold uppercase text-indigo-300">Kluster</div>
             <div className="text-xl font-black text-white mt-0.5">{grandTotals.klusterCount}</div>
@@ -558,17 +618,21 @@ export const IabAllPage: React.FC = () => {
               {grandTotals.selesai} <span className="text-[11px] text-slate-400">({grandTotals.successRate}%)</span>
             </div>
           </div>
-          <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Peruntukan</div>
-            <div className="text-xs font-black text-amber-300 mt-1">RM {formatRM(grandTotals.peruntukan)}</div>
+          <div className="bg-slate-800/70 rounded-xl p-3 border border-purple-700/50">
+            <div className="text-[10px] font-bold uppercase text-purple-300">Peruntukan Diluluskan</div>
+            <div className="text-xs font-black text-purple-200 mt-1">RM {formatRM(grandTotals.peruntukanDiluluskan)}</div>
           </div>
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Belanja</div>
-            <div className="text-xs font-black text-sky-300 mt-1">RM {formatRM(grandTotals.belanja)}</div>
+            <div className="text-[10px] font-bold uppercase text-amber-300">Peruntukan Diagihkan</div>
+            <div className="text-xs font-black text-amber-200 mt-1">RM {formatRM(grandTotals.peruntukanDiagihkan)}</div>
           </div>
           <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
-            <div className="text-[10px] font-bold uppercase text-slate-400">Penjimatan</div>
-            <div className="text-xs font-black text-emerald-300 mt-1">RM {formatRM(grandTotals.penjimatan)}</div>
+            <div className="text-[10px] font-bold uppercase text-sky-300">Belanja</div>
+            <div className="text-xs font-black text-sky-200 mt-1">RM {formatRM(grandTotals.belanja)}</div>
+          </div>
+          <div className="bg-slate-800/70 rounded-xl p-3 border border-slate-700/60">
+            <div className="text-[10px] font-bold uppercase text-emerald-300">Penjimatan</div>
+            <div className="text-xs font-black text-emerald-200 mt-1">RM {formatRM(grandTotals.penjimatan)}</div>
           </div>
         </div>
       </section>
@@ -618,20 +682,22 @@ export const IabAllPage: React.FC = () => {
                   <span>{km.totalPrograms} Program</span>
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100 text-xs">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Peruntukan</span>
-                  <span className="font-bold text-slate-900">RM {formatRM(km.peruntukan)}</span>
+                  <span className="text-[10px] font-bold text-purple-700 uppercase block">Peruntukan Diluluskan</span>
+                  <span className="font-bold text-purple-950">RM {formatRM(km.peruntukanDiluluskan)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Peruntukan Diagihkan</span>
+                  <span className="font-bold text-slate-900">RM {formatRM(km.peruntukanDiagihkan)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase block">Belanja</span>
                   <span className="font-bold text-blue-700">RM {formatRM(km.belanja)}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Selesai</span>
-                  <span className="font-bold text-emerald-700">
-                    {km.selesai}/{km.totalPrograms} ({km.successRate}%)
-                  </span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Penjimatan</span>
+                  <span className="font-bold text-emerald-700">RM {formatRM(km.penjimatan)}</span>
                 </div>
               </div>
             </div>
@@ -670,6 +736,24 @@ export const IabAllPage: React.FC = () => {
                 <span><strong>{pm.pegawaiCount}</strong> Pegawai</span>
                 <span><strong>{pm.peserta}</strong> Peserta</span>
                 <span>Selesai: <strong className="text-emerald-700">{pm.successRate}%</strong></span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                <div>
+                  <span className="text-[10px] font-bold text-purple-700 uppercase block">Diluluskan</span>
+                  <span className="font-bold text-purple-950">RM {formatRM(pm.peruntukanDiluluskan)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Diagihkan</span>
+                  <span className="font-bold text-slate-900">RM {formatRM(pm.peruntukanDiagihkan)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Belanja</span>
+                  <span className="font-bold text-blue-700">RM {formatRM(pm.belanja)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Penjimatan</span>
+                  <span className="font-bold text-emerald-700">RM {formatRM(pm.penjimatan)}</span>
+                </div>
               </div>
             </div>
           ))}
@@ -723,7 +807,9 @@ export const IabAllPage: React.FC = () => {
                       </div>
                       <div className="text-[11px] text-slate-600 flex justify-between">
                         <span>{jm.pegawaiCount} Pegawai · {jm.selesai} Selesai</span>
-                        <span className="font-bold text-slate-900">RM {formatRM(jm.peruntukan)}</span>
+                        <span className="font-bold text-slate-900" title="Peruntukan Diagihkan (BK65)">
+                          RM {formatRM(jm.peruntukanDiagihkan)}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -799,7 +885,7 @@ export const IabAllPage: React.FC = () => {
                   Selesai
                 </th>
                 <th onClick={() => handleSortOfficer('peruntukan')} className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-200">
-                  Peruntukan (RM)
+                  Peruntukan Diagihkan (RM)
                 </th>
               </tr>
             </thead>
@@ -841,7 +927,7 @@ export const IabAllPage: React.FC = () => {
                       </button>
                     </td>
                     <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{row.selesai}</td>
-                    <td className="py-2.5 px-3 text-right font-bold text-slate-900">RM {formatRM(row.peruntukan)}</td>
+                    <td className="py-2.5 px-3 text-right font-bold text-slate-900">RM {formatRM(row.peruntukanDiagihkan)}</td>
                   </tr>
                 ))
               )}
@@ -886,8 +972,8 @@ export const IabAllPage: React.FC = () => {
                       {km.batal > 0 && <div style={{ width: `${(km.batal / total) * 100}%` }} className="bg-rose-500" />}
                     </div>
                     <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>Selesai: {km.successRate}%</span>
-                      <span>RM {formatRM(km.peruntukan)}</span>
+                      <span>Diluluskan: <strong className="text-purple-900">RM {formatRM(km.peruntukanDiluluskan)}</strong></span>
+                      <span>Diagihkan: <strong className="text-slate-900">RM {formatRM(km.peruntukanDiagihkan)}</strong></span>
                     </div>
                   </div>
                 );
@@ -918,8 +1004,8 @@ export const IabAllPage: React.FC = () => {
                       {pm.batal > 0 && <div style={{ width: `${(pm.batal / total) * 100}%` }} className="bg-rose-500" />}
                     </div>
                     <div className="text-[11px] text-slate-500 flex justify-between">
-                      <span>Selesai: {pm.successRate}%</span>
-                      <span>RM {formatRM(pm.peruntukan)}</span>
+                      <span>Diluluskan: <strong className="text-purple-900">RM {formatRM(pm.peruntukanDiluluskan)}</strong></span>
+                      <span>Diagihkan: <strong className="text-slate-900">RM {formatRM(pm.peruntukanDiagihkan)}</strong></span>
                     </div>
                   </div>
                 );
@@ -986,22 +1072,35 @@ export const IabAllPage: React.FC = () => {
           <div className="space-y-3">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <Wallet className="w-4 h-4 text-blue-600" />
-              <span>Perbandingan Peruntukan vs Belanja (RM)</span>
+              <span>
+                {comparisonLevel === 'jabatan'
+                  ? 'Perbandingan Peruntukan Diagihkan vs Belanja (RM)'
+                  : 'Perbandingan Peruntukan Diluluskan, Peruntukan Diagihkan vs Belanja (RM)'}
+              </span>
             </h4>
             <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
               {comparisonItems.map((item) => (
                 <div key={item.label} className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                   <div className="text-xs font-bold text-slate-900 truncate" title={item.label}>{item.label}</div>
                   <div className="text-[10px] text-slate-500 truncate">{item.sub}</div>
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className="w-16 text-slate-500">Peruntukan</span>
-                    <div className="flex-1 h-2 bg-white rounded-full border border-slate-200 overflow-hidden">
-                      <div style={{ width: `${Math.round((item.peruntukan / maxCompBudget) * 100)}%` }} className="h-full bg-blue-600" />
+                  {item.peruntukanDiluluskan !== null && (
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="w-20 text-purple-700 font-semibold">Diluluskan</span>
+                      <div className="flex-1 h-2 bg-white rounded-full border border-slate-200 overflow-hidden">
+                        <div style={{ width: `${Math.round((item.peruntukanDiluluskan / maxCompBudget) * 100)}%` }} className="h-full bg-purple-600" />
+                      </div>
+                      <span className="w-24 text-right font-bold text-purple-900">RM {formatRM(item.peruntukanDiluluskan)}</span>
                     </div>
-                    <span className="w-24 text-right font-bold">RM {formatRM(item.peruntukan)}</span>
+                  )}
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="w-20 text-slate-500 font-semibold">Diagihkan</span>
+                    <div className="flex-1 h-2 bg-white rounded-full border border-slate-200 overflow-hidden">
+                      <div style={{ width: `${Math.round((item.peruntukanDiagihkan / maxCompBudget) * 100)}%` }} className="h-full bg-blue-600" />
+                    </div>
+                    <span className="w-24 text-right font-bold">RM {formatRM(item.peruntukanDiagihkan)}</span>
                   </div>
                   <div className="flex items-center gap-2 text-[11px]">
-                    <span className="w-16 text-slate-500">Belanja</span>
+                    <span className="w-20 text-slate-500 font-semibold">Belanja</span>
                     <div className="flex-1 h-2 bg-white rounded-full border border-slate-200 overflow-hidden">
                       <div style={{ width: `${Math.round((item.belanja / maxCompBudget) * 100)}%` }} className="h-full bg-emerald-600" />
                     </div>
@@ -1095,17 +1194,20 @@ export const IabAllPage: React.FC = () => {
                 <th className="py-2.5 px-2 text-center text-slate-600">Belum</th>
                 <th className="py-2.5 px-2 text-center text-rose-700">Batal</th>
                 <th className="py-2.5 px-2 text-right">Peserta</th>
-                <th className="py-2.5 px-3 text-right">Peruntukan (RM)</th>
+                {rumusanLevel !== 'jabatan' && (
+                  <th className="py-2.5 px-3 text-right text-purple-800">Peruntukan Diluluskan (RM)</th>
+                )}
+                <th className="py-2.5 px-3 text-right">Peruntukan Diagihkan (RM)</th>
                 <th className="py-2.5 px-3 text-right">Belanja (RM)</th>
                 <th className="py-2.5 px-3 text-right">Penjimatan (RM)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(rumusanLevel === 'kluster'
-                ? klusterMetrics.map((k) => ({ key: k.kluster, title: k.kluster, sub: `${k.pusats.length} Pusat · ${k.jabatanCount} Jabatan`, ...k }))
+                ? klusterMetrics.map((k) => ({ key: k.kluster, title: k.kluster, sub: `${k.pusats.length} Pusat · ${k.jabatanCount} Jabatan`, diluluskan: k.peruntukanDiluluskan, ...k }))
                 : rumusanLevel === 'pusat'
-                ? pusatMetrics.map((p) => ({ key: p.pusat, title: p.pusat, sub: p.kluster, ...p }))
-                : jabatanMetrics.map((j) => ({ key: j.jabatan, title: j.jabatan, sub: `${j.pusat} · ${j.kluster}`, ...j }))
+                ? pusatMetrics.map((p) => ({ key: p.pusat, title: p.pusat, sub: p.kluster, diluluskan: p.peruntukanDiluluskan, ...p }))
+                : jabatanMetrics.map((j) => ({ key: j.jabatan, title: j.jabatan, sub: `${j.pusat} · ${j.kluster}`, diluluskan: 0, ...j }))
               ).map((r) => (
                 <tr key={r.key} className="hover:bg-slate-50">
                   <td className="py-2.5 px-3">
@@ -1120,7 +1222,10 @@ export const IabAllPage: React.FC = () => {
                   <td className="py-2.5 px-2 text-center">{r.belum}</td>
                   <td className="py-2.5 px-2 text-center font-bold text-rose-600">{r.batal}</td>
                   <td className="py-2.5 px-2 text-right">{r.peserta}</td>
-                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(r.peruntukan)}</td>
+                  {rumusanLevel !== 'jabatan' && (
+                    <td className="py-2.5 px-3 text-right font-semibold text-purple-800">{formatRM(r.diluluskan)}</td>
+                  )}
+                  <td className="py-2.5 px-3 text-right font-semibold">{formatRM(r.peruntukanDiagihkan)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-blue-700">{formatRM(r.belanja)}</td>
                   <td className="py-2.5 px-3 text-right font-semibold text-emerald-700">{formatRM(r.penjimatan)}</td>
                 </tr>
@@ -1135,7 +1240,10 @@ export const IabAllPage: React.FC = () => {
                 <td className="py-3 px-2 text-center">{grandTotals.belum}</td>
                 <td className="py-3 px-2 text-center text-rose-300">{grandTotals.batal}</td>
                 <td className="py-3 px-2 text-right">{grandTotals.peserta}</td>
-                <td className="py-3 px-3 text-right">{formatRM(grandTotals.peruntukan)}</td>
+                {rumusanLevel !== 'jabatan' && (
+                  <td className="py-3 px-3 text-right text-purple-300">{formatRM(grandTotals.peruntukanDiluluskan)}</td>
+                )}
+                <td className="py-3 px-3 text-right text-amber-300">{formatRM(grandTotals.peruntukanDiagihkan)}</td>
                 <td className="py-3 px-3 text-right text-sky-300">{formatRM(grandTotals.belanja)}</td>
                 <td className="py-3 px-3 text-right text-emerald-300">{formatRM(grandTotals.penjimatan)}</td>
               </tr>

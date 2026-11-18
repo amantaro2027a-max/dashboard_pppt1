@@ -49,8 +49,11 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
     programs.forEach((p) => {
       const d = p.jabatan || 'Lain-lain';
       if (!map[d]) map[d] = { alloc: 0, actual: 0, count: 0 };
+      const st = (p.statusProgram || '').trim().toUpperCase();
       map[d].alloc += Number(p.jumlahRm) || 0;
-      map[d].actual += Number(p.jumlahBelanjaRm) || 0;
+      if (st === 'SELESAI' || st === 'TANGGUNG') {
+        map[d].actual += Number(p.jumlahBelanjaRm) || 0;
+      }
       map[d].count++;
     });
 
@@ -75,14 +78,18 @@ export const VisualisationModule: React.FC<VisualisationModuleProps> = ({
     let a29 = 0, b29 = 0;
 
     programs.forEach((p) => {
+      const st = (p.statusProgram || '').trim().toUpperCase();
+      const isBelanjaStatus = st === 'SELESAI' || st === 'TANGGUNG';
       a21 += Number(p.os21000) || 0;
-      b21 += Number(p.os21000Belanja) || 0;
       a24 += Number(p.os24000) || 0;
-      b24 += Number(p.os24000Belanja) || 0;
       a27 += Number(p.os27000) || 0;
-      b27 += Number(p.os27000Belanja) || 0;
       a29 += Number(p.os29000) || 0;
-      b29 += Number(p.os29000Belanja) || 0;
+      if (isBelanjaStatus) {
+        b21 += Number(p.os21000Belanja) || 0;
+        b24 += Number(p.os24000Belanja) || 0;
+        b27 += Number(p.os27000Belanja) || 0;
+        b29 += Number(p.os29000Belanja) || 0;
+      }
     });
 
     return [

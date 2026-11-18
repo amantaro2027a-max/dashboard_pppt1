@@ -3,6 +3,11 @@ import { useProgramContext } from '../context/ProgramContext';
 import { OsAllocation, FasaPeruntukanRecord } from '../types/program';
 import { formatRMWithPrefix } from '../utils/formatters';
 import { getFasaYear } from '../utils/financeYear';
+import {
+  getFasaAllocationsForScope,
+  getPeruntukanDiluluskanStats,
+  hasPerPusatAllocations,
+} from '../utils/financeCalculations';
 import { FinanceYearTabs } from './FinanceYearTabs';
 import {
   Wallet,
@@ -21,63 +26,134 @@ import {
   ChevronUp,
   AlertTriangle,
   X,
+  Building2,
 } from 'lucide-react';
 
 interface FasaCardProps {
   fasa: FasaPeruntukanRecord;
   sumberKewanganList: string[];
-  onSave: (fasaId: string, allocations: Record<string, OsAllocation>) => void;
+  pusatList: string[];
+  financeKlusterFilter: string;
+  financePusatFilter: string;
+  financeTargetPusats: string[] | null;
+  onSave: (
+    fasaId: string,
+    allocations: Record<string, OsAllocation>,
+    pusatAllocations?: Record<string, Record<string, OsAllocation>>
+  ) => void;
   onRequestDelete?: (fasa: FasaPeruntukanRecord) => void;
   canDelete: boolean;
   canEdit: boolean;
 }
 
+const buildEmptyAllocMap = (sumberKewanganList: string[]): Record<string, OsAllocation> => {
+  const map: Record<string, OsAllocation> = {};
+  sumberKewanganList.forEach((sk) => {
+    map[sk] = { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
+  });
+  return map;
+};
+
+const loadAllocMapFromSource = (
+  sumberKewanganList: string[],
+  source?: Record<string, OsAllocation>
+): Record<string, OsAllocation> => {
+  const map = buildEmptyAllocMap(sumberKewanganList);
+  if (!source) return map;
+  sumberKewanganList.forEach((sk) => {
+    const existing = source[sk];
+    map[sk] = {
+      os21000: Number(existing?.os21000) || 0,
+      os24000: Number(existing?.os24000) || 0,
+      os27000: Number(existing?.os27000) || 0,
+      os29000: Number(existing?.os29000) || 0,
+    };
+  });
+  return map;
+};
+
 const FasaCard: React.FC<FasaCardProps> = ({
   fasa,
   sumberKewanganList,
+  pusatList,
+  financeKlusterFilter,
+  financePusatFilter,
+  financeTargetPusats,
   onSave,
   onRequestDelete,
   canDelete,
   canEdit,
 }) => {
-  // Local state for edits
-  const [localAllocations, setLocalAllocations] = useState<Record<string, OsAllocation>>(() => {
-    const initial: Record<string, OsAllocation> = {};
-    sumberKewanganList.forEach((sk) => {
-      const existing = fasa.allocations?.[sk];
-      initial[sk] = {
-        os21000: existing?.os21000 || 0,
-        os24000: existing?.os24000 || 0,
-        os27000: existing?.os27000 || 0,
-        os29000: existing?.os29000 || 0,
-      };
-    });
-    return initial;
+  const availablePusatsForEdit = useMemo(() => {
+    if (financeTargetPusats && financeTargetPusats.length > 0) {
+      return financeTargetPusats;
+    }
+    return pusatList;
+  }, [financeTargetPusats, pusatList]);
+
+  const fasaHasPerPusat = useMemo(() => hasPerPusatAllocations(fasa), [fasa]);
+
+  // Target Pusat when editing
+  const [selectedEditPusat, setSelectedEditPusat] = useState<string>(() => {
+    if (financePusatFilter && financePusatFilter !== 'SEMUA') return financePusatFilter;
+    if (!hasPerPusatAllocations(fasa)) return '__GLOBAL__';
+    return availablePusatsForEdit[0] || '__GLOBAL__';
   });
+
+  // Read-only scoped allocations based on active Kluster/Pusat filter
+  const scopedDisplayAllocations = useMemo(
+    () => getFasaAllocationsForScope(fasa, sumberKewanganList, financeTargetPusats),
+    [fasa, sumberKewanganList, financeTargetPusats]
+  );
+
+  // Local state for edits
+  const [localAllocations, setLocalAllocations] = useState<Record<string, OsAllocation>>(() =>
+    loadAllocMapFromSource(sumberKewanganList, scopedDisplayAllocations)
+  );
 
   // Collapse/Hide state for this Fasa (Default: Sembunyi Fasa)
   const [isCollapsed, setIsCollapsed] = useState(true);
 
-  // Edit locking / dimming state:
-  // When false, data is locked / dimmed (not editable).
-  // When true, user can edit the inputs.
+  // Edit locking / dimming state
   const [isEditing, setIsEditing] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Sync if external fasa changes (e.g. from database reload)
+  const effectiveEditPusat =
+    financePusatFilter && financePusatFilter !== 'SEMUA' ? financePusatFilter : selectedEditPusat;
+
+  // Keep selectedEditPusat synced when filter changes while not editing
   React.useEffect(() => {
-    const updated: Record<string, OsAllocation> = {};
-    sumberKewanganList.forEach((sk) => {
-      const existing = fasa.allocations?.[sk];
-      updated[sk] = {
-        os21000: existing?.os21000 || 0,
-        os24000: existing?.os24000 || 0,
-        os27000: existing?.os27000 || 0,
-        os29000: existing?.os29000 || 0,
-      };
-    });
-    setLocalAllocations(updated);
-  }, [fasa, sumberKewanganList]);
+    if (isEditing) return;
+    if (financePusatFilter && financePusatFilter !== 'SEMUA') {
+      setSelectedEditPusat(financePusatFilter);
+    } else if (financeTargetPusats && financeTargetPusats.length > 0) {
+      if (!financeTargetPusats.includes(selectedEditPusat)) {
+        setSelectedEditPusat(financeTargetPusats[0]);
+      }
+    } else if (!fasaHasPerPusat) {
+      setSelectedEditPusat('__GLOBAL__');
+    } else if (selectedEditPusat === '__GLOBAL__' || !pusatList.includes(selectedEditPusat)) {
+      setSelectedEditPusat(pusatList[0] || '__GLOBAL__');
+    }
+  }, [financePusatFilter, financeTargetPusats, fasaHasPerPusat, pusatList, isEditing, selectedEditPusat]);
+
+  // Sync display values when not editing
+  React.useEffect(() => {
+    if (!isEditing) {
+      setLocalAllocations(loadAllocMapFromSource(sumberKewanganList, scopedDisplayAllocations));
+    }
+  }, [scopedDisplayAllocations, sumberKewanganList, isEditing]);
+
+  const handleSwitchEditPusat = (nextPusat: string) => {
+    setSelectedEditPusat(nextPusat);
+    if (nextPusat === '__GLOBAL__') {
+      setLocalAllocations(loadAllocMapFromSource(sumberKewanganList, fasa.allocations));
+    } else {
+      setLocalAllocations(
+        loadAllocMapFromSource(sumberKewanganList, fasa.pusatAllocations?.[nextPusat])
+      );
+    }
+  };
 
   const handleInputChange = (
     sk: string,
@@ -95,6 +171,8 @@ const FasaCard: React.FC<FasaCardProps> = ({
     }));
   };
 
+  const activeDisplayAllocations = isEditing ? localAllocations : scopedDisplayAllocations;
+
   // Totals for this fasa
   const fasaTotals = useMemo(() => {
     let t21 = 0;
@@ -102,7 +180,7 @@ const FasaCard: React.FC<FasaCardProps> = ({
     let t27 = 0;
     let t29 = 0;
     sumberKewanganList.forEach((sk) => {
-      const alloc = localAllocations[sk] || { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
+      const alloc = activeDisplayAllocations[sk] || { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
       t21 += alloc.os21000 || 0;
       t24 += alloc.os24000 || 0;
       t27 += alloc.os27000 || 0;
@@ -115,25 +193,66 @@ const FasaCard: React.FC<FasaCardProps> = ({
       os29: t29,
       grand: t21 + t24 + t27 + t29,
     };
-  }, [localAllocations, sumberKewanganList]);
+  }, [activeDisplayAllocations, sumberKewanganList]);
 
-  // Handle Button Click:
-  // "Apabila dah simpan, data akan dim/tak boleh edit kecuali tekan semula butang tersebut sekali lagi."
   const handleButtonClick = () => {
     if (!canEdit) return;
     if (isEditing) {
-      // Save data and lock / dim fields
-      onSave(fasa.id, localAllocations);
+      if (effectiveEditPusat === '__GLOBAL__') {
+        onSave(fasa.id, localAllocations, fasa.pusatAllocations);
+      } else {
+        const nextPusatAllocations: Record<string, Record<string, OsAllocation>> = {
+          ...(fasa.pusatAllocations || {}),
+          [effectiveEditPusat]: localAllocations,
+        };
+        // Recompute total fasa.allocations across all Pusat breakdowns
+        const mergedAllocations: Record<string, OsAllocation> = {};
+        const allSks = new Set<string>(sumberKewanganList);
+        Object.values(nextPusatAllocations).forEach((skMap) => {
+          Object.keys(skMap || {}).forEach((k) => allSks.add(k));
+        });
+        allSks.forEach((sk) => {
+          mergedAllocations[sk] = { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
+        });
+        Object.values(nextPusatAllocations).forEach((skMap) => {
+          Object.entries(skMap || {}).forEach(([sk, alloc]) => {
+            if (!mergedAllocations[sk]) {
+              mergedAllocations[sk] = { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
+            }
+            mergedAllocations[sk].os21000 += Number(alloc?.os21000) || 0;
+            mergedAllocations[sk].os24000 += Number(alloc?.os24000) || 0;
+            mergedAllocations[sk].os27000 += Number(alloc?.os27000) || 0;
+            mergedAllocations[sk].os29000 += Number(alloc?.os29000) || 0;
+          });
+        });
+        onSave(fasa.id, mergedAllocations, nextPusatAllocations);
+      }
       setIsEditing(false);
       setSavedSuccess(true);
       setTimeout(() => {
         setSavedSuccess(false);
       }, 4000);
     } else {
-      // Unlock fields for re-editing
+      const target =
+        financePusatFilter && financePusatFilter !== 'SEMUA'
+          ? financePusatFilter
+          : availablePusatsForEdit[0] || '__GLOBAL__';
+      setSelectedEditPusat(target);
+      if (target === '__GLOBAL__') {
+        setLocalAllocations(loadAllocMapFromSource(sumberKewanganList, fasa.allocations));
+      } else {
+        setLocalAllocations(
+          loadAllocMapFromSource(sumberKewanganList, fasa.pusatAllocations?.[target])
+        );
+      }
       setIsEditing(true);
       setSavedSuccess(false);
     }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setLocalAllocations(loadAllocMapFromSource(sumberKewanganList, scopedDisplayAllocations));
   };
 
   return (
@@ -214,6 +333,56 @@ const FasaCard: React.FC<FasaCardProps> = ({
       {/* Collapsible Content */}
       {!isCollapsed && (
         <>
+          {/* Pusat Target Selector Banner when editing or filtered */}
+          {(isEditing || financePusatFilter !== 'SEMUA' || financeKlusterFilter !== 'SEMUA') && (
+            <div className="bg-slate-50 border-b border-slate-200 px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 text-xs text-slate-700">
+                <Building2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                {isEditing ? (
+                  <span className="font-bold text-slate-800">
+                    Pusat Sasaran Agihan Fasa:
+                  </span>
+                ) : (
+                  <span>
+                    Paparan Skop:{' '}
+                    <strong className="text-slate-900">
+                      {financePusatFilter !== 'SEMUA'
+                        ? financePusatFilter
+                        : `Kluster ${financeKlusterFilter}`}
+                    </strong>
+                  </span>
+                )}
+              </div>
+
+              {isEditing && (
+                <div className="flex items-center gap-2">
+                  {financePusatFilter !== 'SEMUA' ? (
+                    <span className="px-3 py-1.5 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-bold">
+                      {financePusatFilter}
+                    </span>
+                  ) : (
+                    <select
+                      value={effectiveEditPusat}
+                      onChange={(e) => handleSwitchEditPusat(e.target.value)}
+                      className="px-3 py-1.5 text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      {availablePusatsForEdit.map((pus) => (
+                        <option key={pus} value={pus}>
+                          {pus}
+                        </option>
+                      ))}
+                      {!fasaHasPerPusat && (
+                        <option value="__GLOBAL__">
+                          KESELURUHAN IAB (AGIHAN AM / LEGACY)
+                        </option>
+                      )}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Table Content */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
@@ -230,7 +399,7 @@ const FasaCard: React.FC<FasaCardProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sumberKewanganList.map((sk, index) => {
-                  const alloc = localAllocations[sk] || { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
+                  const alloc = activeDisplayAllocations[sk] || { os21000: 0, os24000: 0, os27000: 0, os29000: 0 };
                   const rowTotal =
                     (alloc.os21000 || 0) +
                     (alloc.os24000 || 0) +
@@ -376,26 +545,37 @@ const FasaCard: React.FC<FasaCardProps> = ({
             </div>
 
             {canEdit && (
-              <button
-                onClick={handleButtonClick}
-                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer ${
-                  isEditing
-                    ? 'text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 ring-2 ring-emerald-500/40'
-                    : 'text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950'
-                }`}
-              >
-                {isEditing ? (
-                  <>
-                    <Save className="w-4 h-4 text-emerald-300" />
-                    <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="w-4 h-4 text-amber-400" />
-                    <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
-                  </>
+              <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
+                {isEditing && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
                 )}
-              </button>
+                <button
+                  onClick={handleButtonClick}
+                  className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold rounded-lg transition-all shadow-xs cursor-pointer ${
+                    isEditing
+                      ? 'text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 ring-2 ring-emerald-500/40'
+                      : 'text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950'
+                  }`}
+                >
+                  {isEditing ? (
+                    <>
+                      <Save className="w-4 h-4 text-emerald-300" />
+                      <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-4 h-4 text-amber-400" />
+                      <span>Kemaskini dan Simpan {fasa.nama} Sahaja</span>
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </>
@@ -412,7 +592,11 @@ export const PeruntukanPage: React.FC = () => {
     canEditPage,
     setActiveTab,
     sumberKewanganList,
+    pusatList,
     selectedFinanceYear,
+    financeKlusterFilter,
+    financePusatFilter,
+    financeTargetPusats,
     fasaPeruntukanList,
     updateFasaPeruntukan,
     addFasaPeruntukan,
@@ -433,65 +617,51 @@ export const PeruntukanPage: React.FC = () => {
   const canAccess = Boolean(currentUser) && getPageAccessMode('PERUNTUKAN') !== 'none';
   const canEdit = isSuperAdmin || canEditPage('PERUNTUKAN');
 
-  // Calculate PERUNTUKAN KESELURUHAN (Autofill across all active phases)
+  // Calculate PERUNTUKAN DILULUSKAN KESELURUHAN (Scoped by Tahun, Kluster & Pusat)
   const peruntukanKeseluruhan = useMemo(() => {
+    const stats = getPeruntukanDiluluskanStats(
+      yearFasaList,
+      sumberKewanganList,
+      financeTargetPusats,
+      selectedFinanceYear
+    );
+
     const bySumber: Record<
       string,
       { os21: number; os24: number; os27: number; os29: number; grand: number }
     > = {};
 
-    let grand21 = 0;
-    let grand24 = 0;
-    let grand27 = 0;
-    let grand29 = 0;
-
     sumberKewanganList.forEach((sk) => {
-      let s21 = 0;
-      let s24 = 0;
-      let s27 = 0;
-      let s29 = 0;
-
-      yearFasaList.forEach((fasa) => {
-        const alloc = fasa.allocations?.[sk];
-        if (alloc) {
-          s21 += alloc.os21000 || 0;
-          s24 += alloc.os24000 || 0;
-          s27 += alloc.os27000 || 0;
-          s29 += alloc.os29000 || 0;
-        }
-      });
-
-      const rowSum = s21 + s24 + s27 + s29;
+      const row = stats.bySumber[sk];
       bySumber[sk] = {
-        os21: s21,
-        os24: s24,
-        os27: s27,
-        os29: s29,
-        grand: rowSum,
+        os21: row?.os21000 || 0,
+        os24: row?.os24000 || 0,
+        os27: row?.os27000 || 0,
+        os29: row?.os29000 || 0,
+        grand: row?.total || 0,
       };
-
-      grand21 += s21;
-      grand24 += s24;
-      grand27 += s27;
-      grand29 += s29;
     });
 
     return {
       bySumber,
       grandTotals: {
-        os21: grand21,
-        os24: grand24,
-        os27: grand27,
-        os29: grand29,
-        grand: grand21 + grand24 + grand27 + grand29,
+        os21: stats.overall.os21000,
+        os24: stats.overall.os24000,
+        os27: stats.overall.os27000,
+        os29: stats.overall.os29000,
+        grand: stats.overall.total,
       },
     };
-  }, [sumberKewanganList, yearFasaList]);
+  }, [sumberKewanganList, yearFasaList, financeTargetPusats, selectedFinanceYear]);
 
   // Handle Save specific Fasa
-  const handleSaveFasa = (fasaId: string, allocations: Record<string, OsAllocation>) => {
+  const handleSaveFasa = (
+    fasaId: string,
+    allocations: Record<string, OsAllocation>,
+    pusatAllocations?: Record<string, Record<string, OsAllocation>>
+  ) => {
     if (!canEdit) return;
-    const res = updateFasaPeruntukan(fasaId, allocations);
+    const res = updateFasaPeruntukan(fasaId, allocations, pusatAllocations);
     if (res.success) {
       setNotification({
         type: 'success',
@@ -821,6 +991,10 @@ export const PeruntukanPage: React.FC = () => {
               key={fasa.id}
               fasa={fasa}
               sumberKewanganList={sumberKewanganList}
+              pusatList={pusatList}
+              financeKlusterFilter={financeKlusterFilter}
+              financePusatFilter={financePusatFilter}
+              financeTargetPusats={financeTargetPusats}
               onSave={handleSaveFasa}
               onRequestDelete={(targetFasa) => setFasaToDelete(targetFasa)}
               canDelete={canEdit && fasa.id !== 'fasa_1' && fasa.id !== 'fasa_2'}

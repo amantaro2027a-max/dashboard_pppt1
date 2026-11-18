@@ -1,9 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useProgramContext } from '../context/ProgramContext';
-import { ProgramItem, Pegawai } from '../types/program';
+import { ProgramItem, Pegawai, PullbackSourceType, MessageTopik } from '../types/program';
 import { formatRM, formatRMWithPrefix, formatNumber, getStatusConfig } from '../utils/formatters';
 import { getCurrentFinanceYear, getProgramYear } from '../utils/financeYear';
 import { deduplicateProgramsByCode, getProgramDedupeKey } from '../utils/programDedupe';
+import {
+  getProgramFinanceAggregate,
+  getPeruntukanDiluluskanStats,
+  computeJabatanFinanceSummary,
+} from '../utils/financeCalculations';
 import * as XLSX from 'xlsx';
 import {
   Briefcase,
@@ -19,7 +24,24 @@ import {
   X,
   TrendingUp,
   Award,
+  Wallet,
+  AlertTriangle,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import { PusatJabatanChatSection } from './PusatJabatanChatSection';
+
+const OS_META: Array<{
+  key: 'os21000' | 'os24000' | 'os27000' | 'os29000';
+  label: string;
+  shortLabel: string;
+}> = [
+  { key: 'os21000', label: 'OS21000', shortLabel: 'OS21' },
+  { key: 'os24000', label: 'OS24000', shortLabel: 'OS24' },
+  { key: 'os27000', label: 'OS27000', shortLabel: 'OS27' },
+  { key: 'os29000', label: 'OS29000', shortLabel: 'OS29' },
+];
 
 interface OfficerJabatanMetrics {
   pegawai: Pegawai;
@@ -46,6 +68,15 @@ export const JabatanPage: React.FC = () => {
     programs,
     pegawaiList,
     jabatanMap,
+    fasaPeruntukanList,
+    sumberKewanganList,
+    jabatanAllocations,
+    jabatanPullbacks,
+    pusatJabatanMessages,
+    addJabatanPullback,
+    sendPusatJabatanMessage,
+    deletePusatJabatanMessage,
+    showNotification,
     currentUser,
     isSuperAdmin,
     getPageAccessMode,
@@ -57,6 +88,15 @@ export const JabatanPage: React.FC = () => {
 
   const pageMode = getPageAccessMode('JABATAN');
   const canAccess = Boolean(currentUser) && pageMode !== 'none';
+  const canManageJabatanReturn = Boolean(
+    currentUser && (isSuperAdmin || currentUser.levelId === 'KETUA_JABATAN')
+  );
+  const canUsePusatJabatanChat = Boolean(
+    currentUser &&
+      (isSuperAdmin ||
+        currentUser.levelId === 'KETUA_JABATAN' ||
+        currentUser.levelId === 'KETUA_PUSAT')
+  );
 
   const authorizedJabatanList = useMemo(() => {
     const base = getAuthorizedJabatanList();
@@ -82,6 +122,42 @@ export const JabatanPage: React.FC = () => {
     items: ProgramItem[];
   } | null>(null);
 
+  const [pulangModal, setPulangModal] = useState<{
+    sumberBaki: PullbackSourceType;
+    tahun: number;
+    maxOs: { os21000: number; os24000: number; os27000: number; os29000: number };
+    os21000: number;
+    os24000: number;
+    os27000: number;
+    os29000: number;
+    tarikh: string;
+    catatan: string;
+  } | null>(null);
+
+  const [chatTopik, setChatTopik] = useState<MessageTopik>('BAKI');
+  const [chatText, setChatText] = useState<string>('');
+
+  // By default hide all sections except Section 1 (1. Nama Jabatan)
+  const [expandedSections, setExpandedSections] = useState<{
+    kewangan: boolean;
+    chat: boolean;
+    s2: boolean;
+    s3: boolean;
+    s4: boolean;
+    s5: boolean;
+  }>({
+    kewangan: false,
+    chat: false,
+    s2: false,
+    s3: false,
+    s4: false,
+    s5: false,
+  });
+
+  const toggleSection = (key: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   useEffect(() => {
     if (authorizedJabatanList.length === 0) {
       setSelectedJabatan('');
@@ -97,16 +173,163 @@ export const JabatanPage: React.FC = () => {
       if (jabs.includes(selectedJabatan)) return pus;
     }
     const foundProg = programs.find((p) => p.jabatan === selectedJabatan && p.pusat);
-    return foundProg?.pusat || '-';
-  }, [selectedJabatan, jabatanMap, programs]);
+    if (foundProg?.pusat) return foundProg.pusat;
+    const foundAlloc = (jabatanAllocations || []).find(
+      (a) => a.jabatan === selectedJabatan && a.pusat
+    );
+    return foundAlloc?.pusat || '-';
+  }, [selectedJabatan, jabatanMap, programs, jabatanAllocations]);
 
   const availableYears = useMemo(() => {
     const set = new Set<string>([
       String(getCurrentFinanceYear()),
       ...programs.map((p) => String(getProgramYear(p))),
+      ...(jabatanAllocations || []).map((a) => String(a.tahun)),
+      ...(jabatanPullbacks || []).map((pb) => String(pb.tahun)),
     ]);
     return Array.from(set).sort().reverse();
-  }, [programs]);
+  }, [programs, jabatanAllocations, jabatanPullbacks]);
+
+  const effectiveActionYear =
+    filterTahun === 'SEMUA'
+      ? getCurrentFinanceYear()
+      : Number(filterTahun) || getCurrentFinanceYear();
+
+  const jabatanSummary = useMemo(() => {
+    return computeJabatanFinanceSummary(
+      selectedJabatan,
+      filterTahun,
+      programs,
+      jabatanAllocations,
+      jabatanPullbacks,
+      parentPusat !== '-' ? parentPusat : undefined
+    );
+  }, [selectedJabatan, filterTahun, programs, jabatanAllocations, jabatanPullbacks, parentPusat]);
+
+  // Autohide OS yang bernilai 0.00 daripada Page Peruntukan bagi Pusat induk
+  const peruntukanPusatStats = useMemo(() => {
+    const scopePusats = parentPusat && parentPusat !== '-' ? [parentPusat] : null;
+    return getPeruntukanDiluluskanStats(
+      fasaPeruntukanList,
+      sumberKewanganList,
+      scopePusats,
+      filterTahun === 'SEMUA' ? 'SEMUA' : filterTahun
+    );
+  }, [fasaPeruntukanList, sumberKewanganList, parentPusat, filterTahun]);
+
+  const activeOsList = useMemo(
+    () => OS_META.filter((osItem) => (peruntukanPusatStats.overall[osItem.key] || 0) > 0),
+    [peruntukanPusatStats]
+  );
+
+  const jabatanMessages = useMemo(() => {
+    if (!canUsePusatJabatanChat || !selectedJabatan) return [];
+    const jabUpper = selectedJabatan.trim().toUpperCase();
+    return (pusatJabatanMessages || [])
+      .filter((m) => {
+        if ((m.jabatan || '').trim().toUpperCase() !== jabUpper) return false;
+        if (filterTahun !== 'SEMUA' && String(m.tahun) !== filterTahun) return false;
+        return true;
+      })
+      .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  }, [canUsePusatJabatanChat, selectedJabatan, pusatJabatanMessages, filterTahun]);
+
+  const openPulangModal = (sumberBaki: PullbackSourceType) => {
+    if (!selectedJabatan) return;
+    const yrSummary = computeJabatanFinanceSummary(
+      selectedJabatan,
+      effectiveActionYear,
+      programs,
+      jabatanAllocations,
+      jabatanPullbacks,
+      parentPusat !== '-' ? parentPusat : undefined
+    );
+    const maxSource =
+      sumberBaki === 'ASAL' ? yrSummary.availableTarikAsal : yrSummary.availableTarikPenjimatan;
+
+    setPulangModal({
+      sumberBaki,
+      tahun: effectiveActionYear,
+      maxOs: {
+        os21000: maxSource.os21000,
+        os24000: maxSource.os24000,
+        os27000: maxSource.os27000,
+        os29000: maxSource.os29000,
+      },
+      os21000: maxSource.os21000,
+      os24000: maxSource.os24000,
+      os27000: maxSource.os27000,
+      os29000: maxSource.os29000,
+      tarikh: new Date().toISOString().slice(0, 10),
+      catatan: '',
+    });
+  };
+
+  const handleConfirmPulang = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pulangModal || !selectedJabatan) return;
+    const pusTarget = parentPusat !== '-' ? parentPusat : currentUser?.pusat || '';
+    if (!pusTarget) {
+      showNotification({
+        type: 'error',
+        title: 'Pusat Induk Tidak Dikenalpasti',
+        message: 'Tidak dapat memulangkan peruntukan kerana Pusat Induk bagi jabatan ini tiada.',
+      });
+      return;
+    }
+
+    const res = addJabatanPullback({
+      pusat: pusTarget,
+      jabatan: selectedJabatan,
+      tahun: pulangModal.tahun,
+      jenisTindakan: 'PULANGKAN',
+      sumberBaki: pulangModal.sumberBaki,
+      tarikh: pulangModal.tarikh || new Date().toISOString().slice(0, 10),
+      os21000: Number(pulangModal.os21000) || 0,
+      os24000: Number(pulangModal.os24000) || 0,
+      os27000: Number(pulangModal.os27000) || 0,
+      os29000: Number(pulangModal.os29000) || 0,
+      catatan: pulangModal.catatan.trim(),
+    });
+
+    if (!res.success) {
+      showNotification({
+        type: 'error',
+        title: 'Gagal Memulangkan Baki',
+        message: res.message || 'Pemulangan baki tidak berjaya.',
+      });
+      return;
+    }
+
+    setPulangModal(null);
+    showNotification({
+      type: 'success',
+      title: 'Pemulangan Baki Berjaya',
+      message: res.message || 'Baki telah berjaya dipulangkan ke Pusat untuk agihan semula.',
+    });
+  };
+
+  const handleSendJabatanMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedJabatan) return;
+    const pusTarget = parentPusat !== '-' ? parentPusat : currentUser?.pusat || '';
+    const res = sendPusatJabatanMessage({
+      pusat: pusTarget,
+      jabatan: selectedJabatan,
+      tahun: effectiveActionYear,
+      mesej: chatText,
+      topik: chatTopik,
+    });
+    if (!res.success) {
+      showNotification({
+        type: 'error',
+        title: 'Gagal Menghantar Mesej',
+        message: res.message || 'Sila cuba lagi.',
+      });
+      return;
+    }
+    setChatText('');
+  };
 
   const jabatanPrograms = useMemo(() => {
     if (!selectedJabatan) return [];
@@ -182,9 +405,6 @@ export const JabatanPage: React.FC = () => {
       let batal = 0;
       let peserta = 0;
       let hari = 0;
-      let peruntukan = 0;
-      let belanja = 0;
-      let penjimatan = 0;
 
       matchedProgs.forEach((p) => {
         const st = (p.statusProgram || '').trim().toUpperCase();
@@ -197,11 +417,13 @@ export const JabatanPage: React.FC = () => {
         if (st !== 'BATAL') {
           peserta += Number(p.bilanganPeserta) || 0;
           hari += Number(p.jumlahHari) || 0;
-          peruntukan += Number(p.jumlahRm) || 0;
-          belanja += Number(p.jumlahBelanjaRm) || 0;
-          penjimatan += Number(p.jumlahPenjimatanRm) || 0;
         }
       });
+
+      const fin = getProgramFinanceAggregate(matchedProgs, true);
+      const peruntukan = fin.diagihkan.total;
+      const belanja = fin.belanja.total;
+      const penjimatan = fin.penjimatan.total;
 
       const active = matchedProgs.length - batal;
       const successRate = active > 0 ? Math.round((selesai / active) * 100) : 0;
@@ -277,9 +499,6 @@ export const JabatanPage: React.FC = () => {
     let batal = 0;
     let peserta = 0;
     let hari = 0;
-    let peruntukan = 0;
-    let belanja = 0;
-    let penjimatan = 0;
 
     jabatanPrograms.forEach((p) => {
       const st = (p.statusProgram || '').trim().toUpperCase();
@@ -292,11 +511,13 @@ export const JabatanPage: React.FC = () => {
       if (st !== 'BATAL') {
         peserta += Number(p.bilanganPeserta) || 0;
         hari += Number(p.jumlahHari) || 0;
-        peruntukan += Number(p.jumlahRm) || 0;
-        belanja += Number(p.jumlahBelanjaRm) || 0;
-        penjimatan += Number(p.jumlahPenjimatanRm) || 0;
       }
     });
+
+    const fin = getProgramFinanceAggregate(jabatanPrograms, true);
+    const peruntukan = fin.diagihkan.total;
+    const belanja = fin.belanja.total;
+    const penjimatan = fin.penjimatan.total;
 
     const active = jabatanPrograms.length - batal;
     const successRate = active > 0 ? Math.round((selesai / active) * 100) : 0;
@@ -346,7 +567,7 @@ export const JabatanPage: React.FC = () => {
       Batal: m.batal,
       'Jumlah Peserta': m.peserta,
       'Jumlah Hari': m.hari,
-      'Peruntukan Diurus (RM)': m.peruntukan,
+      'Peruntukan Diagihkan (RM)': m.peruntukan,
       'Belanja Sebenar (RM)': m.belanja,
       'Penjimatan (RM)': m.penjimatan,
       'Kadar Selesai (%)': `${m.successRate}%`,
@@ -484,7 +705,7 @@ export const JabatanPage: React.FC = () => {
         </div>
 
         {/* KPI Ringkas Jabatan */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 pt-4 border-t border-slate-800">
           <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3">
             <span className="text-[10px] font-bold uppercase text-slate-400 block">Pegawai</span>
             <span className="text-lg font-black text-cyan-300 tabular-nums mt-0.5 block">
@@ -503,14 +724,20 @@ export const JabatanPage: React.FC = () => {
               {jabatanTotals.successRate}%
             </span>
           </div>
+          <div className="bg-slate-800/80 border border-blue-500/40 rounded-xl p-3">
+            <span className="text-[10px] font-bold uppercase text-blue-300 block">Peruntukan Diluluskan</span>
+            <span className="text-sm font-black text-blue-200 tabular-nums mt-1 block">
+              {formatRMWithPrefix(jabatanSummary.diluluskan.total)}
+            </span>
+          </div>
           <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3">
-            <span className="text-[10px] font-bold uppercase text-slate-400 block">Peruntukan (RM)</span>
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Peruntukan Diagihkan</span>
             <span className="text-sm font-black text-amber-300 tabular-nums mt-1 block">
               {formatRMWithPrefix(jabatanTotals.peruntukan)}
             </span>
           </div>
           <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3">
-            <span className="text-[10px] font-bold uppercase text-slate-400 block">Belanja Sebenar</span>
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Belanja</span>
             <span className="text-sm font-black text-emerald-300 tabular-nums mt-1 block">
               {formatRMWithPrefix(jabatanTotals.belanja)}
             </span>
@@ -525,32 +752,380 @@ export const JabatanPage: React.FC = () => {
       </section>
 
       {/* ================================================================= */}
+      {/* KEWANGAN JABATAN (PECAHAN OS & PULANGKAN BAKI)                   */}
+      {/* ================================================================= */}
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => toggleSection('kewangan')}
+          className="w-full px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-700">
+              Kewangan Jabatan · Pecahan Objek Sebagai (OS)
+            </span>
+            <h3 className="text-base font-bold text-slate-900 mt-0.5 flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-teal-600" />
+              <span>KEWANGAN JABATAN ({selectedJabatan || '-'})</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              JUMLAH BAKI TERKINI menjadi rujukan had peruntukan semasa Ketua Jabatan mendaftar program baharu.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+            <div className="text-right">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">JUMLAH BAKI TERKINI</span>
+              <span className="text-sm sm:text-base font-black text-teal-800 font-mono tabular-nums">
+                {formatRMWithPrefix(jabatanSummary.jumlahBakiTerkini.total)}
+              </span>
+            </div>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg whitespace-nowrap">
+              <span>{expandedSections.kewangan ? 'Sembunyi' : 'Papar'}</span>
+              {expandedSections.kewangan ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </span>
+          </div>
+        </button>
+
+        {expandedSections.kewangan && (
+          <div className="px-6 pb-6 pt-4 border-t border-slate-100 space-y-5">
+            {activeOsList.length === 0 && (
+              <div className="px-3.5 py-2.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-xl">
+                Tiada pecahan OS menerima peruntukan (&gt; RM 0.00) daripada Page Peruntukan bagi Pusat Induk dan tahun yang dipilih. Lajur OS bernilai 0.00 disembunyikan secara automatik.
+              </div>
+            )}
+
+            {/* Jadual Pecahan OS KEWANGAN JABATAN */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-3 text-left min-w-[240px]">BUTIRAN KEWANGAN JABATAN</th>
+                    {activeOsList.map((osItem) => (
+                      <th key={osItem.key} className="py-3 px-3 text-right">
+                        {osItem.label} (RM)
+                      </th>
+                    ))}
+                    <th className="py-3 px-3 text-right bg-slate-800">JUMLAH (RM)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr className="bg-blue-50/40">
+                    <td className="py-2.5 px-3 font-bold text-slate-900">
+                      Peruntukan Diluluskan
+                      <span className="ml-2 text-[11px] font-semibold text-blue-700">
+                        ({jabatanSummary.agihanCount} kali agihan)
+                      </span>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.diluluskan[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-black text-blue-900 bg-blue-50/60">
+                      {formatRM(jabatanSummary.diluluskan.total)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800">
+                      Peruntukan Diagihkan
+                      <span className="ml-2 text-[11px] font-normal text-slate-500">
+                        ({jabatanSummary.programCount} program · BK65)
+                      </span>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.diagihkan[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-slate-900 bg-slate-50">
+                      {formatRM(jabatanSummary.diagihkan.total)}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800">
+                      Perbelanjaan Sebenar
+                      <span className="ml-2 text-[11px] font-normal text-slate-500">
+                        ({jabatanSummary.programCount} program)
+                      </span>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.belanjaSebenar[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-emerald-700 bg-emerald-50/40">
+                      {formatRM(jabatanSummary.belanjaSebenar.total)}
+                    </td>
+                  </tr>
+
+                  <tr className="bg-amber-50/30">
+                    <td className="py-2.5 px-3 font-semibold text-slate-900">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span>Baki (asal)</span>
+                          <span className="block text-[10px] font-normal text-slate-500">
+                            Peruntukan Diluluskan - Peruntukan Diagihkan
+                          </span>
+                        </div>
+                        {canManageJabatanReturn && (
+                          <button
+                            type="button"
+                            disabled={jabatanSummary.availableTarikAsal.total <= 0}
+                            onClick={() => openPulangModal('ASAL')}
+                            className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded bg-amber-600 hover:bg-amber-700 text-white disabled:bg-slate-200 disabled:text-slate-400 transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
+                          >
+                            PULANGKAN
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.bakiAsal[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-amber-800 bg-amber-50/60">
+                      {formatRM(jabatanSummary.bakiAsal.total)}
+                    </td>
+                  </tr>
+
+                  <tr className="bg-teal-50/30">
+                    <td className="py-2.5 px-3 font-semibold text-slate-900">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span>Baki (Penjimatan)</span>
+                          <span className="block text-[10px] font-normal text-slate-500">
+                            Peruntukan Diagihkan - Perbelanjaan Sebenar
+                          </span>
+                        </div>
+                        {canManageJabatanReturn && (
+                          <button
+                            type="button"
+                            disabled={jabatanSummary.availableTarikPenjimatan.total <= 0}
+                            onClick={() => openPulangModal('PENJIMATAN')}
+                            className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded bg-amber-600 hover:bg-amber-700 text-white disabled:bg-slate-200 disabled:text-slate-400 transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0"
+                          >
+                            PULANGKAN
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.bakiPenjimatan[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-teal-800 bg-teal-50/60">
+                      {formatRM(jabatanSummary.bakiPenjimatan.total)}
+                    </td>
+                  </tr>
+
+                  <tr className="bg-slate-100 font-bold">
+                    <td className="py-2.5 px-3 text-slate-900 uppercase">JUMLAH BAKI</td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.jumlahBaki[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-black text-slate-900">
+                      {formatRM(jabatanSummary.jumlahBaki.total)}
+                    </td>
+                  </tr>
+
+                  <tr className="text-rose-800">
+                    <td className="py-2.5 px-3 font-semibold">
+                      Peruntukan Ditarik
+                      <span className="ml-2 text-[11px] font-normal text-rose-600">
+                        ({jabatanSummary.pullbackCount} rekod)
+                      </span>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.ditarik[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold bg-rose-50/50">
+                      {formatRM(jabatanSummary.ditarik.total)}
+                    </td>
+                  </tr>
+
+                  <tr className="bg-slate-900 text-white font-black">
+                    <td className="py-3 px-3 uppercase tracking-wide">
+                      JUMLAH BAKI TERKINI
+                      <span className="block text-[10px] font-normal text-slate-300">
+                        JUMLAH BAKI - Peruntukan Ditarik
+                      </span>
+                    </td>
+                    {activeOsList.map((osItem) => (
+                      <td key={osItem.key} className="py-3 px-3 text-right font-mono tabular-nums">
+                        {formatRM(jabatanSummary.jumlahBakiTerkini[osItem.key])}
+                      </td>
+                    ))}
+                    <td className="py-3 px-3 text-right font-mono tabular-nums text-amber-300 bg-slate-800">
+                      {formatRM(jabatanSummary.jumlahBakiTerkini.total)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Rekod Agihan Diterima & Rekod Penarikan/Pemulangan */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-2.5">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                  Rekod Agihan Diterima daripada Ketua Pusat ({jabatanSummary.agihanCount})
+                </h4>
+                {jabatanSummary.agihanRecords.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3">Tiada agihan diterima buat masa ini.</p>
+                ) : (
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {jabatanSummary.agihanRecords.map((rec, idx) => (
+                      <div
+                        key={rec.id}
+                        className="bg-white border border-slate-200 rounded-lg p-2.5 text-[11px] flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <span className="font-bold text-slate-900 block">
+                            Agihan #{idx + 1} · Tarikh: <span className="font-mono">{rec.tarikh}</span>
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-500">
+                            {activeOsList.length > 0
+                              ? activeOsList
+                                  .map((o) => `${o.shortLabel}:${formatRM(rec[o.key])}`)
+                                  .join(' | ')
+                              : 'Tiada pecahan OS aktif'}
+                          </span>
+                          {rec.catatan && (
+                            <span className="block text-[10px] text-slate-500 italic">{rec.catatan}</span>
+                          )}
+                        </div>
+                        <span className="font-mono font-black text-blue-900 shrink-0 tabular-nums">
+                          {formatRMWithPrefix(rec.jumlah)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-2.5">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Rekod Penarikan / Pemulangan Baki ({jabatanSummary.pullbackCount})</span>
+                </h4>
+                {jabatanSummary.pullbackRecords.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3">Tiada rekod penarikan atau pemulangan baki.</p>
+                ) : (
+                  <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {jabatanSummary.pullbackRecords.map((pb) => (
+                      <div
+                        key={pb.id}
+                        className="bg-white border border-rose-200 rounded-lg p-2.5 text-[11px] flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
+                                pb.jenisTindakan === 'TARIK'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {pb.jenisTindakan}
+                            </span>
+                            <span className="font-bold text-slate-800">
+                              {pb.sumberBaki === 'ASAL' ? 'Baki (asal)' : 'Baki (Penjimatan)'}
+                            </span>
+                            <span className="font-mono text-slate-500">· {pb.tarikh}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 block mt-0.5">
+                            {activeOsList.length > 0
+                              ? activeOsList
+                                  .map((o) => `${o.shortLabel}:${formatRM(pb[o.key])}`)
+                                  .join(' | ')
+                              : 'Tiada pecahan OS aktif'}
+                          </span>
+                          {pb.catatan && (
+                            <span className="block text-[10px] text-slate-500 italic">{pb.catatan}</span>
+                          )}
+                        </div>
+                        <span className="font-mono font-black text-rose-800 shrink-0 tabular-nums">
+                          {formatRMWithPrefix(pb.jumlah)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ================================================================= */}
+      {/* KOMUNIKASI EKSLUSIF KETUA JABATAN & KETUA PUSAT                   */}
+      {/* ================================================================= */}
+      {canUsePusatJabatanChat && (
+        <PusatJabatanChatSection
+          mode="jabatan"
+          isExpanded={expandedSections.chat}
+          onToggleExpand={() => toggleSection('chat')}
+          title={`Komunikasi Baki, Penarikan & Pemulangan dengan Ketua Pusat (${parentPusat})`}
+          subtitle={`Saluran rasmi antara Ketua Jabatan ${selectedJabatan || '-'} dan Ketua Pusat ${parentPusat}.`}
+          messages={jabatanMessages}
+          currentUser={currentUser}
+          isSuperAdmin={isSuperAdmin}
+          chatTopik={chatTopik}
+          onChangeChatTopik={setChatTopik}
+          chatText={chatText}
+          onChangeChatText={setChatText}
+          onSendMessage={handleSendJabatanMessage}
+          onDeleteMessage={deletePusatJabatanMessage}
+          onNotify={showNotification}
+        />
+      )}
+
+      {/* ================================================================= */}
       {/* 2. PEGAWAI-PEGAWAI DI BAWAH JABATAN                               */}
       {/* ================================================================= */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => toggleSection('s2')}
+          className="w-full px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-700">
               2. Senarai Pegawai Jabatan
             </span>
-            <h3 className="text-base font-bold text-slate-900 mt-1">
+            <h3 className="text-base font-bold text-slate-900 mt-0.5">
               Pegawai-Pegawai di Bawah {selectedJabatan} ({filteredSortedMetrics.length} Orang)
             </h3>
           </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg whitespace-nowrap self-end sm:self-center">
+            <span>{expandedSections.s2 ? 'Sembunyi' : 'Papar'}</span>
+            {expandedSections.s2 ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </span>
+        </button>
 
-          <div className="relative w-full md:w-72">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={officerSearch}
-              onChange={(e) => setOfficerSearch(e.target.value)}
-              placeholder="Cari ID, nama, jawatan, emel..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
-            />
-          </div>
-        </div>
+        {expandedSections.s2 && (
+          <div className="px-6 pb-6 pt-4 border-t border-slate-100 space-y-4">
+            <div className="flex justify-end">
+              <div className="relative w-full md:w-72">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={officerSearch}
+                  onChange={(e) => setOfficerSearch(e.target.value)}
+                  placeholder="Cari ID, nama, jawatan, emel..."
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
+            </div>
 
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
@@ -619,24 +1194,38 @@ export const JabatanPage: React.FC = () => {
                 ))
               )}
             </tbody>
-          </table>
-        </div>
+            </table>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ================================================================= */}
       {/* 3. VISUALISASI DAN INFOGRAFIK SETIAP PEGAWAI                      */}
       {/* ================================================================= */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-5">
-        <div className="border-b border-slate-100 pb-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-            3. Visualisasi &amp; Infografik Pegawai
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => toggleSection('s3')}
+          className="w-full px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">
+              3. Visualisasi &amp; Infografik Pegawai
+            </span>
+            <h3 className="text-base font-bold text-slate-900 mt-0.5">
+              Kad Infografik Prestasi &amp; Beban Tugas Setiap Pegawai
+            </h3>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg whitespace-nowrap self-end sm:self-center">
+            <span>{expandedSections.s3 ? 'Sembunyi' : 'Papar'}</span>
+            {expandedSections.s3 ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </span>
-          <h3 className="text-base font-bold text-slate-900 mt-1">
-            Kad Infografik Prestasi &amp; Beban Tugas Setiap Pegawai
-          </h3>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {expandedSections.s3 && (
+          <div className="px-6 pb-6 pt-4 border-t border-slate-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSortedMetrics.map((m) => {
             const tot = Math.max(1, m.totalPrograms);
             const pctSelesai = (m.selesai / tot) * 100;
@@ -706,11 +1295,11 @@ export const JabatanPage: React.FC = () => {
                 {/* Financial snapshot */}
                 <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-[11px] space-y-1">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Peruntukan:</span>
+                    <span className="text-slate-500">Peruntukan Diagihkan:</span>
                     <strong className="font-mono text-slate-900">{formatRMWithPrefix(m.peruntukan)}</strong>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Belanja Sebenar:</span>
+                    <span className="text-slate-500">Belanja:</span>
                     <strong className="font-mono text-emerald-700">{formatRMWithPrefix(m.belanja)}</strong>
                   </div>
                   <div className="flex justify-between">
@@ -735,24 +1324,38 @@ export const JabatanPage: React.FC = () => {
                 </button>
               </div>
             );
-          })}
-        </div>
+            })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ================================================================= */}
       {/* 4. VISUALISASI COMPARISON SETIAP PEGAWAI                          */}
       {/* ================================================================= */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
-        <div className="border-b border-slate-100 pb-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-            4. Visualisasi Perbandingan Pegawai
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => toggleSection('s4')}
+          className="w-full px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700">
+              4. Visualisasi Perbandingan Pegawai
+            </span>
+            <h3 className="text-base font-bold text-slate-900 mt-0.5">
+              Perbandingan Prestasi, Kewangan &amp; Impak Antara Pegawai Jabatan
+            </h3>
+          </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg whitespace-nowrap self-end sm:self-center">
+            <span>{expandedSections.s4 ? 'Sembunyi' : 'Papar'}</span>
+            {expandedSections.s4 ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </span>
-          <h3 className="text-base font-bold text-slate-900 mt-1">
-            Perbandingan Prestasi, Kewangan &amp; Impak Antara Pegawai Jabatan
-          </h3>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {expandedSections.s4 && (
+          <div className="px-6 pb-6 pt-4 border-t border-slate-100 space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Chart A: Program Count */}
           <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
@@ -786,7 +1389,7 @@ export const JabatanPage: React.FC = () => {
           <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
             <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4 text-emerald-600" />
-              <span>Perbandingan Peruntukan vs Belanja Sebenar (RM)</span>
+              <span>Perbandingan Peruntukan Diagihkan vs Belanja (RM)</span>
             </h4>
             <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
               {filteredSortedMetrics.map((m) => {
@@ -839,34 +1442,48 @@ export const JabatanPage: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ================================================================= */}
       {/* 5. RUMUSAN SETIAP PEGAWAI MENGIKUT STATUS & PERUNTUKAN            */}
       {/* ================================================================= */}
-      <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      <section className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <button
+          type="button"
+          onClick={() => toggleSection('s5')}
+          className="w-full px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+        >
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
               5. Rumusan Pegawai Jabatan
             </span>
-            <h3 className="text-base font-bold text-slate-900 mt-1">
+            <h3 className="text-base font-bold text-slate-900 mt-0.5">
               Rumusan Setiap Pegawai Mengikut Status Program, Peruntukan &amp; Sebagainya
             </h3>
           </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg whitespace-nowrap self-end sm:self-center">
+            <span>{expandedSections.s5 ? 'Sembunyi' : 'Papar'}</span>
+            {expandedSections.s5 ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </span>
+        </button>
 
-          <button
-            type="button"
-            onClick={handleExportRumusanJabatan}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer self-start sm:self-auto"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Eksport Rumusan Excel</span>
-          </button>
-        </div>
+        {expandedSections.s5 && (
+          <div className="px-6 pb-6 pt-4 border-t border-slate-100 space-y-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleExportRumusanJabatan}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Eksport Rumusan Excel</span>
+              </button>
+            </div>
 
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider text-[10px]">
@@ -883,7 +1500,7 @@ export const JabatanPage: React.FC = () => {
                 <th className="py-3 px-2 text-center text-rose-300">BATAL</th>
                 <th className="py-3 px-2 text-right">PESERTA</th>
                 <th className="py-3 px-2 text-right">HARI</th>
-                <th className="py-3 px-3 text-right">PERUNTUKAN (RM)</th>
+                <th className="py-3 px-3 text-right">PERUNTUKAN DIAGIHKAN (RM)</th>
                 <th className="py-3 px-3 text-right">BELANJA (RM)</th>
                 <th className="py-3 px-3 text-right">PENJIMATAN (RM)</th>
                 <th className="py-3 px-2.5 text-center">% SELESAI</th>
@@ -948,8 +1565,10 @@ export const JabatanPage: React.FC = () => {
                 <td className="py-3.5 px-2.5 text-center font-mono">{jabatanTotals.successRate}%</td>
               </tr>
             </tfoot>
-          </table>
-        </div>
+            </table>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Drill-down Programs Modal */}
@@ -1012,6 +1631,143 @@ export const JabatanPage: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* PULANGKAN BAKI JABATAN WARNING CONFIRMATION MODAL                 */}
+      {/* ================================================================= */}
+      {pulangModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmPulang}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden"
+          >
+            <div className="px-6 py-4 bg-amber-600 text-white flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-100 block">
+                  Peringatan &amp; Pengesahan Pemulangan Baki
+                </span>
+                <h4 className="text-sm font-black uppercase tracking-wide mt-0.5">
+                  PULANGKAN {pulangModal.sumberBaki === 'ASAL' ? 'Baki (asal)' : 'Baki (Penjimatan)'}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPulangModal(null)}
+                className="p-1.5 text-amber-100 hover:text-white rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-amber-950">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold">Amaran Sebelum Pengesahan:</p>
+                  <p className="leading-relaxed">
+                    Anda bakal memulangkan{' '}
+                    <strong>{pulangModal.sumberBaki === 'ASAL' ? 'Baki (asal)' : 'Baki (Penjimatan)'}</strong>{' '}
+                    daripada <strong>{selectedJabatan}</strong> (Tahun {pulangModal.tahun}) kepada{' '}
+                    <strong>{parentPusat}</strong>. Jumlah ini akan ditolak daripada{' '}
+                    <strong>JUMLAH BAKI TERKINI</strong> Jabatan dan dikembalikan ke Baki Pusat untuk agihan semula.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 text-[11px] mb-1">Tahun</label>
+                  <input
+                    type="number"
+                    value={pulangModal.tahun}
+                    readOnly
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg font-mono font-bold text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 text-[11px] mb-1">Tarikh Pemulangan</label>
+                  <input
+                    type="date"
+                    required
+                    value={pulangModal.tarikh}
+                    onChange={(e) => setPulangModal({ ...pulangModal, tarikh: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {(activeOsList.length > 0
+                  ? activeOsList
+                  : OS_META.filter((o) => pulangModal.maxOs[o.key] > 0)
+                ).map((osItem) => {
+                  const osKey = osItem.key;
+                  return (
+                    <div key={osKey}>
+                      <label className="block font-bold text-slate-700 text-[11px] mb-1 uppercase">
+                        {osItem.label} (Maks: RM {formatRM(pulangModal.maxOs[osKey])})
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={pulangModal.maxOs[osKey]}
+                        step="0.01"
+                        value={pulangModal[osKey]}
+                        onChange={(e) =>
+                          setPulangModal({
+                            ...pulangModal,
+                            [osKey]: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }
+                        className="w-full px-3 py-2 font-mono font-bold bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-600 text-slate-900"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-slate-900 text-white rounded-lg">
+                <span className="font-bold uppercase text-[11px]">Jumlah Bakal Dipulangkan</span>
+                <span className="text-sm font-black font-mono text-amber-300">
+                  {formatRMWithPrefix(
+                    pulangModal.os21000 +
+                      pulangModal.os24000 +
+                      pulangModal.os27000 +
+                      pulangModal.os29000
+                  )}
+                </span>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 text-[11px] mb-1">Catatan (Pilihan)</label>
+                <input
+                  type="text"
+                  value={pulangModal.catatan}
+                  onChange={(e) => setPulangModal({ ...pulangModal, catatan: e.target.value })}
+                  placeholder="cth: Baki tidak diperlukan / lebihan penjimatan program"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-3.5 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPulangModal(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg cursor-pointer"
+              >
+                Sahkan Pemulangan (PULANGKAN)
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

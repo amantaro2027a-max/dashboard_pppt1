@@ -16,7 +16,8 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { ProgramItem } from '../../types/program';
-import { formatRM, formatRMWithPrefix } from '../../utils/formatters';
+import { formatRM } from '../../utils/formatters';
+import { getProgramFinanceAggregate } from '../../utils/financeCalculations';
 
 interface FinancialIntelligenceModuleProps {
   programs: ProgramItem[];
@@ -54,13 +55,16 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
       os29: { alloc: 0, actual: 0, lo: 0, balance: 0, label: 'OS29000 - Perkhidmatan Ikhtisas' },
     };
 
+    const finAgg = getProgramFinanceAggregate(programs, true);
+    allocTotal = finAgg.diagihkan.total;
+    actualExpTotal = finAgg.belanja.total;
+    savingsTotal = finAgg.penjimatan.total;
+
     programs.forEach((p) => {
       const a = Number(p.jumlahRm) || 0;
-      const b = Number(p.jumlahBelanjaRm) || 0;
       const status = (p.statusProgram || '').trim().toUpperCase();
-
-      allocTotal += a;
-      actualExpTotal += b;
+      const isBelanjaStatus = status === 'SELESAI' || status === 'TANGGUNG';
+      const b = isBelanjaStatus ? Number(p.jumlahBelanjaRm) || 0 : 0;
 
       // LO handling: programs with status 'TANGGUNG' are committed via LO
       const isLoCommitted = status === 'TANGGUNG';
@@ -80,21 +84,16 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
         }
       }
 
-      // Savings: For completed programmes where expenditure is strictly less than allocation
-      if (status === 'SELESAI' && a > b) {
-        savingsTotal += (a - b);
-      }
-
       // OS Aggregations
       const a21 = Number(p.os21000) || 0;
       const a24 = Number(p.os24000) || 0;
       const a27 = Number(p.os27000) || 0;
       const a29 = Number(p.os29000) || 0;
 
-      const b21 = Number(p.os21000Belanja) || 0;
-      const b24 = Number(p.os24000Belanja) || 0;
-      const b27 = Number(p.os27000Belanja) || 0;
-      const b29 = Number(p.os29000Belanja) || 0;
+      const b21 = isBelanjaStatus ? Number(p.os21000Belanja) || 0 : 0;
+      const b24 = isBelanjaStatus ? Number(p.os24000Belanja) || 0 : 0;
+      const b27 = isBelanjaStatus ? Number(p.os27000Belanja) || 0 : 0;
+      const b29 = isBelanjaStatus ? Number(p.os29000Belanja) || 0 : 0;
 
       osBreakdown.os21.alloc += a21;
       osBreakdown.os21.actual += b21;
@@ -220,11 +219,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
         <>
       {/* A. KAD KPI KEWANGAN (8 KAD) */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* 1. Jumlah Peruntukan */}
+        {/* 1. Peruntukan Diluluskan */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Jumlah Peruntukan
+              Peruntukan Diluluskan
             </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold">
               <Wallet className="w-4 h-4" />
@@ -233,7 +232,11 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           <div className="text-xl sm:text-2xl font-black text-blue-950 truncate">
             {formatRM(totalAllocationPeruntukanPage ?? fin.allocTotal)}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Peruntukan asal diluluskan</p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            {totalAllocationPeruntukanPage !== undefined
+              ? 'Dari Halaman PERUNTUKAN'
+              : 'Peruntukan Diagihkan (BK65)'}
+          </p>
         </div>
 
         {/* 2. Perbelanjaan Sebenar */}
@@ -301,7 +304,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
           <div className="text-xl sm:text-2xl font-black text-teal-900 truncate">
             {formatRM(fin.savingsTotal)}
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Penjimatan program selesai</p>
+          <p className="text-[11px] text-slate-500 mt-1">Penjimatan (SELESAI &amp; TANGGUNG)</p>
         </div>
 
         {/* 6. Kadar Penggunaan Bajet */}
@@ -425,7 +428,7 @@ export const FinancialIntelligenceModule: React.FC<FinancialIntelligenceModulePr
             <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-y border-slate-200">
               <tr>
                 <th className="py-3 px-4">Kod OS &amp; Kategori</th>
-                <th className="py-3 px-4 text-right">Peruntukan (RM)</th>
+                <th className="py-3 px-4 text-right">Peruntukan Diagihkan (RM)</th>
                 <th className="py-3 px-4 text-right">Belanja Sebenar (RM)</th>
                 <th className="py-3 px-4 text-right">Komitmen LO (RM)</th>
                 <th className="py-3 px-4 text-right">Baki Tersedia (RM)</th>
